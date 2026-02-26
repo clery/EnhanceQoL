@@ -10,6 +10,7 @@ end
 addon.Aura = addon.Aura or {}
 addon.Aura.UF = addon.Aura.UF or {}
 local UF = addon.Aura.UF
+local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_Aura")
 
 UF.GroupFramesHealerBuffs = UF.GroupFramesHealerBuffs or {}
 local HB = UF.GroupFramesHealerBuffs
@@ -28,6 +29,7 @@ local ipairs = ipairs
 local next = next
 local tinsert = table.insert
 local sort = table.sort
+local format = string.format
 local wipe = _G.wipe or (table and table.wipe)
 local issecretvalue = _G.issecretvalue
 
@@ -111,51 +113,59 @@ local GROWTH_AXES = {
 	DOWNRIGHT = { "DOWN", "RIGHT" },
 }
 
+local function tr(key, fallback)
+	local value = L and L[key]
+	if value == nil or value == "" then return fallback or key end
+	return value
+end
+
 HB.STYLE_OPTIONS = {
-	{ value = STYLE_ICON, label = "Icon" },
-	{ value = STYLE_SQUARE, label = "Square" },
-	{ value = STYLE_BAR, label = "Bar" },
-	{ value = STYLE_BORDER, label = "Border" },
-	{ value = STYLE_TINT, label = "Tint" },
+	{ value = STYLE_ICON, label = tr("UFGroupHealerBuffStyleIcon", "Icon") },
+	{ value = STYLE_SQUARE, label = tr("UFGroupHealerBuffStyleSquare", "Square") },
+	{ value = STYLE_BAR, label = tr("UFGroupHealerBuffStyleBar", "Bar") },
+	{ value = STYLE_BORDER, label = tr("UFGroupHealerBuffStyleBorder", "Border") },
+	{ value = STYLE_TINT, label = tr("UFGroupHealerBuffStyleTint", "Tint") },
 }
 
 HB.ORIENTATION_OPTIONS = {
-	{ value = ORIENT_HORIZONTAL, label = "Horizontal" },
-	{ value = ORIENT_VERTICAL, label = "Vertical" },
+	{ value = ORIENT_HORIZONTAL, label = tr("UFGroupHealerBuffOrientationHorizontal", "Horizontal") },
+	{ value = ORIENT_VERTICAL, label = tr("UFGroupHealerBuffOrientationVertical", "Vertical") },
 }
 
 HB.RULE_MATCH_OPTIONS = {
-	{ value = RULE_MATCH_ANY, label = "Require Any Spell" },
-	{ value = RULE_MATCH_ALL, label = "Require All Spells" },
+	{ value = RULE_MATCH_ANY, label = tr("UFGroupHealerBuffRuleMatchAny", "Require Any Spell") },
+	{ value = RULE_MATCH_ALL, label = tr("UFGroupHealerBuffRuleMatchAll", "Require All Spells") },
 }
 
 HB.ICON_MODE_OPTIONS = {
-	{ value = ICON_MODE_ALL, label = "Show All Active Spells" },
-	{ value = ICON_MODE_PRIORITY, label = "Show Highest Priority Only" },
+	{ value = ICON_MODE_ALL, label = tr("UFGroupHealerBuffIconModeAll", "Show All Active Spells") },
+	{ value = ICON_MODE_PRIORITY, label = tr("UFGroupHealerBuffIconModePriority", "Show Highest Priority Only") },
 }
 
-HB.ANCHOR_OPTIONS = GFH and GFH.anchorOptions9 or {
-	{ value = "TOPLEFT", label = "TOPLEFT" },
-	{ value = "TOP", label = "TOP" },
-	{ value = "TOPRIGHT", label = "TOPRIGHT" },
-	{ value = "LEFT", label = "LEFT" },
-	{ value = "CENTER", label = "CENTER" },
-	{ value = "RIGHT", label = "RIGHT" },
-	{ value = "BOTTOMLEFT", label = "BOTTOMLEFT" },
-	{ value = "BOTTOM", label = "BOTTOM" },
-	{ value = "BOTTOMRIGHT", label = "BOTTOMRIGHT" },
-}
+HB.ANCHOR_OPTIONS = GFH and GFH.anchorOptions9
+	or {
+		{ value = "TOPLEFT", label = tr("UFGroupHealerBuffAnchorTopLeft", "Top Left") },
+		{ value = "TOP", label = tr("UFGroupHealerBuffAnchorTop", "Top") },
+		{ value = "TOPRIGHT", label = tr("UFGroupHealerBuffAnchorTopRight", "Top Right") },
+		{ value = "LEFT", label = tr("UFGroupHealerBuffAnchorLeft", "Left") },
+		{ value = "CENTER", label = tr("UFGroupHealerBuffAnchorCenter", "Center") },
+		{ value = "RIGHT", label = tr("UFGroupHealerBuffAnchorRight", "Right") },
+		{ value = "BOTTOMLEFT", label = tr("UFGroupHealerBuffAnchorBottomLeft", "Bottom Left") },
+		{ value = "BOTTOM", label = tr("UFGroupHealerBuffAnchorBottom", "Bottom") },
+		{ value = "BOTTOMRIGHT", label = tr("UFGroupHealerBuffAnchorBottomRight", "Bottom Right") },
+	}
 
-HB.GROWTH_OPTIONS = GFH and GFH.auraGrowthOptions or {
-	{ value = "UPRIGHT", label = "Up Right" },
-	{ value = "UPLEFT", label = "Up Left" },
-	{ value = "RIGHTUP", label = "Right Up" },
-	{ value = "RIGHTDOWN", label = "Right Down" },
-	{ value = "LEFTUP", label = "Left Up" },
-	{ value = "LEFTDOWN", label = "Left Down" },
-	{ value = "DOWNLEFT", label = "Down Left" },
-	{ value = "DOWNRIGHT", label = "Down Right" },
-}
+HB.GROWTH_OPTIONS = GFH and GFH.auraGrowthOptions
+	or {
+		{ value = "UPRIGHT", label = tr("UFGroupHealerBuffGrowthUpRight", "Up Right") },
+		{ value = "UPLEFT", label = tr("UFGroupHealerBuffGrowthUpLeft", "Up Left") },
+		{ value = "RIGHTUP", label = tr("UFGroupHealerBuffGrowthRightUp", "Right Up") },
+		{ value = "RIGHTDOWN", label = tr("UFGroupHealerBuffGrowthRightDown", "Right Down") },
+		{ value = "LEFTUP", label = tr("UFGroupHealerBuffGrowthLeftUp", "Left Up") },
+		{ value = "LEFTDOWN", label = tr("UFGroupHealerBuffGrowthLeftDown", "Left Down") },
+		{ value = "DOWNLEFT", label = tr("UFGroupHealerBuffGrowthDownLeft", "Down Left") },
+		{ value = "DOWNRIGHT", label = tr("UFGroupHealerBuffGrowthDownRight", "Down Right") },
+	}
 
 local FAMILY_DATA = {
 	-- Preservation Evoker
@@ -257,9 +267,7 @@ end
 
 local function roundInt(value)
 	local n = tonumber(value) or 0
-	if n >= 0 then
-		return floor(n + 0.5)
-	end
+	if n >= 0 then return floor(n + 0.5) end
 	return -floor(abs(n) + 0.5)
 end
 
@@ -401,12 +409,8 @@ end
 
 local function ensureFamilyPresentation(family)
 	if not family then return nil, nil end
-	if not family._resolvedName then
-		family._resolvedName = getSpellName(family.spellIds and family.spellIds[1]) or family.fallbackName or family.id
-	end
-	if not family._resolvedIcon then
-		family._resolvedIcon = getSpellTexture(family.spellIds and family.spellIds[1]) or 134400
-	end
+	if not family._resolvedName then family._resolvedName = getSpellName(family.spellIds and family.spellIds[1]) or family.fallbackName or family.id end
+	if not family._resolvedIcon then family._resolvedIcon = getSpellTexture(family.spellIds and family.spellIds[1]) or 134400 end
 	return family._resolvedName, family._resolvedIcon
 end
 
@@ -415,12 +419,8 @@ local function buildFamilyLabel(family)
 	local name = ensureFamilyPresentation(family)
 	local classToken = family.classToken or ""
 	local spec = family.spec
-	if spec and spec ~= "" then
-		return spec .. " " .. classToken .. " - " .. tostring(name)
-	end
-	if classToken ~= "" then
-		return classToken .. " - " .. tostring(name)
-	end
+	if spec and spec ~= "" then return spec .. " " .. classToken .. " - " .. tostring(name) end
+	if classToken ~= "" then return classToken .. " - " .. tostring(name) end
 	return tostring(name)
 end
 
@@ -469,15 +469,17 @@ local function newPlacementConfig()
 	}
 end
 
-function HB.CreateDefaultPlacement()
-	return newPlacementConfig()
-end
+function HB.CreateDefaultPlacement() return newPlacementConfig() end
+
+local function getDefaultGroupName(id) return format(tr("UFGroupHealerBuffEditorIndicatorNameFormat", "Indicator %s"), tostring(id or "")) end
+
+HB.GetDefaultGroupName = getDefaultGroupName
 
 function HB.CreateDefaultGroup(id)
 	id = tostring(id or "1")
 	return {
 		id = id,
-		name = "Group " .. id,
+		name = getDefaultGroupName(id),
 		style = STYLE_ICON,
 		anchorPoint = "CENTER",
 		x = 0,
@@ -513,7 +515,7 @@ end
 local function normalizeGroup(group, id)
 	if type(group) ~= "table" then return nil end
 	group.id = tostring(group.id or id)
-	if group.name == nil or group.name == "" then group.name = "Group " .. group.id end
+	if group.name == nil or group.name == "" then group.name = getDefaultGroupName(group.id) end
 	group.style = normalizeStyle(group.style)
 	group.anchorPoint = normalizeAnchor(group.anchorPoint)
 	group.x = roundInt(clamp(group.x, -300, 300, 0))
@@ -717,23 +719,23 @@ local function compile(kind, cfg)
 				end
 				byFamily[#byFamily + 1] = ruleId
 				if rule.enabled ~= false then compiled.suppressedFamilies[familyId] = true end
-					local byGroup = compiled.groupToRuleIds[groupId]
-					if not byGroup then
-						byGroup = {}
-						compiled.groupToRuleIds[groupId] = byGroup
+				local byGroup = compiled.groupToRuleIds[groupId]
+				if not byGroup then
+					byGroup = {}
+					compiled.groupToRuleIds[groupId] = byGroup
+				end
+				byGroup[#byGroup + 1] = ruleId
+				if rule.enabled ~= false then
+					local byGroupEnabled = compiled.groupToEnabledRuleIds[groupId]
+					if not byGroupEnabled then
+						byGroupEnabled = {}
+						compiled.groupToEnabledRuleIds[groupId] = byGroupEnabled
 					end
-					byGroup[#byGroup + 1] = ruleId
-					if rule.enabled ~= false then
-						local byGroupEnabled = compiled.groupToEnabledRuleIds[groupId]
-						if not byGroupEnabled then
-							byGroupEnabled = {}
-							compiled.groupToEnabledRuleIds[groupId] = byGroupEnabled
-						end
-						byGroupEnabled[#byGroupEnabled + 1] = ruleId
-					end
+					byGroupEnabled[#byGroupEnabled + 1] = ruleId
 				end
 			end
 		end
+	end
 
 	if placement.enabled == true and next(compiled.ruleById) and next(compiled.groupsById) and KIND_SET[kind] then compiled.enabled = true end
 	cachedByKind = cachedByKind or {}
@@ -1260,9 +1262,7 @@ local function updateGroupContainerLayout(container, group, shown)
 end
 
 local function resolveColor(color)
-	if type(color) == "table" then
-		return color[1] or color.r or 1, color[2] or color.g or 1, color[3] or color.b or 1, color[4] or color.a or 1
-	end
+	if type(color) == "table" then return color[1] or color.r or 1, color[2] or color.g or 1, color[3] or color.b or 1, color[4] or color.a or 1 end
 	return 1, 1, 1, 1
 end
 
@@ -1502,9 +1502,7 @@ local function renderTint(btn, st, group)
 			changed = true
 		end
 	end
-	if changed and btn and UF and UF.GroupFrames and UF.GroupFrames.UpdateHealthStyle then
-		UF.GroupFrames:UpdateHealthStyle(btn)
-	end
+	if changed and btn and UF and UF.GroupFrames and UF.GroupFrames.UpdateHealthStyle then UF.GroupFrames:UpdateHealthStyle(btn) end
 end
 
 local function renderAll(btn, st, state, compiled, cfg, changedFamilies)
@@ -1534,48 +1532,54 @@ local function renderAll(btn, st, state, compiled, cfg, changedFamilies)
 	local borderGroup, borderGroupId = winnerForStyle(compiled, state.groupActive, STYLE_BORDER)
 	local tintGroup, tintGroupId = winnerForStyle(compiled, state.groupActive, STYLE_TINT)
 
-	local barHash = barGroupId and table.concat({
-		barGroupId,
-		tostring(barGroup.barOrientation),
-		tostring(barGroup.barThickness),
-		tostring(barGroup.inset),
-		tostring(barGroup.anchorPoint),
-		tostring(barGroup.x),
-		tostring(barGroup.y),
-		tostring(barGroup.color and barGroup.color[1]),
-		tostring(barGroup.color and barGroup.color[2]),
-		tostring(barGroup.color and barGroup.color[3]),
-		tostring(barGroup.color and barGroup.color[4]),
-	}, ":") or "none"
+	local barHash = barGroupId
+			and table.concat({
+				barGroupId,
+				tostring(barGroup.barOrientation),
+				tostring(barGroup.barThickness),
+				tostring(barGroup.inset),
+				tostring(barGroup.anchorPoint),
+				tostring(barGroup.x),
+				tostring(barGroup.y),
+				tostring(barGroup.color and barGroup.color[1]),
+				tostring(barGroup.color and barGroup.color[2]),
+				tostring(barGroup.color and barGroup.color[3]),
+				tostring(barGroup.color and barGroup.color[4]),
+			}, ":")
+		or "none"
 	if renderHash[STYLE_BAR] ~= barHash then
 		renderHash[STYLE_BAR] = barHash
 		renderBar(st, barGroup)
 	end
 
-	local borderHash = borderGroupId and table.concat({
-		borderGroupId,
-		tostring(borderGroup.borderSize),
-		tostring(borderGroup.inset),
-		tostring(borderGroup.anchorPoint),
-		tostring(borderGroup.x),
-		tostring(borderGroup.y),
-		tostring(borderGroup.color and borderGroup.color[1]),
-		tostring(borderGroup.color and borderGroup.color[2]),
-		tostring(borderGroup.color and borderGroup.color[3]),
-		tostring(borderGroup.color and borderGroup.color[4]),
-	}, ":") or "none"
+	local borderHash = borderGroupId
+			and table.concat({
+				borderGroupId,
+				tostring(borderGroup.borderSize),
+				tostring(borderGroup.inset),
+				tostring(borderGroup.anchorPoint),
+				tostring(borderGroup.x),
+				tostring(borderGroup.y),
+				tostring(borderGroup.color and borderGroup.color[1]),
+				tostring(borderGroup.color and borderGroup.color[2]),
+				tostring(borderGroup.color and borderGroup.color[3]),
+				tostring(borderGroup.color and borderGroup.color[4]),
+			}, ":")
+		or "none"
 	if renderHash[STYLE_BORDER] ~= borderHash then
 		renderHash[STYLE_BORDER] = borderHash
 		renderBorder(st, borderGroup)
 	end
 
-	local tintHash = tintGroupId and table.concat({
-		tintGroupId,
-		tostring(tintGroup.color and tintGroup.color[1]),
-		tostring(tintGroup.color and tintGroup.color[2]),
-		tostring(tintGroup.color and tintGroup.color[3]),
-		tostring(tintGroup.color and tintGroup.color[4]),
-	}, ":") or "none"
+	local tintHash = tintGroupId
+			and table.concat({
+				tintGroupId,
+				tostring(tintGroup.color and tintGroup.color[1]),
+				tostring(tintGroup.color and tintGroup.color[2]),
+				tostring(tintGroup.color and tintGroup.color[3]),
+				tostring(tintGroup.color and tintGroup.color[4]),
+			}, ":")
+		or "none"
 	if renderHash[STYLE_TINT] ~= tintHash then
 		renderHash[STYLE_TINT] = tintHash
 		renderTint(btn, st, tintGroup)
@@ -1666,9 +1670,7 @@ local function buildSampleState(state, compiled)
 					if isPriorityOnly then break end
 				end
 			end
-			if anyPicked then
-				sampleGroupActive[groupId] = true
-			end
+			if anyPicked then sampleGroupActive[groupId] = true end
 		end
 	end
 

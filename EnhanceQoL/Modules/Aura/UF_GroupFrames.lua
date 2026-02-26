@@ -2110,16 +2110,29 @@ function GF._hbpPlacementDigest(placement)
 			local cb = tonumber(color and (color[3] or color.b) or 0) or 0
 			local ca = tonumber(color and (color[4] or color.a) or 0) or 0
 			parts[#parts + 1] = table.concat({
-				"g", tostring(groupId), tostring(group.id or ""),
-				tostring(group.name or ""), tostring(group.style or ""),
-				tostring(group.anchorPoint or ""), tostring(group.x or ""),
-				tostring(group.y or ""), tostring(group.growth or ""),
-				tostring(group.perRow or ""), tostring(group.max or ""),
-				tostring(group.spacing or ""), tostring(group.size or ""),
-				tostring(group.barOrientation or ""), tostring(group.barThickness or ""),
-				tostring(group.inset or ""), tostring(group.borderSize or ""),
-				tostring(group.ruleMatch or ""), tostring(group.iconMode or ""),
-				tostring(cr), tostring(cg), tostring(cb), tostring(ca),
+				"g",
+				tostring(groupId),
+				tostring(group.id or ""),
+				tostring(group.name or ""),
+				tostring(group.style or ""),
+				tostring(group.anchorPoint or ""),
+				tostring(group.x or ""),
+				tostring(group.y or ""),
+				tostring(group.growth or ""),
+				tostring(group.perRow or ""),
+				tostring(group.max or ""),
+				tostring(group.spacing or ""),
+				tostring(group.size or ""),
+				tostring(group.barOrientation or ""),
+				tostring(group.barThickness or ""),
+				tostring(group.inset or ""),
+				tostring(group.borderSize or ""),
+				tostring(group.ruleMatch or ""),
+				tostring(group.iconMode or ""),
+				tostring(cr),
+				tostring(cg),
+				tostring(cb),
+				tostring(ca),
 			}, "|")
 		else
 			parts[#parts + 1] = "g|" .. tostring(groupId) .. "|nil"
@@ -2132,8 +2145,11 @@ function GF._hbpPlacementDigest(placement)
 		local rule = rules[ruleId]
 		if type(rule) == "table" then
 			parts[#parts + 1] = table.concat({
-				"r", tostring(ruleId), tostring(rule.id or ""),
-				tostring(rule.spellFamilyId or ""), tostring(rule.groupId or ""),
+				"r",
+				tostring(ruleId),
+				tostring(rule.id or ""),
+				tostring(rule.spellFamilyId or ""),
+				tostring(rule.groupId or ""),
 				rule.enabled == false and "0" or "1",
 				rule["not"] == true and "1" or "0",
 				rule.appliesParty == false and "0" or "1",
@@ -2186,15 +2202,26 @@ function GF._hbpGroupSignature(group, ruleBlob)
 	local cb = tonumber(color and (color[3] or color.b) or 0) or 0
 	local ca = tonumber(color and (color[4] or color.a) or 0) or 0
 	return table.concat({
-		tostring(group.name or ""), tostring(group.style or ""),
-		tostring(group.anchorPoint or ""), tostring(group.x or ""),
-		tostring(group.y or ""), tostring(group.growth or ""),
-		tostring(group.perRow or ""), tostring(group.max or ""),
-		tostring(group.spacing or ""), tostring(group.size or ""),
-		tostring(group.barOrientation or ""), tostring(group.barThickness or ""),
-		tostring(group.inset or ""), tostring(group.borderSize or ""),
-		tostring(group.ruleMatch or ""), tostring(group.iconMode or ""),
-		tostring(cr), tostring(cg), tostring(cb), tostring(ca),
+		tostring(group.name or ""),
+		tostring(group.style or ""),
+		tostring(group.anchorPoint or ""),
+		tostring(group.x or ""),
+		tostring(group.y or ""),
+		tostring(group.growth or ""),
+		tostring(group.perRow or ""),
+		tostring(group.max or ""),
+		tostring(group.spacing or ""),
+		tostring(group.size or ""),
+		tostring(group.barOrientation or ""),
+		tostring(group.barThickness or ""),
+		tostring(group.inset or ""),
+		tostring(group.borderSize or ""),
+		tostring(group.ruleMatch or ""),
+		tostring(group.iconMode or ""),
+		tostring(cr),
+		tostring(cg),
+		tostring(cb),
+		tostring(ca),
 		tostring(ruleBlob or ""),
 	}, "|")
 end
@@ -2315,8 +2342,8 @@ function GF._hbpMergePlacement(basePlacement, incomingPlacement)
 		local sourceGroup = inGroups[sourceId]
 		if sourceGroup then
 			local targetId = sourceId
-				if basePlacement.groupsById[targetId] then targetId = GF._hbpNextNumericMapId(basePlacement.groupsById) end
-				local groupCopy = copyDefaultsTable(sourceGroup)
+			if basePlacement.groupsById[targetId] then targetId = GF._hbpNextNumericMapId(basePlacement.groupsById) end
+			local groupCopy = copyDefaultsTable(sourceGroup)
 			groupCopy.id = targetId
 			basePlacement.groupsById[targetId] = groupCopy
 			GF._hbpAppendUniqueOrderId(basePlacement.groupOrder, targetId)
@@ -2333,8 +2360,8 @@ function GF._hbpMergePlacement(basePlacement, incomingPlacement)
 			local targetGroupId = groupRemap[sourceGroupId] or (basePlacement.groupsById[sourceGroupId] and sourceGroupId) or nil
 			if targetGroupId then
 				local targetId = sourceId
-					if basePlacement.rulesById[targetId] then targetId = GF._hbpNextNumericMapId(basePlacement.rulesById) end
-					local ruleCopy = copyDefaultsTable(sourceRule)
+				if basePlacement.rulesById[targetId] then targetId = GF._hbpNextNumericMapId(basePlacement.rulesById) end
+				local ruleCopy = copyDefaultsTable(sourceRule)
 				ruleCopy.id = targetId
 				ruleCopy.groupId = targetGroupId
 				basePlacement.rulesById[targetId] = ruleCopy
@@ -2402,9 +2429,7 @@ function GF._ensureSharedHealerBuffPlacement(db)
 				end
 			end
 		end
-		if type(shared) == "table" and (partyPlacement._eqolMergedFromDual == true or raidPlacement._eqolMergedFromDual == true) then
-			shared._eqolMergedFromDual = true
-		end
+		if type(shared) == "table" and (partyPlacement._eqolMergedFromDual == true or raidPlacement._eqolMergedFromDual == true) then shared._eqolMergedFromDual = true end
 		GF._hbpDeduplicatePlacement(shared)
 		partyCfg.healerBuffPlacement = shared
 		raidCfg.healerBuffPlacement = shared
@@ -4491,21 +4516,7 @@ local function updateAuraType(self, unit, st, ac, kindKey, cache, changed)
 	hideAuraButtons(buttons, shown + 1)
 end
 
-local function fullScanGroupAuras(
-	unit,
-	st,
-	cache,
-	helpfulFilter,
-	harmfulFilter,
-	externalFilter,
-	dispelFilter,
-	wantBuff,
-	wantDebuff,
-	wantExternals,
-	wantsDispel,
-	wantsHealerBuffPlacement,
-	queryMax
-)
+local function fullScanGroupAuras(unit, st, cache, helpfulFilter, harmfulFilter, externalFilter, dispelFilter, wantBuff, wantDebuff, wantExternals, wantsDispel, wantsHealerBuffPlacement, queryMax)
 	if not (unit and st and cache and C_UnitAuras) then return end
 	resetAuraCache(cache)
 	clearAuraKinds(st)
@@ -4516,19 +4527,7 @@ local function fullScanGroupAuras(
 		local auraId = aura and aura.auraInstanceID
 		if not auraId or seen[auraId] then return end
 		seen[auraId] = true
-		local flags = getAuraKindFlags(
-			unit,
-			aura,
-			helpfulFilter,
-			harmfulFilter,
-			externalFilter,
-			dispelFilter,
-			wantBuff,
-			wantDebuff,
-			wantExternals,
-			wantsDispel,
-			wantsHealerBuffPlacement
-		)
+		local flags = getAuraKindFlags(unit, aura, helpfulFilter, harmfulFilter, externalFilter, dispelFilter, wantBuff, wantDebuff, wantExternals, wantsDispel, wantsHealerBuffPlacement)
 		cacheAuraWithFlags(cache, flagsById, aura, flags, st)
 	end
 
@@ -4585,19 +4584,7 @@ local function updateGroupAuraCache(unit, st, updateInfo, ac, helpfulFilter, har
 	if updateInfo.addedAuras then
 		for i = 1, #updateInfo.addedAuras do
 			local aura = updateInfo.addedAuras[i]
-			local flags = getAuraKindFlags(
-				unit,
-				aura,
-				helpfulFilter,
-				harmfulFilter,
-				externalFilter,
-				dispelFilter,
-				wantBuff,
-				wantDebuff,
-				wantExternals,
-				wantsDispel,
-				wantsHealerBuffPlacement
-			)
+			local flags = getAuraKindFlags(unit, aura, helpfulFilter, harmfulFilter, externalFilter, dispelFilter, wantBuff, wantDebuff, wantExternals, wantsDispel, wantsHealerBuffPlacement)
 			cacheAuraWithFlags(cache, flagsById, aura, flags, st)
 		end
 	end
@@ -4609,19 +4596,7 @@ local function updateGroupAuraCache(unit, st, updateInfo, ac, helpfulFilter, har
 			if isKnown then
 				local aura = C_UnitAuras.GetAuraDataByAuraInstanceID(unit, auraId)
 				if aura then
-					local flags = getAuraKindFlags(
-						unit,
-						aura,
-						helpfulFilter,
-						harmfulFilter,
-						externalFilter,
-						dispelFilter,
-						wantBuff,
-						wantDebuff,
-						wantExternals,
-						wantsDispel,
-						wantsHealerBuffPlacement
-					)
+					local flags = getAuraKindFlags(unit, aura, helpfulFilter, harmfulFilter, externalFilter, dispelFilter, wantBuff, wantDebuff, wantExternals, wantsDispel, wantsHealerBuffPlacement)
 					cacheAuraWithFlags(cache, flagsById, aura, flags, st)
 				else
 					markDispelAuraDirty(st, auraId)
@@ -4747,21 +4722,7 @@ function GF:UpdateAuras(self, updateInfo)
 	local allCache = getAuraCache(st, "all")
 	st._auraKindById = st._auraKindById or {}
 	if not updateInfo or updateInfo.isFullUpdate then
-		fullScanGroupAuras(
-			unit,
-			st,
-			allCache,
-			helpfulFilter,
-			harmfulFilter,
-			externalFilter,
-			dispelFilter,
-			wantBuff,
-			wantDebuff,
-			wantExternals,
-			wantsDispelTint,
-			wantsHealerBuffPlacement,
-			auraQueryMax
-		)
+		fullScanGroupAuras(unit, st, allCache, helpfulFilter, harmfulFilter, externalFilter, dispelFilter, wantBuff, wantDebuff, wantExternals, wantsDispelTint, wantsHealerBuffPlacement, auraQueryMax)
 		if wantsAuras then
 			if wantBuff then updateAuraType(self, unit, st, ac, "buff", allCache) end
 			if wantDebuff then updateAuraType(self, unit, st, ac, "debuff", allCache) end
@@ -7055,9 +7016,7 @@ function GF:RefreshHealerBuffPlacement(kind)
 		if kind ~= "party" and kind ~= "raid" then kind = nil end
 	end
 	local db = DB or ensureDB()
-	if db and db.party and db.raid then
-		kind = nil
-	end
+	if db and db.party and db.raid then kind = nil end
 	if UF.GroupFramesHealerBuffs.InvalidateKind then
 		if kind then
 			UF.GroupFramesHealerBuffs.InvalidateKind(kind)
@@ -7101,17 +7060,11 @@ function GF:RefreshHealerBuffPlacement(kind)
 	end
 
 	for _, header in pairs(GF.headers or {}) do
-		eachChild(header, function(child)
-			refreshButton(child)
-		end)
+		eachChild(header, function(child) refreshButton(child) end)
 	end
 	if not kind or kind == "raid" then
 		for _, header in ipairs(GF._raidGroupHeaders or EMPTY) do
-			if header and not header._eqolSpecialHide then
-				eachChild(header, function(child)
-					refreshButton(child)
-				end)
-			end
+			if header and not header._eqolSpecialHide then eachChild(header, function(child) refreshButton(child) end) end
 		end
 	end
 	for frameKind, frames in pairs(GF._previewFrames or EMPTY) do
@@ -19821,10 +19774,12 @@ function GF:EnsureEditMode()
 					text = "Edit custom sort order",
 					click = function() GF:ToggleCustomSortEditor(kind) end,
 				}) end
-				if kind == "raid" or kind == "party" then table.insert(buttons, 2, {
-					text = "Edit healer buff placement",
-					click = function() GF:ToggleHealerBuffPlacementEditor(kind) end,
-				}) end
+				if kind == "raid" or kind == "party" then
+					table.insert(buttons, 2, {
+						text = L["UFGroupHealerBuffEditModeButton"] or "Edit healer buff placement",
+						click = function() GF:ToggleHealerBuffPlacementEditor(kind) end,
+					})
+				end
 				if kind == "raid" then table.insert(buttons, 2, {
 					text = "Cycle sample size (10/20/30/40)",
 					click = function() GF:CycleEditModeSampleSize(kind) end,

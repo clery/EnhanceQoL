@@ -10,6 +10,7 @@ end
 addon.Aura = addon.Aura or {}
 addon.Aura.UF = addon.Aura.UF or {}
 local UF = addon.Aura.UF
+local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_Aura")
 local GF = UF.GroupFrames
 local HB = UF.GroupFramesHealerBuffs
 if not (GF and HB) then return end
@@ -62,6 +63,17 @@ local ANCHOR_COORDS = {
 	BOTTOM = { 0, -0.5 },
 	BOTTOMRIGHT = { 0.5, -0.5 },
 }
+
+local function tr(key, fallback)
+	local value = L and L[key]
+	if value == nil or value == "" then return fallback or key end
+	return value
+end
+
+local function formatIndicatorName(id)
+	local fmt = tr("UFGroupHealerBuffEditorIndicatorNameFormat", "Indicator %s")
+	return string.format(fmt, tostring(id or ""))
+end
 
 local function wipeTable(tbl)
 	if not tbl then return end
@@ -397,7 +409,7 @@ local function setDropdown(dropdown, options, selectedValue, onSelect)
 		if selectedValue ~= nil then
 			selectedText = tostring(selectedValue)
 		else
-			selectedText = "Select"
+			selectedText = tr("UFGroupHealerBuffEditorSelect", "Select")
 		end
 	end
 	UIDropDownMenu_SetText(dropdown, selectedText)
@@ -766,7 +778,7 @@ local function buildFamilyOptionsForEditor(classTokenFilter)
 end
 
 local function getClassDisplayName(classToken)
-	if classToken == nil then return "Other" end
+	if classToken == nil then return tr("UFGroupHealerBuffEditorClassOther", "Other") end
 	local token = tostring(classToken)
 	return tostring(LOCALIZED_CLASS_NAMES_MALE[token] or LOCALIZED_CLASS_NAMES_FEMALE[token] or token)
 end
@@ -829,7 +841,7 @@ local function getGroupLabel(placement, groupId)
 	if not placement or not groupId then return tostring(groupId or "") end
 	local group = placement.groupsById and placement.groupsById[groupId]
 	if not group then return tostring(groupId) end
-	return tostring(group.name or ("Indicator " .. tostring(groupId)))
+	return tostring(group.name or formatIndicatorName(groupId))
 end
 
 local function getVisibleGroupIds(placement, out, classToken)
@@ -981,13 +993,13 @@ function Editor:EnsureFrame()
 	applyPanelBorder(frame)
 	frame:Hide()
 
-	local title = createLabel(frame, "Healer Buff Placement", 15, "OUTLINE")
+	local title = createLabel(frame, tr("UFGroupHealerBuffEditorTitle", "Healer Buff Placement"), 15, "OUTLINE")
 	title:SetPoint("TOPLEFT", 18, -14)
 	frame.Title = title
 
 	local subtitle = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
-	subtitle:SetText("Configure shared spell-family placements for Party and Raid frames.")
+	subtitle:SetText(tr("UFGroupHealerBuffEditorSubtitle", "Configure shared spell-family placements for Party and Raid frames."))
 	subtitle:SetTextColor(0.75, 0.75, 0.75, 1)
 	frame.Subtitle = subtitle
 
@@ -1022,15 +1034,15 @@ function Editor:EnsureFrame()
 
 	local kindLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	kindLabel:SetPoint("TOPLEFT", subtitle, "BOTTOMLEFT", 0, -14)
-	kindLabel:SetText("Scope:")
+	kindLabel:SetText(tr("UFGroupHealerBuffEditorScopeLabel", "Scope:"))
 	frame.KindLabel = kindLabel
 
 	local kindValue = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 	kindValue:SetPoint("LEFT", kindLabel, "RIGHT", 8, 0)
-	kindValue:SetText("Shared (Party + Raid)")
+	kindValue:SetText(tr("UFGroupHealerBuffEditorScopeShared", "Shared (Party + Raid)"))
 	frame.KindValue = kindValue
 
-	local enabledCheck = createCheck(frame, "Enable Healer Buff Placement")
+	local enabledCheck = createCheck(frame, tr("UFGroupHealerBuffEditorEnabled", "Enable Healer Buff Placement"))
 	enabledCheck:SetPoint("LEFT", kindValue, "RIGHT", 20, 0)
 	frame.EnabledCheck = enabledCheck
 
@@ -1040,7 +1052,7 @@ function Editor:EnsureFrame()
 	applyCardBackground(groupPanel, false)
 	frame.GroupPanel = groupPanel
 
-	local groupTitle = createLabel(groupPanel, "Indicators", 12, "OUTLINE")
+	local groupTitle = createLabel(groupPanel, tr("UFGroupHealerBuffEditorIndicators", "Indicators"), 12, "OUTLINE")
 	groupTitle:SetPoint("TOPLEFT", 10, -10)
 	groupPanel.Title = groupTitle
 
@@ -1049,15 +1061,15 @@ function Editor:EnsureFrame()
 	setDangerButtonStyle(addGroup)
 	groupPanel.AddButton = addGroup
 
-	local groupUp = createButton(groupPanel, "Up", 45, 20)
+	local groupUp = createButton(groupPanel, tr("UFGroupHealerBuffEditorUp", "Up"), 45, 20)
 	groupUp:SetPoint("TOPRIGHT", addGroup, "TOPLEFT", -6, 0)
 	groupPanel.UpButton = groupUp
 
-	local groupDown = createButton(groupPanel, "Down", 45, 20)
+	local groupDown = createButton(groupPanel, tr("UFGroupHealerBuffEditorDown", "Down"), 45, 20)
 	groupDown:SetPoint("TOPRIGHT", groupUp, "TOPLEFT", -6, 0)
 	groupPanel.DownButton = groupDown
 
-	local deleteGroup = createButton(groupPanel, "Delete", 65, 20)
+	local deleteGroup = createButton(groupPanel, tr("UFGroupHealerBuffEditorDelete", "Delete"), 65, 20)
 	deleteGroup:SetPoint("TOPRIGHT", groupDown, "TOPLEFT", -6, 0)
 	groupPanel.DeleteButton = deleteGroup
 	groupUp:Hide()
@@ -1118,26 +1130,26 @@ function Editor:EnsureFrame()
 	applyCardBackground(rulePanel, false)
 	frame.RulePanel = rulePanel
 
-	local ruleTitle = createLabel(rulePanel, "Spell Rules", 12, "OUTLINE")
+	local ruleTitle = createLabel(rulePanel, tr("UFGroupHealerBuffEditorSpellRules", "Spell Rules"), 12, "OUTLINE")
 	ruleTitle:SetPoint("TOPLEFT", 10, -10)
 	rulePanel.Title = ruleTitle
 
-	local addRule = createButton(rulePanel, "Create", 70, 20)
+	local addRule = createButton(rulePanel, tr("UFGroupHealerBuffEditorCreate", "Create"), 70, 20)
 	addRule:SetPoint("TOPRIGHT", -10, -8)
 	addRule:SetSize(22, 20)
 	addRule:SetText("+")
 	setDangerButtonStyle(addRule)
 	rulePanel.AddButton = addRule
 
-	local ruleUp = createButton(rulePanel, "Up", 45, 20)
+	local ruleUp = createButton(rulePanel, tr("UFGroupHealerBuffEditorUp", "Up"), 45, 20)
 	ruleUp:SetPoint("TOPRIGHT", addRule, "TOPLEFT", -6, 0)
 	rulePanel.UpButton = ruleUp
 
-	local ruleDown = createButton(rulePanel, "Down", 45, 20)
+	local ruleDown = createButton(rulePanel, tr("UFGroupHealerBuffEditorDown", "Down"), 45, 20)
 	ruleDown:SetPoint("TOPRIGHT", ruleUp, "TOPLEFT", -6, 0)
 	rulePanel.DownButton = ruleDown
 
-	local deleteRule = createButton(rulePanel, "Delete", 65, 20)
+	local deleteRule = createButton(rulePanel, tr("UFGroupHealerBuffEditorDelete", "Delete"), 65, 20)
 	deleteRule:SetPoint("TOPRIGHT", ruleDown, "TOPLEFT", -6, 0)
 	rulePanel.DeleteButton = deleteRule
 	ruleUp:Hide()
@@ -1201,7 +1213,7 @@ function Editor:EnsureFrame()
 	applyCardBackground(previewPanel, false)
 	frame.PreviewPanel = previewPanel
 
-	local previewTitle = createLabel(previewPanel, "Live Preview", 12, "OUTLINE")
+	local previewTitle = createLabel(previewPanel, tr("UFGroupHealerBuffEditorLivePreview", "Live Preview"), 12, "OUTLINE")
 	previewTitle:SetPoint("TOPLEFT", 10, -10)
 	previewPanel.Title = previewTitle
 
@@ -1244,7 +1256,7 @@ function Editor:EnsureFrame()
 
 	local nameText = unitFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 	nameText:SetPoint("CENTER", unitFrame, "CENTER", 0, 4)
-	nameText:SetText("Preview Unit")
+	nameText:SetText(tr("UFGroupHealerBuffEditorPreviewUnit", "Preview Unit"))
 	unitFrame.NameText = nameText
 
 	unitFrame.SampleIcons = {}
@@ -1305,7 +1317,7 @@ function Editor:EnsureFrame()
 	applyCardBackground(settingsPanel, false)
 	frame.SettingsPanel = settingsPanel
 
-	local groupSettingsTitle = createLabel(settingsPanel, "Indicator Settings", 12, "OUTLINE")
+	local groupSettingsTitle = createLabel(settingsPanel, tr("UFGroupHealerBuffEditorIndicatorSettings", "Indicator Settings"), 12, "OUTLINE")
 	groupSettingsTitle:SetPoint("TOPLEFT", 14, -10)
 	settingsPanel.GroupSettingsTitle = groupSettingsTitle
 
@@ -1337,7 +1349,7 @@ function Editor:EnsureFrame()
 	end
 	frame._updateGroupControlScroll = updateGroupControlScroll
 
-	local ruleSettingsTitle = createLabel(settingsPanel, "Rule Settings", 12, "OUTLINE")
+	local ruleSettingsTitle = createLabel(settingsPanel, tr("UFGroupHealerBuffEditorRuleSettings", "Rule Settings"), 12, "OUTLINE")
 	ruleSettingsTitle:SetPoint("TOPLEFT", 572, -10)
 	settingsPanel.RuleSettingsTitle = ruleSettingsTitle
 
@@ -1347,13 +1359,13 @@ function Editor:EnsureFrame()
 
 	controls.GroupNameLabel = groupControlParent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	controls.GroupNameLabel:SetPoint("TOPLEFT", groupControlParent, "TOPLEFT", 0, 0)
-	controls.GroupNameLabel:SetText("Name")
+	controls.GroupNameLabel:SetText(tr("UFGroupHealerBuffEditorName", "Name"))
 	controls.GroupName = createEditBox(groupControlParent, 220)
 	controls.GroupName:SetPoint("TOPLEFT", controls.GroupNameLabel, "TOPRIGHT", 12, 0)
 
 	controls.GroupStyleLabel = groupControlParent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	controls.GroupStyleLabel:SetPoint("TOPLEFT", controls.GroupNameLabel, "BOTTOMLEFT", 0, -16)
-	controls.GroupStyleLabel:SetText("Style (locked)")
+	controls.GroupStyleLabel:SetText(tr("UFGroupHealerBuffEditorStyleLocked", "Style (locked)"))
 	controls.GroupStyleValue = groupControlParent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	controls.GroupStyleValue:SetPoint("LEFT", controls.GroupStyleLabel, "TOPRIGHT", 10, -2)
 	controls.GroupStyleValue:SetWidth(190)
@@ -1362,19 +1374,19 @@ function Editor:EnsureFrame()
 
 	controls.GroupAnchorLabel = groupControlParent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	controls.GroupAnchorLabel:SetPoint("TOPLEFT", controls.GroupStyleLabel, "BOTTOMLEFT", 0, -18)
-	controls.GroupAnchorLabel:SetText("Anchor")
+	controls.GroupAnchorLabel:SetText(tr("UFGroupHealerBuffEditorAnchor", "Anchor"))
 	controls.GroupAnchor = createDropdown(groupControlParent, 160)
 	controls.GroupAnchor:SetPoint("TOPLEFT", controls.GroupAnchorLabel, "TOPRIGHT", 0, 12)
 
 	controls.GroupGrowthLabel = groupControlParent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	controls.GroupGrowthLabel:SetPoint("TOPLEFT", controls.GroupAnchorLabel, "BOTTOMLEFT", 0, -18)
-	controls.GroupGrowthLabel:SetText("Growth")
+	controls.GroupGrowthLabel:SetText(tr("UFGroupHealerBuffEditorGrowth", "Growth"))
 	controls.GroupGrowth = createDropdown(groupControlParent, 160)
 	controls.GroupGrowth:SetPoint("TOPLEFT", controls.GroupGrowthLabel, "TOPRIGHT", 0, 12)
 
 	controls.GroupBarOrientationLabel = groupControlParent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	controls.GroupBarOrientationLabel:SetPoint("TOPLEFT", controls.GroupGrowthLabel, "BOTTOMLEFT", 0, -18)
-	controls.GroupBarOrientationLabel:SetText("Bar Orientation")
+	controls.GroupBarOrientationLabel:SetText(tr("UFGroupHealerBuffEditorBarOrientation", "Bar Orientation"))
 	controls.GroupBarOrientation = createDropdown(groupControlParent, 160)
 	controls.GroupBarOrientation:SetPoint("TOPLEFT", controls.GroupBarOrientationLabel, "TOPRIGHT", 0, 12)
 
@@ -1392,19 +1404,19 @@ function Editor:EnsureFrame()
 		return label, slider, valueText
 	end
 
-	controls.PerRowLabel, controls.PerRow, controls.PerRowValue = createSettingSlider(controls.GroupBarOrientationLabel, "Per Row", 1, 20, 1)
-	controls.MaxLabel, controls.MaxCount, controls.MaxValue = createSettingSlider(controls.PerRowLabel, "Max", 0, 40, 1)
-	controls.SpacingLabel, controls.Spacing, controls.SpacingValue = createSettingSlider(controls.MaxLabel, "Spacing", 0, 20, 1)
-	controls.SizeLabel, controls.Size, controls.SizeValue = createSettingSlider(controls.SpacingLabel, "Icon Size", 4, 64, 1)
-	controls.XLabel, controls.XOffset, controls.XValue = createSettingSlider(controls.SizeLabel, "X Offset", -200, 200, 1)
-	controls.YLabel, controls.YOffset, controls.YValue = createSettingSlider(controls.XLabel, "Y Offset", -200, 200, 1)
-	controls.ThicknessLabel, controls.Thickness, controls.ThicknessValue = createSettingSlider(controls.YLabel, "Bar Thickness", 1, 64, 1)
-	controls.InsetLabel, controls.Inset, controls.InsetValue = createSettingSlider(controls.ThicknessLabel, "Inset", 0, 40, 1)
-	controls.BorderSizeLabel, controls.BorderSize, controls.BorderSizeValue = createSettingSlider(controls.InsetLabel, "Border Size", 1, 16, 1)
+	controls.PerRowLabel, controls.PerRow, controls.PerRowValue = createSettingSlider(controls.GroupBarOrientationLabel, tr("UFGroupHealerBuffEditorPerRow", "Per Row"), 1, 20, 1)
+	controls.MaxLabel, controls.MaxCount, controls.MaxValue = createSettingSlider(controls.PerRowLabel, tr("UFGroupHealerBuffEditorMax", "Max"), 0, 40, 1)
+	controls.SpacingLabel, controls.Spacing, controls.SpacingValue = createSettingSlider(controls.MaxLabel, tr("UFGroupHealerBuffEditorSpacing", "Spacing"), 0, 20, 1)
+	controls.SizeLabel, controls.Size, controls.SizeValue = createSettingSlider(controls.SpacingLabel, tr("UFGroupHealerBuffEditorIconSize", "Icon Size"), 4, 64, 1)
+	controls.XLabel, controls.XOffset, controls.XValue = createSettingSlider(controls.SizeLabel, tr("UFGroupHealerBuffEditorXOffset", "X Offset"), -200, 200, 1)
+	controls.YLabel, controls.YOffset, controls.YValue = createSettingSlider(controls.XLabel, tr("UFGroupHealerBuffEditorYOffset", "Y Offset"), -200, 200, 1)
+	controls.ThicknessLabel, controls.Thickness, controls.ThicknessValue = createSettingSlider(controls.YLabel, tr("UFGroupHealerBuffEditorBarThickness", "Bar Thickness"), 1, 64, 1)
+	controls.InsetLabel, controls.Inset, controls.InsetValue = createSettingSlider(controls.ThicknessLabel, tr("UFGroupHealerBuffEditorInset", "Inset"), 0, 40, 1)
+	controls.BorderSizeLabel, controls.BorderSize, controls.BorderSizeValue = createSettingSlider(controls.InsetLabel, tr("UFGroupHealerBuffEditorBorderSize", "Border Size"), 1, 16, 1)
 
 	controls.ColorLabel = groupControlParent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	controls.ColorLabel:SetPoint("TOPLEFT", controls.BorderSizeLabel, "BOTTOMLEFT", 0, -22)
-	controls.ColorLabel:SetText("Color")
+	controls.ColorLabel:SetText(tr("UFGroupHealerBuffEditorColor", "Color"))
 	controls.ColorButton = CreateFrame("Button", nil, groupControlParent, "BackdropTemplate")
 	controls.ColorButton:SetSize(26, 26)
 	controls.ColorButton:SetPoint("TOPLEFT", controls.ColorLabel, "TOPRIGHT", 10, -2)
@@ -1506,21 +1518,21 @@ function Editor:EnsureFrame()
 	end
 	frame._layoutGroupControlRows = layoutGroupControlRows
 
-	controls.RuleEnabled = createCheck(settingsPanel, "Rule enabled")
+	controls.RuleEnabled = createCheck(settingsPanel, tr("UFGroupHealerBuffEditorRuleEnabled", "Rule enabled"))
 	controls.RuleEnabled:SetPoint("TOPLEFT", ruleSettingsTitle, "BOTTOMLEFT", 0, -10)
 
-	controls.RuleNot = createCheck(settingsPanel, "NOT (active when missing)")
+	controls.RuleNot = createCheck(settingsPanel, tr("UFGroupHealerBuffEditorRuleNot", "NOT (active when missing)"))
 	controls.RuleNot:SetPoint("TOPLEFT", controls.RuleEnabled, "BOTTOMLEFT", 0, -6)
 
-	controls.RuleAppliesParty = createCheck(settingsPanel, "Party")
+	controls.RuleAppliesParty = createCheck(settingsPanel, tr("UFGroupHealerBuffEditorParty", "Party"))
 	controls.RuleAppliesParty:SetPoint("TOPLEFT", controls.RuleNot, "BOTTOMLEFT", 0, -6)
 
-	controls.RuleAppliesRaid = createCheck(settingsPanel, "Raid")
+	controls.RuleAppliesRaid = createCheck(settingsPanel, tr("UFGroupHealerBuffEditorRaid", "Raid"))
 	controls.RuleAppliesRaid:SetPoint("TOPLEFT", controls.RuleAppliesParty, "BOTTOMLEFT", 0, -6)
 
 	controls.RuleIconModeLabel = settingsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	controls.RuleIconModeLabel:SetPoint("TOPLEFT", controls.RuleAppliesRaid, "BOTTOMLEFT", 0, -14)
-	controls.RuleIconModeLabel:SetText("Icon Rule Mode")
+	controls.RuleIconModeLabel:SetText(tr("UFGroupHealerBuffEditorIconRuleMode", "Icon Rule Mode"))
 	controls.RuleIconMode = createDropdown(settingsPanel, 260)
 	controls.RuleIconMode:SetPoint("TOPLEFT", controls.RuleIconModeLabel, "TOPRIGHT", 0, 12)
 	controls.RuleIconModeLabel:Hide()
@@ -1528,7 +1540,7 @@ function Editor:EnsureFrame()
 
 	controls.RuleMatchLabel = settingsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	controls.RuleMatchLabel:SetPoint("TOPLEFT", controls.RuleAppliesRaid, "BOTTOMLEFT", 0, -14)
-	controls.RuleMatchLabel:SetText("Tint Trigger")
+	controls.RuleMatchLabel:SetText(tr("UFGroupHealerBuffEditorTintTrigger", "Tint Trigger"))
 	controls.RuleMatch = createDropdown(settingsPanel, 260)
 	controls.RuleMatch:SetPoint("TOPLEFT", controls.RuleMatchLabel, "TOPRIGHT", 0, 12)
 	controls.RuleMatchLabel:Hide()
@@ -1539,7 +1551,7 @@ function Editor:EnsureFrame()
 	controls.RuleInfo:SetPoint("RIGHT", settingsPanel, "RIGHT", -14, 0)
 	controls.RuleInfo:SetJustifyH("LEFT")
 	controls.RuleInfo:SetTextColor(0.75, 0.75, 0.75, 1)
-	controls.RuleInfo:SetText("Add rules via + and remove them via x in the list.")
+	controls.RuleInfo:SetText(tr("UFGroupHealerBuffEditorRuleInfoDefaultHint", "Add rules via + and remove them via x in the list."))
 
 	self.frame = frame
 	self.groupOffset = 0
@@ -1551,9 +1563,9 @@ function Editor:EnsureFrame()
 		if not placement then return end
 		style = tostring(style or "ICON")
 		local newId = HB.GetNextGroupId and HB.GetNextGroupId(placement) or tostring((#placement.groupOrder or 0) + 1)
-		local group = HB.CreateDefaultGroup and HB.CreateDefaultGroup(newId) or { id = newId, name = "Indicator " .. newId, style = style }
+		local group = HB.CreateDefaultGroup and HB.CreateDefaultGroup(newId) or { id = newId, name = formatIndicatorName(newId), style = style }
 		group.style = style
-		if group.name == nil or group.name == "" or tostring(group.name):match("^Group%s+") then group.name = "Indicator " .. newId end
+		if group.name == nil or group.name == "" or tostring(group.name):match("^Group%s+") then group.name = formatIndicatorName(newId) end
 		if style == "TINT" then
 			group.color = group.color or { 1, 0.82, 0.1, 0.22 }
 			if (group.color[4] or 1) > 0.35 then group.color[4] = 0.22 end
@@ -1683,7 +1695,7 @@ function Editor:EnsureFrame()
 			end
 			do
 				local info = UIDropDownMenu_CreateInfo()
-				info.text = "Add all spells"
+				info.text = tr("UFGroupHealerBuffEditorAddAllSpells", "Add all spells")
 				info.notCheckable = true
 				info.disabled = #allAvailableFamilyIds == 0
 				if #allAvailableFamilyIds > 0 then
@@ -1723,7 +1735,7 @@ function Editor:EnsureFrame()
 			end
 			do
 				local info = UIDropDownMenu_CreateInfo()
-				info.text = "Add all"
+				info.text = tr("UFGroupHealerBuffEditorAddAll", "Add all")
 				info.notCheckable = true
 				info.disabled = #classAvailableFamilyIds == 0
 				if #classAvailableFamilyIds > 0 then
@@ -2047,7 +2059,7 @@ function Editor:EnsureFrame()
 		local group = groupFromSelection()
 		if not group then return end
 		local text = self:GetText()
-		if text == nil or text == "" then text = "Indicator " .. tostring(group.id or "") end
+		if text == nil or text == "" then text = formatIndicatorName(group.id) end
 		group.name = text
 		self:ClearFocus()
 		Editor:RefreshGroupList()
@@ -2059,7 +2071,7 @@ function Editor:EnsureFrame()
 		local group = groupFromSelection()
 		if not group then return end
 		local text = self:GetText()
-		if text == nil or text == "" then text = "Indicator " .. tostring(group.id or "") end
+		if text == nil or text == "" then text = formatIndicatorName(group.id) end
 		group.name = text
 		Editor:RefreshGroupList()
 		Editor:RefreshRuleList()
@@ -2153,8 +2165,8 @@ function Editor:EnsureFrame()
 	end)
 
 	setDropdown(controls.RuleIconMode, HB.ICON_MODE_OPTIONS or {
-		{ value = "ALL", label = "Show All Active Spells" },
-		{ value = "PRIORITY", label = "Show Highest Priority Only" },
+		{ value = "ALL", label = tr("UFGroupHealerBuffIconModeAll", "Show All Active Spells") },
+		{ value = "PRIORITY", label = tr("UFGroupHealerBuffIconModePriority", "Show Highest Priority Only") },
 	}, nil, function(value)
 		local _, placement = Editor:GetContext()
 		if not placement then return end
@@ -2169,8 +2181,8 @@ function Editor:EnsureFrame()
 	end)
 
 	setDropdown(controls.RuleMatch, HB.RULE_MATCH_OPTIONS or {
-		{ value = "ANY", label = "Require Any Spell" },
-		{ value = "ALL", label = "Require All Spells" },
+		{ value = "ANY", label = tr("UFGroupHealerBuffRuleMatchAny", "Require Any Spell") },
+		{ value = "ALL", label = tr("UFGroupHealerBuffRuleMatchAll", "Require All Spells") },
 	}, nil, function(value)
 		local _, placement = Editor:GetContext()
 		if not placement then return end
@@ -2220,7 +2232,7 @@ function Editor:RefreshGroupList()
 			row.groupId = groupId
 			row:Show()
 			if row.DeleteButton then row.DeleteButton:Show() end
-			local label = string.format("%d. %s  [%s]", index, tostring(group.name or ("Indicator " .. tostring(groupId))), tostring(group.style or "ICON"))
+			local label = string.format(tr("UFGroupHealerBuffEditorGroupRowFormat", "%d. %s  [%s]"), index, tostring(group.name or formatIndicatorName(groupId)), tostring(group.style or "ICON"))
 			row.Text:SetText(label)
 			if groupId == self.selectedGroupId then
 				row:SetBackdropColor(0.12, 0.19, 0.3, 0.95)
@@ -2244,7 +2256,8 @@ function Editor:RefreshRuleList()
 	local rows = frame.RulePanel.Rows
 	if frame.RulePanel and frame.RulePanel.Title then
 		local groupLabel = (placement and self.selectedGroupId) and getGroupLabel(placement, self.selectedGroupId) or nil
-		frame.RulePanel.Title:SetText(groupLabel and ("Spell Rules - " .. groupLabel) or "Spell Rules")
+		local titleFormat = tr("UFGroupHealerBuffEditorSpellRulesGroupFormat", "Spell Rules - %s")
+		frame.RulePanel.Title:SetText(groupLabel and string.format(titleFormat, groupLabel) or tr("UFGroupHealerBuffEditorSpellRules", "Spell Rules"))
 	end
 	if not placement then
 		for i = 1, #rows do
@@ -2279,19 +2292,19 @@ function Editor:RefreshRuleList()
 			row:Show()
 			if row.DeleteButton then row.DeleteButton:Show() end
 			local familyLabel = getFamilyLabel(rule.spellFamilyId, true)
-			local marker = rule["not"] and " [NOT]" or ""
-			local state = (rule.enabled ~= false) and "" or " [OFF]"
+			local marker = rule["not"] and tr("UFGroupHealerBuffEditorRuleMarkerNot", " [NOT]") or ""
+			local state = (rule.enabled ~= false) and "" or tr("UFGroupHealerBuffEditorRuleMarkerOff", " [OFF]")
 			local appliesParty = rule.appliesParty ~= false
 			local appliesRaid = rule.appliesRaid ~= false
-			local scope = " [NONE]"
+			local scope = tr("UFGroupHealerBuffEditorScopeMarkerNone", " [NONE]")
 			if appliesParty and appliesRaid then
-				scope = " [P/R]"
+				scope = tr("UFGroupHealerBuffEditorScopeMarkerPartyRaid", " [P/R]")
 			elseif appliesParty then
-				scope = " [P]"
+				scope = tr("UFGroupHealerBuffEditorScopeMarkerParty", " [P]")
 			elseif appliesRaid then
-				scope = " [R]"
+				scope = tr("UFGroupHealerBuffEditorScopeMarkerRaid", " [R]")
 			end
-			local label = string.format("%d. %s%s%s%s", index, familyLabel, scope, marker, state)
+			local label = string.format(tr("UFGroupHealerBuffEditorRuleRowFormat", "%d. %s%s%s%s"), index, familyLabel, scope, marker, state)
 			row.Text:SetText(label)
 			if ruleId == self.selectedRuleId then
 				row:SetBackdropColor(0.12, 0.19, 0.3, 0.95)
@@ -2324,14 +2337,16 @@ function Editor:RefreshRuleControls()
 	local selectedGroupStyle = tostring(selectedGroup and selectedGroup.style or "")
 	local showIconRuleMode = selectedGroupStyle == "ICON" or selectedGroupStyle == "SQUARE"
 	local showTintRuleMatch = selectedGroupStyle == "TINT"
-	local iconModeOptions = HB.ICON_MODE_OPTIONS or {
-		{ value = "ALL", label = "Show All Active Spells" },
-		{ value = "PRIORITY", label = "Show Highest Priority Only" },
-	}
-	local ruleMatchOptions = HB.RULE_MATCH_OPTIONS or {
-		{ value = "ANY", label = "Require Any Spell" },
-		{ value = "ALL", label = "Require All Spells" },
-	}
+	local iconModeOptions = HB.ICON_MODE_OPTIONS
+		or {
+			{ value = "ALL", label = tr("UFGroupHealerBuffIconModeAll", "Show All Active Spells") },
+			{ value = "PRIORITY", label = tr("UFGroupHealerBuffIconModePriority", "Show Highest Priority Only") },
+		}
+	local ruleMatchOptions = HB.RULE_MATCH_OPTIONS
+		or {
+			{ value = "ANY", label = tr("UFGroupHealerBuffRuleMatchAny", "Require Any Spell") },
+			{ value = "ALL", label = tr("UFGroupHealerBuffRuleMatchAll", "Require All Spells") },
+		}
 
 	setControlVisible(controls.RuleIconModeLabel, showIconRuleMode)
 	setControlVisible(controls.RuleIconMode, showIconRuleMode)
@@ -2363,13 +2378,17 @@ function Editor:RefreshRuleControls()
 	setControlEnabled(controls.RuleAppliesRaid, rule ~= nil)
 	setControlEnabled(frame.RulePanel and frame.RulePanel.AddButton, self.selectedGroupId ~= nil)
 	if controls.RuleInfo then
-		local groupLabel = placement and self.selectedGroupId and getGroupLabel(placement, self.selectedGroupId) or "selected indicator"
+		local groupLabel = placement and self.selectedGroupId and getGroupLabel(placement, self.selectedGroupId) or tr("UFGroupHealerBuffEditorSelectedIndicator", "selected indicator")
 		if showTintRuleMatch then
-			controls.RuleInfo:SetText("Showing rules for " .. groupLabel .. ". Scope is set per rule (Party/Raid). Tint can require any or all active spells.")
+			controls.RuleInfo:SetText(
+				string.format(tr("UFGroupHealerBuffEditorRuleInfoTint", "Showing rules for %s. Scope is set per rule (Party/Raid). Tint can require any or all active spells."), groupLabel)
+			)
 		elseif showIconRuleMode then
-			controls.RuleInfo:SetText("Showing rules for " .. groupLabel .. ". Scope is set per rule (Party/Raid). Priority follows the rule order in this list.")
+			controls.RuleInfo:SetText(
+				string.format(tr("UFGroupHealerBuffEditorRuleInfoIcon", "Showing rules for %s. Scope is set per rule (Party/Raid). Priority follows the rule order in this list."), groupLabel)
+			)
 		else
-			controls.RuleInfo:SetText("Showing rules for " .. groupLabel .. ". Scope is set per rule (Party/Raid). Add via +, remove via x.")
+			controls.RuleInfo:SetText(string.format(tr("UFGroupHealerBuffEditorRuleInfoDefault", "Showing rules for %s. Scope is set per rule (Party/Raid). Add via +, remove via x."), groupLabel))
 		end
 	end
 end
@@ -2734,7 +2753,7 @@ end
 function Editor:RefreshControls()
 	local frame = self:EnsureFrame()
 	local _, placement = self:GetContext()
-	if frame.KindValue then frame.KindValue:SetText("Shared (Party + Raid)") end
+	if frame.KindValue then frame.KindValue:SetText(tr("UFGroupHealerBuffEditorScopeShared", "Shared (Party + Raid)")) end
 	if frame.EnabledCheck and placement then frame.EnabledCheck:SetChecked(placement.enabled == true) end
 	self:RefreshGroupControls()
 	self:RefreshRuleControls()

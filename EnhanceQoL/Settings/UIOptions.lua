@@ -571,6 +571,19 @@ local function createLabelControls(category, expandable)
 		parentSection = expandable,
 	})
 
+	addon.functions.SettingsCreateColorPicker(category, {
+		var = "actionBarMacroFontColor",
+		text = L["actionBarMacroFontColor"] or "Macro text color",
+		callback = function()
+			if ActionBarLabels and ActionBarLabels.RefreshAllMacroNameVisibility then ActionBarLabels.RefreshAllMacroNameVisibility() end
+		end,
+		parent = true,
+		element = macroOverride.element,
+		parentCheck = macroParentCheck,
+		colorizeLabel = false,
+		parentSection = expandable,
+	})
+
 	local hotkeyOverride = addon.functions.SettingsCreateCheckbox(category, {
 		var = "actionBarHotkeyFontOverride",
 		text = L["actionBarHotkeyFontOverride"] or "Change keybind font",
@@ -652,6 +665,19 @@ local function createLabelControls(category, expandable)
 		parentSection = expandable,
 	})
 
+	addon.functions.SettingsCreateColorPicker(category, {
+		var = "actionBarHotkeyFontColor",
+		text = L["actionBarHotkeyFontColor"] or "Keybind text color",
+		callback = function()
+			if ActionBarLabels and ActionBarLabels.RefreshAllHotkeyStyles then ActionBarLabels.RefreshAllHotkeyStyles() end
+		end,
+		parent = true,
+		element = hotkeyOverride.element,
+		parentCheck = hotkeyParentCheck,
+		colorizeLabel = false,
+		parentSection = expandable,
+	})
+
 	local countOverride = addon.functions.SettingsCreateCheckbox(category, {
 		var = "actionBarCountFontOverride",
 		text = L["actionBarCountFontOverride"] or "Change charge/stack font",
@@ -726,6 +752,19 @@ local function createLabelControls(category, expandable)
 		parent = true,
 		element = countOverride.element,
 		parentCheck = countParentCheck,
+		parentSection = expandable,
+	})
+
+	addon.functions.SettingsCreateColorPicker(category, {
+		var = "actionBarCountFontColor",
+		text = L["actionBarCountFontColor"] or "Charge/stack text color",
+		callback = function()
+			if ActionBarLabels and ActionBarLabels.RefreshAllCountStyles then ActionBarLabels.RefreshAllCountStyles() end
+		end,
+		parent = true,
+		element = countOverride.element,
+		parentCheck = countParentCheck,
+		colorizeLabel = false,
 		parentSection = expandable,
 	})
 

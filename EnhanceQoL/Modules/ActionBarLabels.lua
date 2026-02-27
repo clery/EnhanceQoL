@@ -412,12 +412,16 @@ local function UpdateMacroNameVisibility(button, hide)
 	end
 end
 
+local ApplyTextColorOverride
+local RestoreTextColorOverride
+
 function Labels.RefreshAllMacroNameVisibility()
 	local hide = addon.db and addon.db.hideMacroNames
 	local overrideEnabled = addon.db and addon.db.actionBarMacroFontOverride and not hide
 	local fontFace = addon.db and addon.db.actionBarMacroFontFace or addon.variables.defaultFont
 	local fontSize = tonumber(addon.db and addon.db.actionBarMacroFontSize) or 12
 	local fontOutline = addon.db and addon.db.actionBarMacroFontOutline or "OUTLINE"
+	local fontColor = addon.db and addon.db.actionBarMacroFontColor
 	if fontSize < 6 then fontSize = 6 end
 	if fontSize > 32 then fontSize = 32 end
 	ForEachActionButton(function(button, info)
@@ -433,14 +437,18 @@ function Labels.RefreshAllMacroNameVisibility()
 					local ok = nameFrame:SetFont(fontFace or addon.variables.defaultFont, fontSize, fontOutline or "OUTLINE")
 					if not ok then nameFrame:SetFont(addon.variables.defaultFont, fontSize, fontOutline or "OUTLINE") end
 					nameFrame.EQOL_UsingMacroOverride = true
-				elseif nameFrame.EQOL_UsingMacroOverride then
-					local orig = nameFrame.EQOL_OriginalMacroFont or {}
-					local face = orig.face or addon.variables.defaultFont
-					local size = orig.size or 12
-					local outline = orig.outline or "OUTLINE"
-					nameFrame:SetFont(face, size, outline)
-					nameFrame.EQOL_UsingMacroOverride = nil
-					nameFrame.EQOL_OriginalMacroFont = nil
+					ApplyTextColorOverride(nameFrame, fontColor, "EQOL_OriginalMacroColor", "EQOL_UsingMacroColorOverride")
+				else
+					if nameFrame.EQOL_UsingMacroOverride then
+						local orig = nameFrame.EQOL_OriginalMacroFont or {}
+						local face = orig.face or addon.variables.defaultFont
+						local size = orig.size or 12
+						local outline = orig.outline or "OUTLINE"
+						nameFrame:SetFont(face, size, outline)
+						nameFrame.EQOL_UsingMacroOverride = nil
+						nameFrame.EQOL_OriginalMacroFont = nil
+					end
+					RestoreTextColorOverride(nameFrame, "EQOL_OriginalMacroColor", "EQOL_UsingMacroColorOverride")
 				end
 			end
 		end
@@ -476,6 +484,48 @@ local function ApplyFontWithFallback(region, face, size, outline)
 	if not ok then region:SetFont(addon.variables.defaultFont, size, outline or "OUTLINE") end
 end
 
+local function NormalizeColorComponent(value, fallback)
+	local number = tonumber(value)
+	if number == nil then number = fallback or 1 end
+	if number < 0 then
+		number = 0
+	elseif number > 1 then
+		number = 1
+	end
+	return number
+end
+
+local function NormalizeTextColor(color, fallbackR, fallbackG, fallbackB, fallbackA)
+	if type(color) ~= "table" then return fallbackR or 1, fallbackG or 1, fallbackB or 1, fallbackA or 1 end
+	local r = NormalizeColorComponent(color.r, fallbackR or 1)
+	local g = NormalizeColorComponent(color.g, fallbackG or 1)
+	local b = NormalizeColorComponent(color.b, fallbackB or 1)
+	local a = NormalizeColorComponent(color.a, fallbackA or 1)
+	return r, g, b, a
+end
+
+ApplyTextColorOverride = function(region, configuredColor, originalKey, activeKey)
+	if not region or not region.SetTextColor then return end
+	if not region[originalKey] then
+		local r, g, b, a = region:GetTextColor()
+		region[originalKey] = { r = r or 1, g = g or 1, b = b or 1, a = a or 1 }
+	end
+	local fallback = region[originalKey] or {}
+	local r, g, b, a = NormalizeTextColor(configuredColor, fallback.r or 1, fallback.g or 1, fallback.b or 1, fallback.a or 1)
+	region:SetTextColor(r, g, b, a)
+	region[activeKey] = true
+end
+
+RestoreTextColorOverride = function(region, originalKey, activeKey)
+	if not region or not region.SetTextColor then return end
+	if not region[activeKey] then return end
+	local original = region[originalKey] or {}
+	local r, g, b, a = NormalizeTextColor(original, 1, 1, 1, 1)
+	region:SetTextColor(r, g, b, a)
+	region[activeKey] = nil
+	region[originalKey] = nil
+end
+
 local function ApplyCountStyling(button)
 	if not addon.db then return end
 	local count = GetActionButtonCount(button)
@@ -483,6 +533,7 @@ local function ApplyCountStyling(button)
 	local face = addon.db.actionBarCountFontFace or addon.variables.defaultFont
 	local size = NormalizeFontSize(addon.db.actionBarCountFontSize, 6, 32)
 	local outline = addon.db.actionBarCountFontOutline or "OUTLINE"
+	local fontColor = addon.db.actionBarCountFontColor
 	if addon.db.actionBarCountFontOverride then
 		if not count.EQOL_OriginalCountFont then
 			local oface, osize, ooutline = count:GetFont()
@@ -490,14 +541,18 @@ local function ApplyCountStyling(button)
 		end
 		ApplyFontWithFallback(count, face, size, outline)
 		count.EQOL_UsingCountOverride = true
-	elseif count.EQOL_UsingCountOverride then
-		local orig = count.EQOL_OriginalCountFont or {}
-		local restoreFace = orig.face or addon.variables.defaultFont
-		local restoreSize = orig.size or size
-		local restoreOutline = orig.outline or "OUTLINE"
-		ApplyFontWithFallback(count, restoreFace, restoreSize, restoreOutline)
-		count.EQOL_UsingCountOverride = nil
-		count.EQOL_OriginalCountFont = nil
+		ApplyTextColorOverride(count, fontColor, "EQOL_OriginalCountColor", "EQOL_UsingCountColorOverride")
+	else
+		if count.EQOL_UsingCountOverride then
+			local orig = count.EQOL_OriginalCountFont or {}
+			local restoreFace = orig.face or addon.variables.defaultFont
+			local restoreSize = orig.size or size
+			local restoreOutline = orig.outline or "OUTLINE"
+			ApplyFontWithFallback(count, restoreFace, restoreSize, restoreOutline)
+			count.EQOL_UsingCountOverride = nil
+			count.EQOL_OriginalCountFont = nil
+		end
+		RestoreTextColorOverride(count, "EQOL_OriginalCountColor", "EQOL_UsingCountColorOverride")
 	end
 end
 
@@ -630,6 +685,7 @@ local function ApplyHotkeyStyling(button)
 	local face = addon.db.actionBarHotkeyFontFace or addon.variables.defaultFont
 	local size = NormalizeFontSize(addon.db.actionBarHotkeyFontSize, 6, 32)
 	local outline = addon.db.actionBarHotkeyFontOutline or "OUTLINE"
+	local fontColor = addon.db.actionBarHotkeyFontColor
 	if addon.db.actionBarHotkeyFontOverride then
 		if not hotkey.EQOL_OriginalHotkeyFont then
 			local oface, osize, ooutline = hotkey:GetFont()
@@ -637,14 +693,18 @@ local function ApplyHotkeyStyling(button)
 		end
 		ApplyFontWithFallback(hotkey, face, size, outline)
 		hotkey.EQOL_UsingHotkeyOverride = true
-	elseif hotkey.EQOL_UsingHotkeyOverride then
-		local orig = hotkey.EQOL_OriginalHotkeyFont or {}
-		local restoreFace = orig.face or addon.variables.defaultFont
-		local restoreSize = orig.size or size
-		local restoreOutline = orig.outline or "OUTLINE"
-		ApplyFontWithFallback(hotkey, restoreFace, restoreSize, restoreOutline)
-		hotkey.EQOL_UsingHotkeyOverride = nil
-		hotkey.EQOL_OriginalHotkeyFont = nil
+		ApplyTextColorOverride(hotkey, fontColor, "EQOL_OriginalHotkeyColor", "EQOL_UsingHotkeyColorOverride")
+	else
+		if hotkey.EQOL_UsingHotkeyOverride then
+			local orig = hotkey.EQOL_OriginalHotkeyFont or {}
+			local restoreFace = orig.face or addon.variables.defaultFont
+			local restoreSize = orig.size or size
+			local restoreOutline = orig.outline or "OUTLINE"
+			ApplyFontWithFallback(hotkey, restoreFace, restoreSize, restoreOutline)
+			hotkey.EQOL_UsingHotkeyOverride = nil
+			hotkey.EQOL_OriginalHotkeyFont = nil
+		end
+		RestoreTextColorOverride(hotkey, "EQOL_OriginalHotkeyColor", "EQOL_UsingHotkeyColorOverride")
 	end
 
 	local barName = DetermineButtonBarName(button)

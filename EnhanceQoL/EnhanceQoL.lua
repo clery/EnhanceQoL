@@ -4056,6 +4056,32 @@ local function initUI()
 
 	if addon.functions.applyMinimapClusterClamp then addon.functions.applyMinimapClusterClamp() end
 
+	local function setMinimapClusterScaleKeepingPosition(scale)
+		if not MinimapCluster or not MinimapCluster.SetScale then return end
+
+		local point, relativeTo, relativePoint, xOfs, yOfs = MinimapCluster:GetPoint(1)
+		local beforeX, beforeY = MinimapCluster:GetCenter()
+
+		MinimapCluster:SetScale(scale)
+
+		if not point or not beforeX or not beforeY then return end
+		if InCombatLockdown and InCombatLockdown() and MinimapCluster.IsProtected and MinimapCluster:IsProtected() then return end
+
+		local afterX, afterY = MinimapCluster:GetCenter()
+		if not afterX or not afterY then return end
+
+		local deltaX = beforeX - afterX
+		local deltaY = beforeY - afterY
+		if math.abs(deltaX) < 0.01 and math.abs(deltaY) < 0.01 then return end
+
+		local relative = relativeTo or UIParent
+		local relativeScale = (relative and relative.GetEffectiveScale and relative:GetEffectiveScale()) or (UIParent and UIParent.GetEffectiveScale and UIParent:GetEffectiveScale()) or 1
+		if relativeScale == 0 then relativeScale = 1 end
+
+		MinimapCluster:ClearAllPoints()
+		MinimapCluster:SetPoint(point, relative, relativePoint or point, (xOfs or 0) + (deltaX / relativeScale), (yOfs or 0) + (deltaY / relativeScale))
+	end
+
 	function addon.functions.applyMinimapClusterScale()
 		if not MinimapCluster or not MinimapCluster.SetScale then return end
 		if addon.db and addon.db.enableMinimapClusterScale then
@@ -4065,9 +4091,9 @@ local function initUI()
 			elseif scale > 2 then
 				scale = 2
 			end
-			MinimapCluster:SetScale(scale)
+			setMinimapClusterScaleKeepingPosition(scale)
 		else
-			MinimapCluster:SetScale(1)
+			setMinimapClusterScaleKeepingPosition(1)
 		end
 	end
 

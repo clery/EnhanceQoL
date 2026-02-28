@@ -1,5 +1,13 @@
 # Changelog
 
+## [8.3.2] - 2026-02-28
+
+### 🐛 Fixed
+
+- Minimap: Fixed slight position drift when changing Minimap Cluster scale.
+
+---
+
 ## [8.3.1] - 2026-02-28
 
 ### 🐛 Fixed

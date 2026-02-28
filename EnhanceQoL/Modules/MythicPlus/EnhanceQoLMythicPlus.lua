@@ -269,18 +269,10 @@ local function setBRInfo(info)
 			brButton.cooldownFrame.startTime = info.cooldownStartTime
 			brButton.cooldownFrame.charges = C_StringUtil.TruncateWhenZero(current)
 
-			-- TODO actually no way to do saturation stuff in m+/raid in midnight
-			-- if current > 0 then
 			brButton.charges:SetTextColor(0, 1, 0)
 			brButton.icon:SetDesaturated(false)
 			brButton.cooldownFrame:SetSwipeColor(0, 0, 0, 0.3)
 			brButton.charges:Show()
-			-- else
-			-- 	brButton.cooldownFrame:SetSwipeColor(0, 0, 0, 1)
-			-- 	brButton.icon:SetDesaturated(true)
-			-- 	brButton.charges:SetTextColor(1, 0, 0)
-			-- 	brButton.charges:Hide()
-			-- end
 		elseif current < max then
 			if brButton.cooldownFrame.charges ~= current or brButton.cooldownFrame.startTime ~= info.cooldownStartTime then
 				brButton.cooldownFrame:SetCooldown(info.cooldownStartTime, info.cooldownDuration, info.chargeModRate)

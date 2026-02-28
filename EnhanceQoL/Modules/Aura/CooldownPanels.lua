@@ -1949,7 +1949,9 @@ local function applyStaticText(icon, entry, defaultFontPath, defaultFontSize, de
 	local fontPath = Helper.ResolveFontPath(entry.staticTextFont, defaultFontPath)
 	local fontSize = Helper.ClampInt(entry.staticTextSize, 6, 64, defaultFontSize or 12)
 	local fontStyle = Helper.NormalizeFontStyle(entry.staticTextStyle, defaultFontStyle) or ""
+	local fontColor = Helper.NormalizeColor(entry.staticTextColor, Helper.ENTRY_DEFAULTS.staticTextColor or { 1, 1, 1, 1 })
 	icon.staticText:SetFont(fontPath, fontSize, fontStyle)
+	icon.staticText:SetTextColor(fontColor[1] or 1, fontColor[2] or 1, fontColor[3] or 1, fontColor[4] or 1)
 	icon.staticText:ClearAllPoints()
 	local anchor = Helper.NormalizeAnchor(entry.staticTextAnchor, "CENTER")
 	local x = Helper.ClampInt(entry.staticTextX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0)
@@ -6129,6 +6131,7 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 		staticTextFont = true,
 		staticTextSize = true,
 		staticTextStyle = true,
+		staticTextColor = true,
 		staticTextAnchor = true,
 		staticTextX = true,
 		staticTextY = true,
@@ -7083,6 +7086,24 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 							updateStaticTextEntry(entry, "staticTextStyle", option.value)
 						end)
 					end
+				end,
+			},
+			{
+				name = L["CooldownPanelStaticTextColor"] or _G.COLOR or "Color",
+				kind = SettingType.Color,
+				parentId = "cooldownPanelStaticText",
+				hasOpacity = true,
+				isShown = function() return hasStaticTextEntries() end,
+				default = Helper.NormalizeColor(Helper.ENTRY_DEFAULTS.staticTextColor, { 1, 1, 1, 1 }),
+				get = function()
+					local entry = getStaticTextEntry()
+					local color = Helper.NormalizeColor(entry and entry.staticTextColor, Helper.ENTRY_DEFAULTS.staticTextColor or { 1, 1, 1, 1 })
+					return { r = color[1], g = color[2], b = color[3], a = color[4] }
+				end,
+				set = function(_, value)
+					local entry = getStaticTextEntry()
+					if not entry then return end
+					updateStaticTextEntry(entry, "staticTextColor", Helper.NormalizeColor(value, Helper.ENTRY_DEFAULTS.staticTextColor or { 1, 1, 1, 1 }))
 				end,
 			},
 			{

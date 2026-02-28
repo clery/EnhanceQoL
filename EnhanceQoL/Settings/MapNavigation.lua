@@ -916,6 +916,20 @@ data = {
 				parentSection = mapExpandable,
 				children = {
 					{
+						var = "squareMinimapStatsLocationShowZone",
+						text = L["squareMinimapStatsLocationShowZone"] or "Show zone",
+						func = function(value)
+							addon.db["squareMinimapStatsLocationShowZone"] = value and true or false
+							applySquareMinimapStatsNow(true)
+						end,
+						default = true,
+						sType = "checkbox",
+						parent = true,
+						parentCheck = isSquareMinimapStatElementEnabled("squareMinimapStatsLocation"),
+						notify = "squareMinimapStatsLocation",
+						parentSection = mapExpandable,
+					},
+					{
 						var = "squareMinimapStatsLocationShowSubzone",
 						text = L["squareMinimapStatsLocationShowSubzone"] or "Show subzone",
 						func = function(value)
@@ -2143,6 +2157,7 @@ local squareMinimapStatsDefaults = {
 	squareMinimapStatsLocationOffsetY = -3,
 	squareMinimapStatsLocationFontSize = 12,
 	squareMinimapStatsLocationColor = { r = 1, g = 1, b = 1, a = 1 },
+	squareMinimapStatsLocationShowZone = true,
 	squareMinimapStatsLocationShowSubzone = false,
 	squareMinimapStatsLocationUseZoneColor = true,
 	squareMinimapStatsCoordinates = true,
@@ -2406,13 +2421,23 @@ local function getSquareMinimapLocationText()
 	local zone = GetZoneText and GetZoneText() or nil
 	if not zone or zone == "" then zone = GetRealZoneText and GetRealZoneText() or "" end
 	local subzone = GetSubZoneText and GetSubZoneText() or ""
+	local showZone = addon.db.squareMinimapStatsLocationShowZone ~= false
 	local showSubzone = addon.db.squareMinimapStatsLocationShowSubzone ~= false
-	if showSubzone and subzone ~= "" and subzone ~= zone then
-		if zone and zone ~= "" then return zone .. " - " .. subzone end
+	if not showZone and not showSubzone then return "" end
+	if showZone and showSubzone then
+		if subzone ~= "" and subzone ~= zone then
+			if zone and zone ~= "" then return zone .. " - " .. subzone end
+			return subzone
+		end
+		if zone and zone ~= "" then return zone end
 		return subzone
 	end
-	if zone and zone ~= "" then return zone end
-	return subzone
+	if showZone then
+		if zone and zone ~= "" then return zone end
+		return subzone
+	end
+	if showSubzone and subzone ~= "" and subzone ~= zone then return subzone end
+	return ""
 end
 
 local function getSquareMinimapCoordinatesText()

@@ -4639,6 +4639,7 @@ local function setPowerbars(opts)
 		local bar = powerbar[pType]
 		if bar then
 			bar._cfg = specCfg and specCfg[pType] or nil
+			bar._rbDesiredVisible = wantVisible and true or false
 			if wantVisible then
 				if not bar:IsShown() then bar:Show() end
 			else
@@ -4652,6 +4653,7 @@ local function setPowerbars(opts)
 		local healthCfg = specCfg and specCfg.HEALTH or nil
 		healthBar._cfg = healthCfg
 		local showHealth = healthCfg and healthCfg.enabled == true
+		healthBar._rbDesiredVisible = showHealth and true or false
 		if showHealth then
 			if not healthBar:IsShown() then healthBar:Show() end
 		else
@@ -5080,6 +5082,10 @@ function applyVisibilityDriverToFrame(frame, expression)
 	end
 	if frame._rbVisibilityDriver == expression then return end
 	if RegisterStateDriver then
+		if frame._rbVisibilityDriver and UnregisterStateDriver then
+			pcall(UnregisterStateDriver, frame, "visibility")
+			frame._rbVisibilityDriver = nil
+		end
 		local ok = pcall(RegisterStateDriver, frame, "visibility", expression)
 		if ok then frame._rbVisibilityDriver = expression end
 	end
@@ -5114,6 +5120,18 @@ function ResourceBars.ApplyVisibilityPreference(context)
 		local cfg = resolveBarConfigForFrame(pType, frame)
 		local barEnabled = cfg and cfg.enabled == true
 		if barEnabled then
+			local runtimeVisible = not frame or frame._rbDesiredVisible ~= false
+			if not runtimeVisible then
+				if canApplyDriver then applyVisibilityDriverToFrame(frame, nil) end
+				if frame and frame._rbManualVisibilityHidden then
+					frame._rbManualVisibilityHidden = nil
+					releasedManualHidden = true
+				end
+				if frame and frame:IsShown() then frame:Hide() end
+				if ResourceBars.ApplyClientSceneAlphaToFrame then ResourceBars.ApplyClientSceneAlphaToFrame(frame, false) end
+				return
+			end
+
 			local hideInClientScene = not editModeActive and ResourceBars.ShouldHideInClientScene and ResourceBars.ShouldHideInClientScene(cfg) and ResourceBars._clientSceneOpen == true
 			if editModeActive then
 				if canApplyDriver then applyVisibilityDriverToFrame(frame, "show") end
@@ -5418,6 +5436,7 @@ function ResourceBars.DisableResourceBars()
 	end
 	if healthBar then
 		applyVisibilityDriverToFrame(healthBar, nil)
+		healthBar._rbDesiredVisible = nil
 		if healthBar.absorbBar then
 			local absorbBar = healthBar.absorbBar
 			absorbBar:SetMinMaxValues(0, 1)
@@ -5435,6 +5454,7 @@ function ResourceBars.DisableResourceBars()
 		if bar then
 			applyVisibilityDriverToFrame(bar, nil)
 			bar._rbManualVisibilityHidden = nil
+			bar._rbDesiredVisible = nil
 			bar:Hide()
 			if pType == "RUNES" then deactivateRuneTicker(bar) end
 		end

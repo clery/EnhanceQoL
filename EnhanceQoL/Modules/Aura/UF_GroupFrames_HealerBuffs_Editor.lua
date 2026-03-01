@@ -269,6 +269,14 @@ local function createEditBox(parent, width)
 	return box
 end
 
+local function createNumberInput(parent, width, maxLetters)
+	local box = createEditBox(parent, width or 72)
+	box:SetJustifyH("CENTER")
+	box:SetMaxLetters(maxLetters or 8)
+	if box.SetNumeric then box:SetNumeric(false) end
+	return box
+end
+
 local function createSlider(parent, width, minValue, maxValue, step)
 	local slider = CreateFrame("Slider", nil, parent, "OptionsSliderTemplate")
 	slider:SetWidth(width or 180)
@@ -278,6 +286,28 @@ local function createSlider(parent, width, minValue, maxValue, step)
 	if slider.Low then slider.Low:SetText(tostring(minValue or 0)) end
 	if slider.High then slider.High:SetText(tostring(maxValue or 1)) end
 	return slider
+end
+
+local function createColorSwatchButton(parent, size)
+	local button = CreateFrame("Button", nil, parent, "BackdropTemplate")
+	button:SetSize(size or 26, size or 26)
+	button:SetBackdrop({
+		bgFile = "Interface\\Buttons\\WHITE8x8",
+		edgeFile = "Interface\\Buttons\\WHITE8x8",
+		tile = false,
+		edgeSize = 1,
+		insets = { left = 0, right = 0, top = 0, bottom = 0 },
+	})
+	button:SetBackdropColor(0, 0, 0, 0.65)
+	button:SetBackdropBorderColor(0.28, 0.33, 0.4, 1)
+	local swatch = button:CreateTexture(nil, "ARTWORK")
+	swatch:SetPoint("TOPLEFT", button, "TOPLEFT", 3, -3)
+	swatch:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -3, 3)
+	swatch:SetColorTexture(1, 1, 1, 1)
+	button.ColorSwatch = swatch
+	button._eqolColorSwatch = swatch
+	if button.RegisterForClicks then button:RegisterForClicks("LeftButtonUp", "RightButtonUp") end
+	return button
 end
 
 local function toggleDropdown(dropdown)
@@ -430,26 +460,39 @@ end
 local function showColorPicker(initialColor, onApply)
 	if type(onApply) ~= "function" then return end
 	local r, g, b, a = unpackRgba(initialColor)
+	local useModernPicker = ColorPickerFrame and ColorPickerFrame.SetupColorPickerAndShow ~= nil
+	local isInitializing = false
+
+	local function alphaFromPicker(defaultAlpha)
+		if ColorPickerFrame and ColorPickerFrame.GetColorAlpha then
+			local alpha = tonumber(ColorPickerFrame:GetColorAlpha())
+			if alpha ~= nil then return alpha end
+		end
+		-- Legacy picker path uses OpacitySliderFrame as inverted alpha.
+		if not useModernPicker and OpacitySliderFrame and OpacitySliderFrame.GetValue then
+			local opacity = tonumber(OpacitySliderFrame:GetValue())
+			if opacity ~= nil then return 1 - opacity end
+		end
+		return defaultAlpha
+	end
 
 	local function applyFromPicker(restore)
+		if isInitializing then return end
 		local nr, ng, nb, na
 		if type(restore) == "table" then
 			nr = tonumber(restore.r) or tonumber(restore[1]) or r
 			ng = tonumber(restore.g) or tonumber(restore[2]) or g
 			nb = tonumber(restore.b) or tonumber(restore[3]) or b
-			na = tonumber(restore.a) or tonumber(restore[4]) or a
+			na = tonumber(restore.a)
+			if na == nil and not useModernPicker and restore.opacity ~= nil then na = 1 - (tonumber(restore.opacity) or 0) end
+			if na == nil then na = tonumber(restore[4]) or a end
 		else
 			if ColorPickerFrame and ColorPickerFrame.GetColorRGB then
 				nr, ng, nb = ColorPickerFrame:GetColorRGB()
 			else
 				nr, ng, nb = r, g, b
 			end
-			if ColorPickerFrame and ColorPickerFrame.GetColorAlpha then
-				na = ColorPickerFrame:GetColorAlpha()
-			else
-				local opacity = (OpacitySliderFrame and OpacitySliderFrame.GetValue and OpacitySliderFrame:GetValue()) or 0
-				na = 1 - opacity
-			end
+			na = alphaFromPicker(a)
 		end
 		nr = min(1, max(0, tonumber(nr) or 1))
 		ng = min(1, max(0, tonumber(ng) or 1))
@@ -458,17 +501,19 @@ local function showColorPicker(initialColor, onApply)
 		onApply(nr, ng, nb, na)
 	end
 
-	if ColorPickerFrame and ColorPickerFrame.SetupColorPickerAndShow then
+	if useModernPicker then
+		isInitializing = true
 		ColorPickerFrame:SetupColorPickerAndShow({
 			r = r,
 			g = g,
 			b = b,
-			opacity = 1 - a,
+			opacity = a,
 			hasOpacity = true,
 			swatchFunc = function() applyFromPicker() end,
 			opacityFunc = function() applyFromPicker() end,
 			cancelFunc = function(restore) applyFromPicker(restore) end,
 		})
+		isInitializing = false
 		return
 	end
 
@@ -476,7 +521,7 @@ local function showColorPicker(initialColor, onApply)
 	ColorPickerFrame.hasOpacity = true
 	ColorPickerFrame.opacity = 1 - a
 	ColorPickerFrame:SetColorRGB(r, g, b)
-	ColorPickerFrame.previousValues = { r = r, g = g, b = b, a = a }
+	ColorPickerFrame.previousValues = { r = r, g = g, b = b, a = a, opacity = 1 - a }
 	ColorPickerFrame.func = function() applyFromPicker() end
 	ColorPickerFrame.opacityFunc = function() applyFromPicker() end
 	ColorPickerFrame.cancelFunc = function(restore)
@@ -1396,12 +1441,10 @@ function Editor:EnsureFrame()
 		label:SetText(text)
 		local slider = createSlider(groupControlParent, 180, minValue, maxValue, step)
 		slider:SetPoint("TOPLEFT", label, "TOPRIGHT", 8, 8)
-		local valueText = groupControlParent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		valueText:SetPoint("LEFT", slider, "RIGHT", 10, 0)
-		valueText:SetWidth(44)
-		valueText:SetJustifyH("RIGHT")
-		valueText:SetText("0")
-		return label, slider, valueText
+		local valueInput = createNumberInput(groupControlParent, 56, 8)
+		valueInput:SetPoint("LEFT", slider, "RIGHT", 14, 0)
+		valueInput:SetText("0")
+		return label, slider, valueInput
 	end
 
 	controls.PerRowLabel, controls.PerRow, controls.PerRowValue = createSettingSlider(controls.GroupBarOrientationLabel, tr("UFGroupHealerBuffEditorPerRow", "Per Row"), 1, 20, 1)
@@ -1417,22 +1460,9 @@ function Editor:EnsureFrame()
 	controls.ColorLabel = groupControlParent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	controls.ColorLabel:SetPoint("TOPLEFT", controls.BorderSizeLabel, "BOTTOMLEFT", 0, -22)
 	controls.ColorLabel:SetText(tr("UFGroupHealerBuffEditorColor", "Color"))
-	controls.ColorButton = CreateFrame("Button", nil, groupControlParent, "BackdropTemplate")
-	controls.ColorButton:SetSize(26, 26)
+	controls.ColorButton = createColorSwatchButton(groupControlParent, 26)
 	controls.ColorButton:SetPoint("TOPLEFT", controls.ColorLabel, "TOPRIGHT", 10, -2)
-	controls.ColorButton:SetBackdrop({
-		bgFile = "Interface\\Buttons\\WHITE8x8",
-		edgeFile = "Interface\\Buttons\\WHITE8x8",
-		tile = false,
-		edgeSize = 1,
-		insets = { left = 0, right = 0, top = 0, bottom = 0 },
-	})
-	controls.ColorButton:SetBackdropColor(0, 0, 0, 0.65)
-	controls.ColorButton:SetBackdropBorderColor(0.28, 0.33, 0.4, 1)
-	controls.ColorSwatch = controls.ColorButton:CreateTexture(nil, "ARTWORK")
-	controls.ColorSwatch:SetPoint("TOPLEFT", controls.ColorButton, "TOPLEFT", 3, -3)
-	controls.ColorSwatch:SetPoint("BOTTOMRIGHT", controls.ColorButton, "BOTTOMRIGHT", -3, 3)
-	controls.ColorSwatch:SetColorTexture(1, 1, 1, 1)
+	controls.ColorSwatch = controls.ColorButton.ColorSwatch
 	controls.ColorButton.ColorSwatch = controls.ColorSwatch
 	controls.ColorButton._eqolColorSwatch = controls.ColorSwatch
 	groupControlContent:SetHeight(340)
@@ -1482,8 +1512,9 @@ function Editor:EnsureFrame()
 			slider:ClearAllPoints()
 			slider:SetPoint("TOPLEFT", label, "TOPLEFT", CONTROL_X - LABEL_X, 8)
 			valueText:ClearAllPoints()
-			valueText:SetPoint("LEFT", slider, "RIGHT", 10, 0)
+			valueText:SetPoint("LEFT", slider, "RIGHT", 14, 0)
 			includeBottom(slider)
+			includeBottom(valueText)
 		end
 
 		local function placeColor(label, button)
@@ -1545,6 +1576,14 @@ function Editor:EnsureFrame()
 	controls.RuleMatch:SetPoint("TOPLEFT", controls.RuleMatchLabel, "TOPRIGHT", 0, 12)
 	controls.RuleMatchLabel:Hide()
 	controls.RuleMatch:Hide()
+
+	controls.RuleColorLabel = settingsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	controls.RuleColorLabel:SetPoint("TOPLEFT", controls.RuleAppliesRaid, "BOTTOMLEFT", 0, -14)
+	controls.RuleColorLabel:SetText(tr("UFGroupHealerBuffEditorSpellColor", "Spell Color"))
+	controls.RuleColorButton = createColorSwatchButton(settingsPanel, 24)
+	controls.RuleColorButton:SetPoint("TOPLEFT", controls.RuleColorLabel, "TOPRIGHT", 10, -2)
+	controls.RuleColorLabel:Hide()
+	controls.RuleColorButton:Hide()
 
 	controls.RuleInfo = settingsPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	controls.RuleInfo:SetPoint("TOPLEFT", controls.RuleAppliesRaid, "BOTTOMLEFT", 0, -10)
@@ -2009,40 +2048,86 @@ function Editor:EnsureFrame()
 		return ruleId and placement.rulesById and placement.rulesById[ruleId] or nil
 	end
 
-	local function updateGroupFromSlider(field, slider, valueText, minValue, maxValue, step)
-		slider:SetScript("OnValueChanged", function(self, value)
+	local function normalizeSliderValue(value, minValue, maxValue, step)
+		if step and step >= 1 then
+			value = roundInt(value)
+		else
+			value = tonumber(string.format("%.2f", value))
+		end
+		if minValue ~= nil and value < minValue then value = minValue end
+		if maxValue ~= nil and value > maxValue then value = maxValue end
+		return value
+	end
+
+	local function formatSliderValue(value, step)
+		if step and step < 1 then return string.format("%.2f", tonumber(value) or 0) end
+		return tostring(roundInt(value or 0))
+	end
+
+	local function updateGroupFromSlider(field, slider, valueInput, minValue, maxValue, step)
+		local function applyValue(rawValue)
 			if Editor._controlUpdateLock then return end
 			local group = groupFromSelection()
-			if not group then return end
-			if step and step >= 1 then
-				value = roundInt(value)
-			else
-				value = tonumber(string.format("%.2f", value))
+			if not group then
+				if valueInput then valueInput:SetText("") end
+				return
 			end
-			if minValue ~= nil and value < minValue then value = minValue end
-			if maxValue ~= nil and value > maxValue then value = maxValue end
+			local value = normalizeSliderValue(rawValue, minValue, maxValue, step)
 			group[field] = value
 			if field == "x" or field == "y" then
 				local preview = Editor.frame and Editor.frame.PreviewPanel and Editor.frame.PreviewPanel.Frame and Editor.frame.PreviewPanel.Frame.UnitFrame
 				if preview then
 					group.x, group.y = HB.ClampOffsets(group.anchorPoint, group.x, group.y, preview:GetWidth(), preview:GetHeight(), 0)
-					if field == "x" then
-						value = group.x
-					else
-						value = group.y
-					end
 				end
+				value = field == "x" and group.x or group.y
 			end
-			if valueText then
-				if step and step < 1 then
-					valueText:SetText(string.format("%.2f", value))
-				else
-					valueText:SetText(tostring(value))
-				end
+			if slider and slider:GetValue() ~= value then
+				slider._eqolSliderSync = true
+				slider:SetValue(value)
+				slider._eqolSliderSync = nil
 			end
+			if valueInput then valueInput:SetText(formatSliderValue(value, step)) end
 			Editor:RefreshPreview()
 			Editor:QueueRuntimeRefresh()
+		end
+
+		slider:SetScript("OnValueChanged", function(self, value)
+			if self._eqolSliderSync then return end
+			applyValue(value)
 		end)
+
+		if valueInput then
+			local function commitInput(self)
+				local raw = tonumber(self:GetText() or "")
+				if raw == nil then
+					local group = groupFromSelection()
+					if group then
+						local current = field == "x" and group.x or (field == "y" and group.y or group[field])
+						self:SetText(formatSliderValue(current, step))
+					else
+						self:SetText("")
+					end
+					return
+				end
+				applyValue(raw)
+			end
+
+			valueInput:SetScript("OnEnterPressed", function(self)
+				commitInput(self)
+				self:ClearFocus()
+			end)
+			valueInput:SetScript("OnEditFocusLost", function(self) commitInput(self) end)
+			valueInput:SetScript("OnEscapePressed", function(self)
+				local group = groupFromSelection()
+				if group then
+					local current = field == "x" and group.x or (field == "y" and group.y or group[field])
+					self:SetText(formatSliderValue(current, step))
+				else
+					self:SetText("")
+				end
+				self:ClearFocus()
+			end)
+		end
 	end
 
 	updateGroupFromSlider("perRow", controls.PerRow, controls.PerRowValue, 1, 20, 1)
@@ -2108,13 +2193,35 @@ function Editor:EnsureFrame()
 		Editor:RefreshRuntimeNow()
 	end)
 
-	controls.ColorButton:SetScript("OnClick", function()
+	controls.ColorButton:SetScript("OnClick", function(_, mouseButton)
+		if mouseButton == "RightButton" then return end
 		local group = groupFromSelection()
 		if not group then return end
 		group.color = group.color or { 1, 0.82, 0.1, 0.9 }
 		showColorPicker(group.color, function(r, g, b, a)
 			group.color[1], group.color[2], group.color[3], group.color[4] = r, g, b, a
 			Editor:RefreshGroupControls()
+			Editor:RefreshPreview()
+			Editor:QueueRuntimeRefresh()
+		end)
+	end)
+
+	controls.RuleColorButton:SetScript("OnClick", function(_, mouseButton)
+		local group = groupFromSelection()
+		local rule = ruleFromSelection()
+		if not (group and rule) then return end
+		if tostring(group.style or ""):upper() ~= "SQUARE" then return end
+		if mouseButton == "RightButton" then
+			rule.color = nil
+			Editor:RefreshRuleControls()
+			Editor:RefreshPreview()
+			Editor:QueueRuntimeRefresh()
+			return
+		end
+		local baseColor = rule.color or group.color or { 1, 0.82, 0.1, 0.9 }
+		showColorPicker(baseColor, function(r, g, b, a)
+			rule.color = { r, g, b, a }
+			Editor:RefreshRuleControls()
 			Editor:RefreshPreview()
 			Editor:QueueRuntimeRefresh()
 		end)
@@ -2337,6 +2444,7 @@ function Editor:RefreshRuleControls()
 	local selectedGroupStyle = tostring(selectedGroup and selectedGroup.style or "")
 	local showIconRuleMode = selectedGroupStyle == "ICON" or selectedGroupStyle == "SQUARE"
 	local showTintRuleMatch = selectedGroupStyle == "TINT"
+	local showRuleColor = selectedGroupStyle == "SQUARE"
 	local iconModeOptions = HB.ICON_MODE_OPTIONS
 		or {
 			{ value = "ALL", label = tr("UFGroupHealerBuffIconModeAll", "Show All Active Spells") },
@@ -2358,8 +2466,33 @@ function Editor:RefreshRuleControls()
 	setControlEnabled(controls.RuleMatch, showTintRuleMatch)
 	if showTintRuleMatch then setDropdown(controls.RuleMatch, ruleMatchOptions, tostring(selectedGroup.ruleMatch or "ANY"):upper(), controls.RuleMatch._eqolOnSelect) end
 
-	controls.RuleInfo:ClearAllPoints()
+	controls.RuleColorLabel:ClearAllPoints()
 	if showTintRuleMatch then
+		controls.RuleColorLabel:SetPoint("TOPLEFT", controls.RuleMatchLabel, "BOTTOMLEFT", 0, -12)
+	elseif showIconRuleMode then
+		controls.RuleColorLabel:SetPoint("TOPLEFT", controls.RuleIconModeLabel, "BOTTOMLEFT", 0, -12)
+	else
+		controls.RuleColorLabel:SetPoint("TOPLEFT", controls.RuleAppliesRaid, "BOTTOMLEFT", 0, -10)
+	end
+	controls.RuleColorButton:ClearAllPoints()
+	controls.RuleColorButton:SetPoint("TOPLEFT", controls.RuleColorLabel, "TOPRIGHT", 10, -2)
+	setControlVisible(controls.RuleColorLabel, showRuleColor)
+	setControlVisible(controls.RuleColorButton, showRuleColor)
+	setControlEnabled(controls.RuleColorButton, showRuleColor and rule ~= nil)
+	if showRuleColor then
+		local baseColor = (rule and rule.color) or (selectedGroup and selectedGroup.color) or { 1, 0.82, 0.1, 0.9 }
+		setColorPreview(controls.RuleColorButton, baseColor)
+		if rule and rule.color then
+			controls.RuleColorButton:SetBackdropBorderColor(0.45, 0.78, 0.52, 1)
+		else
+			controls.RuleColorButton:SetBackdropBorderColor(0.28, 0.33, 0.4, 1)
+		end
+	end
+
+	controls.RuleInfo:ClearAllPoints()
+	if showRuleColor then
+		controls.RuleInfo:SetPoint("TOPLEFT", controls.RuleColorLabel, "BOTTOMLEFT", 0, -10)
+	elseif showTintRuleMatch then
 		controls.RuleInfo:SetPoint("TOPLEFT", controls.RuleMatchLabel, "BOTTOMLEFT", 0, -10)
 	elseif showIconRuleMode then
 		controls.RuleInfo:SetPoint("TOPLEFT", controls.RuleIconModeLabel, "BOTTOMLEFT", 0, -10)
@@ -2382,6 +2515,16 @@ function Editor:RefreshRuleControls()
 		if showTintRuleMatch then
 			controls.RuleInfo:SetText(
 				string.format(tr("UFGroupHealerBuffEditorRuleInfoTint", "Showing rules for %s. Scope is set per rule (Party/Raid). Tint can require any or all active spells."), groupLabel)
+			)
+		elseif showRuleColor then
+			controls.RuleInfo:SetText(
+				string.format(
+					tr(
+						"UFGroupHealerBuffEditorRuleInfoSquare",
+						"Showing rules for %s. Scope is set per rule (Party/Raid). Priority follows the rule order in this list. Spell Color overrides are per rule (right click to reset)."
+					),
+					groupLabel
+				)
 			)
 		elseif showIconRuleMode then
 			controls.RuleInfo:SetText(
@@ -2410,6 +2553,7 @@ function Editor:RefreshGroupControls()
 		setControlVisible(slider, visible)
 		setControlVisible(valueText, visible)
 		setControlEnabled(slider, enabled and visible)
+		setControlEnabled(valueText, enabled and visible)
 	end
 
 	local function setColorState(visible, enabled)
@@ -2464,7 +2608,7 @@ function Editor:RefreshGroupControls()
 		controls.BorderSize:SetValue(group.borderSize or 2)
 		controls.BorderSizeValue:SetText(tostring(group.borderSize or 2))
 
-		group.color = group.color or { 1, 0.82, 0.1, 0.22 }
+		group.color = group.color or { 1, 0.82, 0.1, 0.9 }
 		setColorPreview(controls.ColorButton, group.color)
 
 		setControlEnabled(controls.GroupName, true)
@@ -2676,7 +2820,8 @@ function Editor:RefreshPreview()
 							end
 						end
 						if style == "SQUARE" then
-							local r, g, b, a = resolveColor(group.color)
+							local squareColor = (rule and rule.color) or group.color
+							local r, g, b, a = resolveColor(squareColor)
 							icon.Texture:SetTexture("Interface\\Buttons\\WHITE8x8")
 							icon.Texture:SetVertexColor(r, g, b, a)
 						else

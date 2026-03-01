@@ -342,6 +342,12 @@ local function normalizeColor(value, fallback)
 	return { r, g, b, a }
 end
 
+local function normalizeOptionalColor(value)
+	if value == nil then return nil end
+	if type(value) ~= "table" then return nil end
+	return normalizeColor(value, { 1, 1, 1, 1 })
+end
+
 local function normalizeKind(kind)
 	kind = tostring(kind or KIND_PARTY):lower()
 	if kind == "mt" or kind == "ma" then return KIND_RAID end
@@ -565,6 +571,8 @@ local function normalizeRule(rule, id)
 	rule.appliesToRaid = nil
 	rule.party = nil
 	rule.raid = nil
+	rule.color = normalizeOptionalColor(rule.color or rule.spellColor)
+	rule.spellColor = nil
 	return rule
 end
 
@@ -1362,6 +1370,11 @@ local function renderIconStyleForGroup(btn, st, state, compiled, cfg, group, cha
 	if group.style == STYLE_SQUARE then
 		local cr, cg, cb, ca = resolveColor(group.color)
 		styleHash = table.concat({ styleHash, cr, cg, cb, ca }, ":")
+		for i = 1, #activeRules do
+			local rule = compiled.ruleById[activeRules[i]]
+			local rr, rg, rb, ra = resolveColor((rule and rule.color) or group.color)
+			styleHash = styleHash .. "|" .. table.concat({ rr, rg, rb, ra }, ",")
+		end
 	end
 	local hash = buildRuleHash(compiled, activeRules, state.familyAuraInstance, styleHash)
 	if not force and renderHashes[group.id] == hash then return end
@@ -1393,7 +1406,7 @@ local function renderIconStyleForGroup(btn, st, state, compiled, cfg, group, cha
 			button._hbStyleKey = styleHash
 		end
 		if group.style == STYLE_SQUARE then
-			styleSquareButton(button, group.color)
+			styleSquareButton(button, (rule and rule.color) or group.color)
 			setAuraTooltipState(button, false)
 		else
 			styleIconButton(button)

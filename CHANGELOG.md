@@ -11,6 +11,7 @@
 
 - Mouse (Crosshair): Fixed crosshair registration in Edit Mode while the feature is disabled.
 - Group Frames (Healer Buff Placement): Fixed delayed self Earth Shield tracking (`383648`).
+- Health Macro: Added support for `Potent Healing Potion` (`258138`).
 
 ---
 

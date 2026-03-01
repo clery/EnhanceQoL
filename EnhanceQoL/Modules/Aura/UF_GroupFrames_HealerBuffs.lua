@@ -32,6 +32,7 @@ local sort = table.sort
 local format = string.format
 local wipe = _G.wipe or (table and table.wipe)
 local issecretvalue = _G.issecretvalue
+local UnitIsUnit = _G.UnitIsUnit
 
 local EMPTY = {}
 
@@ -967,6 +968,15 @@ end
 
 local function getFamilyForAura(compiled, aura)
 	if not (compiled and aura) then return nil end
+	if aura.isFromPlayerOrPlayerPet ~= true then
+		local sourceUnit = aura.sourceUnit
+		if issecretvalue and issecretvalue(sourceUnit) then return nil end
+		local fromPlayer = sourceUnit == "player" or sourceUnit == "pet" or sourceUnit == "vehicle"
+		if not fromPlayer and UnitIsUnit and sourceUnit then
+			fromPlayer = UnitIsUnit(sourceUnit, "player") or UnitIsUnit(sourceUnit, "pet") or UnitIsUnit(sourceUnit, "vehicle")
+		end
+		if not fromPlayer then return nil end
+	end
 	local spellId = aura.spellId
 	if spellId == nil then return nil end
 	if issecretvalue and issecretvalue(spellId) then return nil end

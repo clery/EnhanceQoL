@@ -1146,6 +1146,7 @@ local defaults = {
 				offset = 1,
 			},
 			showName = true,
+			nameAnchor = "LEFT",
 			nameMaxChars = 0,
 			showCastTarget = false,
 			nameOffset = { x = 6, y = 0 },
@@ -1328,6 +1329,7 @@ local defaults = {
 				offset = 1,
 			},
 			showName = true,
+			nameAnchor = "LEFT",
 			nameMaxChars = 0,
 			showCastTarget = false,
 			nameOffset = { x = 6, y = 0 },
@@ -4346,6 +4348,11 @@ local function applyCastLayout(cfg, unit)
 	local ccfg = (cfg and cfg.cast) or {}
 	local defc = (def and def.cast) or {}
 	local hc = (cfg and cfg.health) or {}
+	local nameAnchor = type(ccfg.nameAnchor) == "string" and string.upper(ccfg.nameAnchor) or nil
+	if nameAnchor ~= "LEFT" and nameAnchor ~= "CENTER" and nameAnchor ~= "RIGHT" then
+		nameAnchor = type(defc.nameAnchor) == "string" and string.upper(defc.nameAnchor) or "LEFT"
+		if nameAnchor ~= "LEFT" and nameAnchor ~= "CENTER" and nameAnchor ~= "RIGHT" then nameAnchor = "LEFT" end
+	end
 	local width = ccfg.width or (cfg and cfg.width) or defc.width or (def and def.width) or 220
 	local height = ccfg.height or defc.height or 16
 	local defaultBackdropInset = ((tonumber(height) or 0) <= 20) and 0 or 1
@@ -4371,7 +4378,7 @@ local function applyCastLayout(cfg, unit)
 	if st.castName then
 		local nameOff = ccfg.nameOffset or defc.nameOffset or { x = 6, y = 0 }
 		st.castName:ClearAllPoints()
-		st.castName:SetPoint("LEFT", st.castBar, "LEFT", nameOff.x or 0, nameOff.y or 0)
+		st.castName:SetPoint(nameAnchor, st.castBar, nameAnchor, nameOff.x or 0, nameOff.y or 0)
 		st.castName:SetShown(ccfg.showName ~= false)
 	end
 	if st.castDuration then
@@ -4442,7 +4449,7 @@ local function applyCastLayout(cfg, unit)
 		st.castName:SetWidth(available)
 		if st.castName.SetWordWrap then st.castName:SetWordWrap(false) end
 		if st.castName.SetMaxLines then st.castName:SetMaxLines(1) end
-		if st.castName.SetJustifyH then st.castName:SetJustifyH("LEFT") end
+		if st.castName.SetJustifyH then st.castName:SetJustifyH(nameAnchor) end
 	end
 	if st.castEmpower and st.castEmpower.stagePercents then UFHelper.layoutEmpowerStages(st) end
 end

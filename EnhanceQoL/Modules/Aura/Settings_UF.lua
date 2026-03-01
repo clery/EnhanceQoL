@@ -4403,6 +4403,28 @@ local function buildUnitSettings(unit)
 			)
 		end
 
+		local castNameAnchor = radioDropdown(
+			L["UFCastNameAnchor"] or "Cast name anchor",
+			anchorOptions,
+			function()
+				local fallback = castDef.nameAnchor or "LEFT"
+				if fallback ~= "LEFT" and fallback ~= "CENTER" and fallback ~= "RIGHT" then fallback = "LEFT" end
+				local value = getValue(unit, { "cast", "nameAnchor" }, fallback)
+				if value ~= "LEFT" and value ~= "CENTER" and value ~= "RIGHT" then return fallback end
+				return value
+			end,
+			function(val)
+				local value = val
+				if value ~= "LEFT" and value ~= "CENTER" and value ~= "RIGHT" then value = "LEFT" end
+				setValue(unit, { "cast", "nameAnchor" }, value)
+				refresh()
+			end,
+			castDef.nameAnchor or "LEFT",
+			"cast"
+		)
+		castNameAnchor.isEnabled = isCastNameEnabled
+		list[#list + 1] = castNameAnchor
+
 		local castNameX = slider(
 			L["Name X Offset"] or "Name X Offset",
 			-OFFSET_RANGE,
@@ -6815,7 +6837,7 @@ end
 
 local function buildStandaloneCastbarSettings()
 	if not (CastbarSettings and CastbarSettings.BuildStandaloneCastbarSettings) then return {} end
-	return CastbarSettings.BuildStandaloneCastbarSettings({
+	local list = CastbarSettings.BuildStandaloneCastbarSettings({
 		L = L,
 		settingType = settingType,
 		getCastbarModule = getCastbarModule,
@@ -6833,6 +6855,61 @@ local function buildStandaloneCastbarSettings()
 		checkboxDropdown = checkboxDropdown,
 		checkboxColor = checkboxColor,
 	})
+	if type(list) ~= "table" then return {} end
+
+	local function normalizeCastNameAnchor(value, fallback)
+		local anchor = type(value) == "string" and string.upper(value) or nil
+		local fallbackAnchor = type(fallback) == "string" and string.upper(fallback) or "LEFT"
+		if fallbackAnchor ~= "LEFT" and fallbackAnchor ~= "CENTER" and fallbackAnchor ~= "RIGHT" then fallbackAnchor = "LEFT" end
+		if anchor ~= "LEFT" and anchor ~= "CENTER" and anchor ~= "RIGHT" then return fallbackAnchor end
+		return anchor
+	end
+
+	local castCfg, castDef
+	local castbarModule = getCastbarModule()
+	if castbarModule and castbarModule.GetConfig then castCfg, castDef = castbarModule.GetConfig() end
+	if type(castCfg) ~= "table" then
+		addon.db = addon.db or {}
+		addon.db.castbar = type(addon.db.castbar) == "table" and addon.db.castbar or {}
+		castCfg = addon.db.castbar
+	end
+	if type(castDef) ~= "table" and castbarModule and castbarModule.GetDefaults then castDef = castbarModule.GetDefaults() end
+	if type(castDef) ~= "table" then castDef = {} end
+
+	local function refreshCastbar()
+		local module = getCastbarModule()
+		if module and module.Refresh then module.Refresh() end
+	end
+	local function isCastNameEnabled()
+		local showName = castCfg.showName
+		if showName == nil then showName = castDef.showName ~= false end
+		return showName ~= false
+	end
+
+	local castNameAnchorSetting = radioDropdown(
+		L["UFCastNameAnchor"] or "Cast name anchor",
+		anchorOptions,
+		function() return normalizeCastNameAnchor(castCfg.nameAnchor, castDef.nameAnchor or "LEFT") end,
+		function(val)
+			castCfg.nameAnchor = normalizeCastNameAnchor(val, castDef.nameAnchor or "LEFT")
+			refreshCastbar()
+		end,
+		normalizeCastNameAnchor(castDef.nameAnchor, "LEFT"),
+		"castSpellName"
+	)
+	castNameAnchorSetting.isEnabled = isCastNameEnabled
+
+	local insertIndex = #list + 1
+	local targetName = L["Name X Offset"] or "Name X Offset"
+	for i = 1, #list do
+		local entry = list[i]
+		if type(entry) == "table" and entry.parentId == "castSpellName" and entry.name == targetName then
+			insertIndex = i
+			break
+		end
+	end
+	table.insert(list, insertIndex, castNameAnchorSetting)
+	return list
 end
 
 local standaloneCastbarSettingsRegistered = false

@@ -52,6 +52,11 @@ local VALID_ANCHOR_POINTS = {
 	BOTTOM = true,
 	BOTTOMRIGHT = true,
 }
+local VALID_TEXT_ANCHORS = {
+	LEFT = true,
+	CENTER = true,
+	RIGHT = true,
+}
 local STRATA_ORDER = { "BACKGROUND", "LOW", "MEDIUM", "HIGH", "DIALOG", "FULLSCREEN", "FULLSCREEN_DIALOG", "TOOLTIP" }
 local STRATA_INDEX = {}
 for i = 1, #STRATA_ORDER do
@@ -77,6 +82,7 @@ local fallbackCastDefaults = {
 		offset = 1,
 	},
 	showName = true,
+	nameAnchor = "LEFT",
 	nameMaxChars = 0,
 	showCastTarget = false,
 	nameOffset = { x = 6, y = 0 },
@@ -129,6 +135,14 @@ local function normalizeAnchorPoint(value, fallback)
 	local point = tostring(value or fallback or "CENTER"):upper()
 	if VALID_ANCHOR_POINTS[point] then return point end
 	return tostring(fallback or "CENTER"):upper()
+end
+
+local function normalizeTextAnchor(value, fallback)
+	local fallbackAnchor = tostring(fallback or "LEFT"):upper()
+	if not VALID_TEXT_ANCHORS[fallbackAnchor] then fallbackAnchor = "LEFT" end
+	local anchor = tostring(value or fallback or "LEFT"):upper()
+	if VALID_TEXT_ANCHORS[anchor] then return anchor end
+	return fallbackAnchor
 end
 
 local function legacyAnchorToPoints(anchorValue)
@@ -878,8 +892,9 @@ local function applyCastLayout(castCfg, castDefaults)
 
 	if state.castName then
 		local nameOff = castCfg.nameOffset or castDefaults.nameOffset or { x = 6, y = 0 }
+		local nameAnchor = normalizeTextAnchor(castCfg.nameAnchor, castDefaults.nameAnchor or "LEFT")
 		state.castName:ClearAllPoints()
-		state.castName:SetPoint("LEFT", state.castBar, "LEFT", nameOff.x or 0, nameOff.y or 0)
+		state.castName:SetPoint(nameAnchor, state.castBar, nameAnchor, nameOff.x or 0, nameOff.y or 0)
 		state.castName:SetShown(castCfg.showName ~= false)
 	end
 	if state.castDuration then
@@ -952,7 +967,10 @@ local function applyCastLayout(castCfg, castDefaults)
 		state.castName:SetWidth(available)
 		if state.castName.SetWordWrap then state.castName:SetWordWrap(false) end
 		if state.castName.SetMaxLines then state.castName:SetMaxLines(1) end
-		if state.castName.SetJustifyH then state.castName:SetJustifyH("LEFT") end
+		if state.castName.SetJustifyH then
+			local nameAnchor = normalizeTextAnchor(castCfg.nameAnchor, castDefaults.nameAnchor or "LEFT")
+			state.castName:SetJustifyH(nameAnchor)
+		end
 	end
 	if state.castEmpower and state.castEmpower.stagePercents then UFHelper.layoutEmpowerStages(state) end
 end

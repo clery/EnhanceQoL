@@ -1354,7 +1354,7 @@ local function createCastbarCategory()
 	addon.functions.SettingsCreateHeadline(category, L["ExperienceBar"] or "Experience Bar", {
 		parentSection = expandable,
 	})
-	addon.functions.SettingsCreateCheckbox(category, {
+	local xpBarEnabled = addon.functions.SettingsCreateCheckbox(category, {
 		var = "xpBarEnabled",
 		text = L["xpBarEnabled"] or "Enable Experience bar",
 		desc = L["xpBarDesc"] or "Shows your experience as a customizable bar.",

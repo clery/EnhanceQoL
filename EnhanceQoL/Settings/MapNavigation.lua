@@ -2550,7 +2550,10 @@ local function getSquareMinimapLocationText()
 		if zone and zone ~= "" then return zone end
 		return subzone
 	end
-	if showSubzone and subzone ~= "" and subzone ~= zone then return subzone end
+	if showSubzone then
+		if subzone ~= "" then return subzone end
+		if zone and zone ~= "" then return zone end
+	end
 	return ""
 end
 

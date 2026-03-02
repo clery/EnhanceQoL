@@ -673,6 +673,25 @@ local function registerEditModeBars()
 					isEnabled = function() return visibilityRuleOptions and #visibilityRuleOptions > 0 end,
 				},
 				{
+					name = L["Combine Show when rules with AND"] or "Combine Show when rules with AND",
+					kind = settingType.Checkbox,
+					field = "visibilityMatchAll",
+					parentId = "frame",
+					default = false,
+					get = function()
+						local c = curSpecCfg()
+						return c and c.visibilityMatchAll == true
+					end,
+					set = function(_, value)
+						local c = curSpecCfg()
+						if not c then return end
+						c.visibilityMatchAll = value and true or false
+						queueRefresh()
+					end,
+					isShown = function() return visibilityRuleOptions and #visibilityRuleOptions > 0 end,
+					isEnabled = function() return visibilityRuleOptions and #visibilityRuleOptions > 0 end,
+				},
+				{
 					name = L["Hide in vehicles"],
 					kind = settingType.Checkbox,
 					parentId = "frame",

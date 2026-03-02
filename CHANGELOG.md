@@ -21,6 +21,7 @@
 - Health Macro: Updated outdated post-squish heal values for older health potions so current Midnight potions are prioritized correctly.
 - Health Macro: Corrected `Algari Healing Potion` ranking values (`211878`, `211879`, `211880`) to match current in-game magnitudes.
 - Group Frames (Healer Buff Placement): Fixed Indicator Settings scroll behavior when switching from long to short indicator styles (for example `Tint`), so settings are no longer hidden off-screen.
+- Square Minimap Stats (Location): In `subzone only` mode, location text now automatically falls back to zone text when no subzone name is available.
 
 ---
 

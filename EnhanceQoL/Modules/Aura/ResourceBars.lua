@@ -4841,7 +4841,7 @@ function visibilityLogic:HasShowRules(config)
 		or config.PLAYER_IN_GROUP
 end
 
-function visibilityLogic:ShouldShow(config)
+function visibilityLogic:ShouldShow(config, useAnd)
 	if not config then return true end
 	if config.ALWAYS_HIDDEN then return false end
 
@@ -4857,6 +4857,28 @@ function visibilityLogic:ShouldShow(config)
 	local casting = self:IsPlayerCasting()
 	local skyriding = self:IsPlayerSkyriding()
 	local flying = self:IsPlayerFlying()
+
+	if useAnd then
+		local hasRule = false
+		local function requireRule(enabled, condition)
+			if enabled ~= true then return true end
+			hasRule = true
+			return condition == true
+		end
+		if not requireRule(config.SKYRIDING_INACTIVE, not skyriding) then return false end
+		if not requireRule(config.FLYING_INACTIVE, not flying) then return false end
+		if not requireRule(config.SKYRIDING_ACTIVE, skyriding) then return false end
+		if not requireRule(config.FLYING_ACTIVE, flying) then return false end
+		if not requireRule(config.ALWAYS_IN_COMBAT, inCombat) then return false end
+		if not requireRule(config.ALWAYS_OUT_OF_COMBAT, not inCombat) then return false end
+		if not requireRule(config.PLAYER_CASTING, casting) then return false end
+		if not requireRule(config.PLAYER_MOUNTED, mounted) then return false end
+		if not requireRule(config.PLAYER_NOT_MOUNTED, not mounted) then return false end
+		if not requireRule(config.PLAYER_HAS_TARGET, hasTarget) then return false end
+		if not requireRule(config.PLAYER_IN_GROUP, inGroup) then return false end
+		if hasRule then return true end
+		return true
+	end
 
 	if config.SKYRIDING_INACTIVE then
 		if skyriding then return false end
@@ -4879,8 +4901,9 @@ function visibilityLogic:ShouldShow(config)
 	return false
 end
 
-function visibilityLogic:UsesManualRules(config)
+function visibilityLogic:UsesManualRules(config, useAnd)
 	if not config then return false end
+	if useAnd == true then return true end
 	return config.PLAYER_CASTING == true or config.SKYRIDING_ACTIVE == true or config.SKYRIDING_INACTIVE == true or config.FLYING_ACTIVE == true or config.FLYING_INACTIVE == true
 end
 
@@ -4927,8 +4950,9 @@ function visibilityLogic:BuildDriver(cfg)
 	end
 	local hideVehicle = ResourceBars.ShouldHideInVehicle and ResourceBars.ShouldHideInVehicle(cfg)
 	local hidePetBattle = ResourceBars.ShouldHideInPetBattle and ResourceBars.ShouldHideInPetBattle(cfg)
+	local visibilityUseAnd = cfg.visibilityMatchAll == true
 	if visibilityCfg and visibilityCfg.ALWAYS_HIDDEN then return "hide", false, visibilityCfg end
-	if self:UsesManualRules(visibilityCfg) then return nil, true, visibilityCfg end
+	if self:UsesManualRules(visibilityCfg, visibilityUseAnd) then return nil, true, visibilityCfg end
 	if not visibilityCfg and not hideVehicle and not hidePetBattle then return nil, false, visibilityCfg end
 
 	local clauses, seen = {}, {}
@@ -4988,7 +5012,7 @@ function visibilityLogic:ShouldShowManual(cfg, visibilityCfg)
 	if ResourceBars.ShouldHideInPetBattle and ResourceBars.ShouldHideInPetBattle(cfg) then
 		if self:IsPetBattleActive() then return false end
 	end
-	return self:ShouldShow(visibilityCfg)
+	return self:ShouldShow(visibilityCfg, cfg.visibilityMatchAll == true)
 end
 
 function visibilityLogic:ApplyManualFrameVisibility(frame, shouldShow)

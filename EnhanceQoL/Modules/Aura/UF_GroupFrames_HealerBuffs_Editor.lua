@@ -573,10 +573,13 @@ local function createThinScrollFrameBar(scrollFrame, xOffset)
 		local vrange = yRange
 		if vrange == nil and scrollFrame.GetVerticalScrollRange then vrange = scrollFrame:GetVerticalScrollRange() end
 		local maxRange = max(0, vrange or 0)
+		local clampedScroll = scrollFrame.GetVerticalScroll and (scrollFrame:GetVerticalScroll() or 0) or 0
+		if clampedScroll < 0 then clampedScroll = 0 end
+		if clampedScroll > maxRange then clampedScroll = maxRange end
+		if scrollFrame.SetVerticalScroll then scrollFrame:SetVerticalScroll(clampedScroll) end
 		sb._suppress = true
 		sb:SetMinMaxValues(0, maxRange)
-		local cur = sb:GetValue() or 0
-		if cur > maxRange then sb:SetValue(maxRange) end
+		sb:SetValue(clampedScroll)
 		sb._suppress = false
 		applyVisibility(maxRange)
 	end
@@ -621,8 +624,12 @@ local function createThinScrollFrameBar(scrollFrame, xOffset)
 	function sb:Sync()
 		local range = scrollFrame.GetVerticalScrollRange and scrollFrame:GetVerticalScrollRange() or 0
 		updateRange(nil, nil, range)
+		local clampedScroll = scrollFrame.GetVerticalScroll and (scrollFrame:GetVerticalScroll() or 0) or 0
+		if clampedScroll < 0 then clampedScroll = 0 end
+		if clampedScroll > range then clampedScroll = range end
+		if scrollFrame.SetVerticalScroll then scrollFrame:SetVerticalScroll(clampedScroll) end
 		sb._suppress = true
-		sb:SetValue(scrollFrame:GetVerticalScroll() or 0)
+		sb:SetValue(clampedScroll)
 		sb._suppress = false
 	end
 
@@ -1262,6 +1269,11 @@ function Editor:EnsureFrame()
 	previewTitle:SetPoint("TOPLEFT", 10, -10)
 	previewPanel.Title = previewTitle
 
+	local previewLoop = createCheck(previewPanel, tr("UFGroupHealerBuffEditorLoopLivePreview", "Loop Live Preview"))
+	previewLoop:SetPoint("LEFT", previewTitle, "RIGHT", 14, -4)
+	previewLoop:SetChecked(Editor._previewLoopEnabled == true)
+	previewPanel.LoopCheck = previewLoop
+
 	local previewFrame = CreateFrame("Frame", nil, previewPanel, "BackdropTemplate")
 	previewFrame:SetPoint("TOPLEFT", previewTitle, "BOTTOMLEFT", 0, -8)
 	previewFrame:SetPoint("TOPRIGHT", previewPanel, "TOPRIGHT", -10, -30)
@@ -1401,6 +1413,7 @@ function Editor:EnsureFrame()
 	local controls = {}
 	frame.Controls = controls
 	local groupControlParent = groupControlContent
+	controls.PreviewLoop = previewPanel.LoopCheck
 
 	controls.GroupNameLabel = groupControlParent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	controls.GroupNameLabel:SetPoint("TOPLEFT", groupControlParent, "TOPLEFT", 0, 0)
@@ -2317,6 +2330,8 @@ function Editor:EnsureFrame()
 		Editor:QueueRuntimeRefresh()
 	end)
 
+	if controls.PreviewLoop then controls.PreviewLoop:SetScript("OnClick", function(self) Editor:SetPreviewLoopEnabled(self:GetChecked() == true) end) end
+
 	controls.RuleColorButton:SetScript("OnClick", function(_, mouseButton)
 		local group = groupFromSelection()
 		local rule = ruleFromSelection()
@@ -2415,7 +2430,9 @@ function Editor:EnsureFrame()
 
 	frame:SetScript("OnShow", function()
 		if frame._updateGroupControlScroll then frame._updateGroupControlScroll() end
+		Editor:UpdatePreviewLoopTicker()
 	end)
+	frame:SetScript("OnHide", function() Editor:UpdatePreviewLoopTicker() end)
 	frame:SetScript("OnSizeChanged", function()
 		if frame._updateGroupControlScroll then frame._updateGroupControlScroll() end
 	end)
@@ -2652,6 +2669,8 @@ function Editor:RefreshGroupControls()
 	local controls = frame.Controls
 	local cfg, placement = self:GetContext()
 	local group = placement and self.selectedGroupId and placement.groupsById and placement.groupsById[self.selectedGroupId] or nil
+	local selectedGroupId = group and group.id or nil
+	local groupSelectionChanged = self._lastGroupControlGroupId ~= selectedGroupId
 	local ac = cfg and cfg.auras and cfg.auras.buff or EMPTY
 
 	local function setFieldState(label, control, visible, enabled)
@@ -2801,12 +2820,34 @@ function Editor:RefreshGroupControls()
 
 	if frame._layoutGroupControlRows then frame._layoutGroupControlRows() end
 	if frame._updateGroupControlScroll then frame._updateGroupControlScroll() end
+	if groupSelectionChanged then
+		local viewport = frame.SettingsPanel and frame.SettingsPanel.GroupControlViewport
+		if viewport and viewport.SetVerticalScroll then viewport:SetVerticalScroll(0) end
+		local scroll = frame.SettingsPanel and frame.SettingsPanel.GroupControlScroll
+		if scroll and scroll.Sync then scroll:Sync() end
+	end
+	self._lastGroupControlGroupId = selectedGroupId
 end
 
 local function clearPreview(unitFrame)
 	if not unitFrame then return end
 	for i = 1, #(unitFrame.SampleIcons or {}) do
-		unitFrame.SampleIcons[i]:Hide()
+		local icon = unitFrame.SampleIcons[i]
+		if icon then
+			icon:Hide()
+			if icon.PreviewCooldown then
+				if icon.PreviewCooldown.Clear then icon.PreviewCooldown:Clear() end
+				icon.PreviewCooldown:Hide()
+			end
+			if icon.PreviewCount then
+				icon.PreviewCount:SetText("")
+				icon.PreviewCount:Hide()
+			end
+			icon._eqolPreviewAura = nil
+			icon._eqolPreviewGroup = nil
+			icon._eqolPreviewAC = nil
+			icon._eqolPreviewSampleIndex = nil
+		end
 	end
 	for i = 1, #(unitFrame.SampleTints or {}) do
 		unitFrame.SampleTints[i]:Hide()
@@ -2818,6 +2859,164 @@ local function clearPreview(unitFrame)
 		unitFrame.SampleBorders[i]:Hide()
 	end
 	if unitFrame.HealthTexture then unitFrame.HealthTexture:SetColorTexture(0.08, 0.42, 0.19, 1) end
+end
+
+local function ensurePreviewAuraWidgets(icon)
+	if not icon then return end
+	if icon.PreviewCooldown then return end
+	local cooldown = CreateFrame("Cooldown", nil, icon, "CooldownFrameTemplate")
+	cooldown:SetAllPoints(icon)
+	if cooldown.SetReverse then cooldown:SetReverse(true) end
+	if cooldown.SetDrawEdge then cooldown:SetDrawEdge(true) end
+	if cooldown.SetDrawSwipe then cooldown:SetDrawSwipe(true) end
+	if cooldown.SetDrawBling then cooldown:SetDrawBling(true) end
+	icon.PreviewCooldown = cooldown
+
+	local overlay = CreateFrame("Frame", nil, icon)
+	overlay:SetAllPoints(icon)
+	if overlay.SetFrameStrata and cooldown.GetFrameStrata then overlay:SetFrameStrata(cooldown:GetFrameStrata()) end
+	if overlay.SetFrameLevel and cooldown.GetFrameLevel then overlay:SetFrameLevel((cooldown:GetFrameLevel() or 0) + 5) end
+	icon.PreviewOverlay = overlay
+
+	local countText = overlay:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	countText:SetPoint("BOTTOMRIGHT", overlay, "BOTTOMRIGHT", -2, 2)
+	icon.PreviewCount = countText
+end
+
+local function setPreviewFont(fontString, size, outline)
+	if not fontString then return end
+	local fontPath = (addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT
+	size = tonumber(size) or 12
+	if size < 6 then size = 6 end
+	if size > 64 then size = 64 end
+	fontString:SetFont(fontPath, size, outline or "OUTLINE")
+end
+
+local function getPreviewCooldownTiming(sampleIndex, now, loopEnabled, loopOrigin)
+	sampleIndex = tonumber(sampleIndex) or 1
+	now = tonumber(now) or ((GetTime and GetTime()) or 0)
+	local duration = 8 + ((sampleIndex - 1) % 3) * 4
+	if loopEnabled == true then
+		local origin = tonumber(loopOrigin) or now
+		local phaseOffset = ((sampleIndex - 1) % 4) * 0.55
+		local elapsed = (now - origin + phaseOffset) % duration
+		local remaining = duration - elapsed
+		if remaining <= 0 then remaining = duration end
+		return duration, remaining
+	end
+	local remaining = duration * (0.25 + ((sampleIndex - 1) % 3) * 0.2)
+	return duration, remaining
+end
+
+local function applyPreviewCooldown(icon, group, ac, sampleIndex, now, loopEnabled, loopOrigin)
+	if not icon then return end
+	ensurePreviewAuraWidgets(icon)
+	local cooldown = icon.PreviewCooldown
+	if not cooldown then return end
+
+	local drawSwipe = group.showCooldownSwipe ~= false
+	local drawEdge = group.showCooldownEdge ~= false
+	local drawBling = group.showCooldownBling ~= false
+	if cooldown.SetDrawSwipe then cooldown:SetDrawSwipe(drawSwipe) end
+	if cooldown.SetDrawEdge then cooldown:SetDrawEdge(drawEdge) end
+	if cooldown.SetDrawBling then cooldown:SetDrawBling(drawBling) end
+	if cooldown.SetHideCountdownNumbers then cooldown:SetHideCountdownNumbers(group.hideCooldownText == true) end
+
+	now = tonumber(now) or ((GetTime and GetTime()) or 0)
+	local duration, remaining = getPreviewCooldownTiming(sampleIndex, now, loopEnabled, loopOrigin)
+	local startTime = now - (duration - remaining)
+	cooldown:SetCooldown(startTime, duration)
+	cooldown:Show()
+
+	local cooldownText = cooldown.GetCountdownFontString and cooldown:GetCountdownFontString()
+	if cooldownText then
+		cooldownText:ClearAllPoints()
+		cooldownText:SetPoint("CENTER", icon, "CENTER", 0, 0)
+		local size = group.cooldownTextSize
+		if size == nil and ac then size = ac.cooldownFontSize end
+		setPreviewFont(cooldownText, size or 12, ac and ac.cooldownFontOutline)
+	end
+end
+
+local function applyPreviewCharges(icon, group, ac, sampleIndex)
+	if not icon then return end
+	ensurePreviewAuraWidgets(icon)
+	local text = icon.PreviewCount
+	if not text then return end
+
+	if group.hideChargeText == true then
+		text:SetText("")
+		text:Hide()
+		return
+	end
+
+	local sampleCounts = { 4, 2, 5, 3 }
+	local count = sampleCounts[((sampleIndex - 1) % #sampleCounts) + 1]
+	if not count or count <= 1 then
+		text:SetText("")
+		text:Hide()
+		return
+	end
+	local size = group.chargeTextSize
+	if size == nil and ac then size = ac.countFontSize end
+	setPreviewFont(text, size or 14, ac and ac.countFontOutline)
+	text:SetText(tostring(count))
+	text:Show()
+end
+
+function Editor:SetPreviewLoopEnabled(enabled)
+	enabled = enabled == true
+	if self._previewLoopEnabled == enabled then
+		self:UpdatePreviewLoopTicker()
+		return
+	end
+	self._previewLoopEnabled = enabled
+	if enabled then
+		self._previewLoopStart = (GetTime and GetTime()) or 0
+	else
+		self._previewLoopStart = nil
+	end
+	local frame = self.frame
+	if frame and frame.Controls and frame.Controls.PreviewLoop and frame.Controls.PreviewLoop.GetChecked and frame.Controls.PreviewLoop:GetChecked() ~= enabled then
+		frame.Controls.PreviewLoop:SetChecked(enabled)
+	end
+	self:RefreshPreview()
+end
+
+function Editor:TickPreviewLoop()
+	if self._previewLoopEnabled ~= true then return end
+	local frame = self.frame
+	local preview = frame and frame.PreviewPanel and frame.PreviewPanel.Frame and frame.PreviewPanel.Frame.UnitFrame
+	if not preview then return end
+	local now = (GetTime and GetTime()) or 0
+	local loopOrigin = self._previewLoopStart or now
+	for i = 1, #(preview.SampleIcons or EMPTY) do
+		local icon = preview.SampleIcons[i]
+		if icon and icon:IsShown() and icon._eqolPreviewAura == true then
+			local group = icon._eqolPreviewGroup
+			if group then applyPreviewCooldown(icon, group, icon._eqolPreviewAC or EMPTY, icon._eqolPreviewSampleIndex or 1, now, true, loopOrigin) end
+		end
+	end
+end
+
+function Editor:UpdatePreviewLoopTicker()
+	local frame = self.frame
+	local shouldRun = self._previewLoopEnabled == true and frame and frame:IsShown() and C_Timer and C_Timer.NewTicker
+	if not shouldRun then
+		if self._previewLoopTicker and self._previewLoopTicker.Cancel then self._previewLoopTicker:Cancel() end
+		self._previewLoopTicker = nil
+		return
+	end
+	if self._previewLoopTicker then return end
+	if not self._previewLoopStart then self._previewLoopStart = (GetTime and GetTime()) or 0 end
+	self._previewLoopTicker = C_Timer.NewTicker(0.1, function()
+		if not (Editor and Editor._previewLoopEnabled == true and Editor.frame and Editor.frame:IsShown()) then
+			if Editor and Editor._previewLoopTicker and Editor._previewLoopTicker.Cancel then Editor._previewLoopTicker:Cancel() end
+			if Editor then Editor._previewLoopTicker = nil end
+			return
+		end
+		Editor:TickPreviewLoop()
+	end)
 end
 
 local function resolveColor(color)
@@ -2887,12 +3086,24 @@ end
 
 function Editor:RefreshPreview()
 	local frame = self:EnsureFrame()
-	local _, placement = self:GetContext()
+	local cfg, placement = self:GetContext()
+	local ac = cfg and cfg.auras and cfg.auras.buff or EMPTY
+	local loopEnabled = self._previewLoopEnabled == true
+	local now = (GetTime and GetTime()) or 0
+	if loopEnabled and not self._previewLoopStart then self._previewLoopStart = now end
+	local loopOrigin = self._previewLoopStart or now
+	if frame.Controls and frame.Controls.PreviewLoop then frame.Controls.PreviewLoop:SetChecked(loopEnabled) end
 	local preview = frame.PreviewPanel and frame.PreviewPanel.Frame and frame.PreviewPanel.Frame.UnitFrame
-	if not preview then return end
+	if not preview then
+		self:UpdatePreviewLoopTicker()
+		return
+	end
 	clearPreview(preview)
 
-	if not placement then return end
+	if not placement then
+		self:UpdatePreviewLoopTicker()
+		return
+	end
 	local order = placement.groupOrder or EMPTY
 	local iconIndex, barIndex, borderIndex = 1, 1, 1
 	local tintR, tintG, tintB, tintA
@@ -2982,6 +3193,12 @@ function Editor:RefreshPreview()
 							icon.Texture:SetTexture(iconTex or 134400)
 							icon.Texture:SetVertexColor(1, 1, 1, 1)
 						end
+						icon._eqolPreviewAura = true
+						icon._eqolPreviewGroup = group
+						icon._eqolPreviewAC = ac
+						icon._eqolPreviewSampleIndex = i
+						applyPreviewCooldown(icon, group, ac, i, now, loopEnabled, loopOrigin)
+						applyPreviewCharges(icon, group, ac, i)
 						icon:SetBackdropBorderColor(selected and 0.95 or 0, selected and 0.8 or 0, selected and 0.25 or 0, selected and 1 or 0.8)
 						icon:Show()
 					end
@@ -3047,6 +3264,7 @@ function Editor:RefreshPreview()
 	end
 
 	applyPreviewHealthTint(preview, tintR, tintG, tintB, hasTint and tintA or nil)
+	self:UpdatePreviewLoopTicker()
 end
 
 function Editor:RefreshControls()

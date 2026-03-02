@@ -5,11 +5,19 @@
 ### ✨ Added
 
 - Mythic+ (World Map Dungeon Portals): Added `Abundant Beacon`.
+- Group Frames (Healer Buff Placement): Added new Indicator options for `Icon`/`Square`: `Cooldown Swipe`, `Draw Edge`, `Draw Bling`, `Hide Cooldown Text`, and `Hide Charge Text`.
+- Group Frames (Healer Buff Placement): Added `Cooldown Size` and `Charge Size` sliders (up to `64`) for `Icon`/`Square` indicators.
+- Group Frames (Healer Buff Placement): Added `Loop Live Preview` toggle in the editor.
+
+### 🔄 Changed
+
+- Group Frames (Healer Buff Placement): Improved editor spacing/alignment for labels, checkboxes, and color pickers to avoid overlaps and improve readability.
 
 ### 🐛 Fixed
 
 - Health Macro: Updated outdated post-squish heal values for older health potions so current Midnight potions are prioritized correctly.
 - Health Macro: Corrected `Algari Healing Potion` ranking values (`211878`, `211879`, `211880`) to match current in-game magnitudes.
+- Group Frames (Healer Buff Placement): Fixed Indicator Settings scroll behavior when switching from long to short indicator styles (for example `Tint`), so settings are no longer hidden off-screen.
 
 ---
 

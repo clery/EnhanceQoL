@@ -2634,9 +2634,15 @@ local function updateSquareMinimapStat(statKey)
 	local latencyMode = statKey == "latency" and (addon.db.squareMinimapStatsLatencyMode or "max") or nil
 	local useVerticalLatency = statKey == "latency" and latencyMode == "split_vertical"
 	local lineGap = math.max(math.floor(size * 0.15), 2)
+	local justify = getSquareMinimapStatJustify(point)
 
-	frame:ClearAllPoints()
-	frame:SetPoint(point, Minimap, point, x, y)
+	if frame._eqolAnchorPoint ~= point or frame._eqolAnchorX ~= x or frame._eqolAnchorY ~= y then
+		frame:ClearAllPoints()
+		frame:SetPoint(point, Minimap, point, x, y)
+		frame._eqolAnchorPoint = point
+		frame._eqolAnchorX = x
+		frame._eqolAnchorY = y
+	end
 
 	local r, g, b, a = getSquareMinimapStatsColor(cfg.colorKey)
 	if statKey == "location" and addon.db.squareMinimapStatsLocationUseZoneColor then
@@ -2644,46 +2650,90 @@ local function updateSquareMinimapStat(statKey)
 		a = 1
 	end
 
-	frame.text:ClearAllPoints()
-	frame.text:SetPoint(point, frame, point, 0, 0)
-	frame.text:SetJustifyH(getSquareMinimapStatJustify(point))
-	frame.textSecondary:ClearAllPoints()
-	frame.textSecondary:SetPoint(point, frame, point, 0, 0)
-	frame.textSecondary:SetJustifyH(getSquareMinimapStatJustify(point))
-	frame.textSecondary:Hide()
+	if frame._eqolTextPoint ~= point then
+		frame.text:ClearAllPoints()
+		frame.text:SetPoint(point, frame, point, 0, 0)
+		frame.textSecondary:ClearAllPoints()
+		frame.textSecondary:SetPoint(point, frame, point, 0, 0)
+		frame._eqolTextPoint = point
+		frame._eqolSecondaryPoint = point
+		frame._eqolSecondaryOffsetY = 0
+	end
+	if frame._eqolTextJustify ~= justify then
+		frame.text:SetJustifyH(justify)
+		frame.textSecondary:SetJustifyH(justify)
+		frame._eqolTextJustify = justify
+	end
+
 	local fontPath = getSquareMinimapStatsFontPath()
 	local outline = getSquareMinimapStatsOutlineFlag()
-	local ok = frame.text:SetFont(fontPath, size, outline)
-	if not ok then frame.text:SetFont((addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", size, outline) end
-	local okSecondary = frame.textSecondary:SetFont(fontPath, size, outline)
-	if not okSecondary then frame.textSecondary:SetFont((addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", size, outline) end
-	frame.textSecondary:SetText("")
-	frame.text:SetTextColor(r, g, b, a)
-	frame.textSecondary:SetTextColor(r, g, b, a)
+	if frame._eqolFontPath ~= fontPath or frame._eqolFontSize ~= size or frame._eqolFontOutline ~= outline then
+		local ok = frame.text:SetFont(fontPath, size, outline)
+		if not ok then frame.text:SetFont((addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", size, outline) end
+		local okSecondary = frame.textSecondary:SetFont(fontPath, size, outline)
+		if not okSecondary then frame.textSecondary:SetFont((addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", size, outline) end
+		frame._eqolFontPath = fontPath
+		frame._eqolFontSize = size
+		frame._eqolFontOutline = outline
+	end
+	if frame._eqolTextColorR ~= r or frame._eqolTextColorG ~= g or frame._eqolTextColorB ~= b or frame._eqolTextColorA ~= a then
+		frame.text:SetTextColor(r, g, b, a)
+		frame.textSecondary:SetTextColor(r, g, b, a)
+		frame._eqolTextColorR = r
+		frame._eqolTextColorG = g
+		frame._eqolTextColorB = b
+		frame._eqolTextColorA = a
+	end
+
+	local primaryText = ""
+	local secondaryText = ""
+	local showSecondary = false
 	if useVerticalLatency then
 		local homeText, worldText = getSquareMinimapLatencySplitTexts()
 		local stackUpwards = point and point:find("BOTTOM", 1, true) ~= nil
+		local secondaryY
 		if stackUpwards then
-			frame.text:SetText(worldText)
-			frame.textSecondary:SetPoint(point, frame, point, 0, size + lineGap)
-			frame.textSecondary:SetText(homeText)
+			primaryText = worldText or ""
+			secondaryText = homeText or ""
+			secondaryY = size + lineGap
 		else
-			frame.text:SetText(homeText)
-			frame.textSecondary:SetPoint(point, frame, point, 0, -(size + lineGap))
-			frame.textSecondary:SetText(worldText)
+			primaryText = homeText or ""
+			secondaryText = worldText or ""
+			secondaryY = -(size + lineGap)
 		end
-		frame.textSecondary:Show()
+		if frame._eqolSecondaryPoint ~= point or frame._eqolSecondaryOffsetY ~= secondaryY then
+			frame.textSecondary:ClearAllPoints()
+			frame.textSecondary:SetPoint(point, frame, point, 0, secondaryY)
+			frame._eqolSecondaryPoint = point
+			frame._eqolSecondaryOffsetY = secondaryY
+		end
+		showSecondary = true
 	else
-		local primaryText = getSquareMinimapStatText(statKey) or ""
+		primaryText = getSquareMinimapStatText(statKey) or ""
 		if statKey == "location" then
 			local maxWidth = getSquareMinimapLocationMaxWidth(point, x)
 			if maxWidth and maxWidth > 0 then primaryText = truncateSquareMinimapTextToWidth(frame.text, primaryText, maxWidth) end
 		end
-		frame.text:SetText(primaryText)
 	end
 
-	local primaryText = frame.text:GetText() or ""
-	local secondaryText = frame.textSecondary:GetText() or ""
+	if frame._eqolPrimaryText ~= primaryText then
+		frame.text:SetText(primaryText)
+		frame._eqolPrimaryText = primaryText
+	end
+	if showSecondary then
+		if frame._eqolSecondaryText ~= secondaryText then
+			frame.textSecondary:SetText(secondaryText)
+			frame._eqolSecondaryText = secondaryText
+		end
+		if not frame.textSecondary:IsShown() then frame.textSecondary:Show() end
+	else
+		if frame.textSecondary:IsShown() then frame.textSecondary:Hide() end
+		if frame._eqolSecondaryText ~= "" then
+			frame.textSecondary:SetText("")
+			frame._eqolSecondaryText = ""
+		end
+	end
+
 	if primaryText == "" and secondaryText == "" then
 		frame:Hide()
 		return
@@ -2695,7 +2745,13 @@ local function updateSquareMinimapStat(statKey)
 		width = math.max(width, getSquareMinimapFontStringWidth(frame.textSecondary))
 		height = height + frame.textSecondary:GetStringHeight() + lineGap
 	end
-	frame:SetSize(math.max(width, 1), math.max(height, 1))
+	local finalW = math.max(width, 1)
+	local finalH = math.max(height, 1)
+	if frame._eqolWidth ~= finalW or frame._eqolHeight ~= finalH then
+		frame:SetSize(finalW, finalH)
+		frame._eqolWidth = finalW
+		frame._eqolHeight = finalH
+	end
 	frame:Show()
 end
 

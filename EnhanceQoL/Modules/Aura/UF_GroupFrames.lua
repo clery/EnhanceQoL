@@ -2914,10 +2914,10 @@ function GF:BuildButton(self)
 	if not st.statusText then st.statusText = st.healthTextLayer:CreateFontString(nil, "OVERLAY", "GameFontHighlight") end
 	if not st.groupNumberText then st.groupNumberText = st.healthTextLayer:CreateFontString(nil, "OVERLAY", "GameFontHighlight") end
 	if not st.privateAuras then
-		st.privateAuras = CreateFrame("Frame", nil, st.health or st.barGroup or self)
+		st.privateAuras = CreateFrame("Frame", nil, st.barGroup or st.health or self)
 		st.privateAuras:EnableMouse(false)
 	end
-	local privateAuraParent = st.health or st.barGroup or self
+	local privateAuraParent = st.barGroup or st.health or self
 	if st.privateAuras.GetParent and privateAuraParent and st.privateAuras:GetParent() ~= privateAuraParent then st.privateAuras:SetParent(privateAuraParent) end
 
 	local indicatorLayer = st.statusIconLayer or st.healthTextLayer
@@ -4369,7 +4369,7 @@ function GF:LayoutAuras(self)
 	end
 end
 
-local function updateAuraType(self, unit, st, ac, kindKey, cache, changed)
+local function updateAuraType(self, unit, st, ac, kindKey, cache, changed, healerBuffCompiled)
 	local meta = AURA_TYPE_META[kindKey]
 	if not meta then return end
 	local typeCfg = (ac and ac[kindKey]) or EMPTY
@@ -4425,7 +4425,7 @@ local function updateAuraType(self, unit, st, ac, kindKey, cache, changed)
 			elseif kindKey == "buff" then
 				match = hasAuraFlag(auraFlags, AURA_KIND_HELPFUL)
 				if match and externalsEnabled and hasAuraFlag(auraFlags, AURA_KIND_EXTERNAL) then match = false end
-				if match and suppressHealerBuffAura and suppressHealerBuffAura(suppressKind, suppressCfg, aura) then match = false end
+				if match and suppressHealerBuffAura and suppressHealerBuffAura(suppressKind, suppressCfg, aura, healerBuffCompiled) then match = false end
 			elseif kindKey == "externals" then
 				match = hasAuraFlag(auraFlags, AURA_KIND_EXTERNAL)
 			end
@@ -4568,7 +4568,8 @@ function GF:UpdateAuras(self, updateInfo)
 			hideAuraButtons(st.externalButtons, 1)
 			st._auraSampleActive = nil
 			GF:UpdateDispelTint(self, nil, nil)
-			if UF.GroupFramesHealerBuffs and UF.GroupFramesHealerBuffs.ClearButton then UF.GroupFramesHealerBuffs.ClearButton(self) end
+			if st._healerBuffPlacementActive and UF.GroupFramesHealerBuffs and UF.GroupFramesHealerBuffs.ClearButton then UF.GroupFramesHealerBuffs.ClearButton(self) end
+			st._healerBuffPlacementActive = nil
 			return
 		end
 		GF:UpdateSampleAuras(self)
@@ -4582,12 +4583,14 @@ function GF:UpdateAuras(self, updateInfo)
 		hideAuraButtons(st.externalButtons, 1)
 		st._auraSampleActive = nil
 		GF:UpdateDispelTint(self, nil, nil)
-		if UF.GroupFramesHealerBuffs and UF.GroupFramesHealerBuffs.ClearButton then UF.GroupFramesHealerBuffs.ClearButton(self) end
+		if st._healerBuffPlacementActive and UF.GroupFramesHealerBuffs and UF.GroupFramesHealerBuffs.ClearButton then UF.GroupFramesHealerBuffs.ClearButton(self) end
+		st._healerBuffPlacementActive = nil
 		return
 	end
 	if not (unit and C_UnitAuras) then
 		GF:UpdateDispelTint(self, nil, nil)
-		if UF.GroupFramesHealerBuffs and UF.GroupFramesHealerBuffs.ClearButton then UF.GroupFramesHealerBuffs.ClearButton(self) end
+		if st._healerBuffPlacementActive and UF.GroupFramesHealerBuffs and UF.GroupFramesHealerBuffs.ClearButton then UF.GroupFramesHealerBuffs.ClearButton(self) end
+		st._healerBuffPlacementActive = nil
 		return
 	end
 	local cfg = self._eqolCfg or getCfg(self._eqolGroupKind or "party")
@@ -4597,6 +4600,10 @@ function GF:UpdateAuras(self, updateInfo)
 	if wantsAuras == nil then wantsAuras = ((ac.buff and ac.buff.enabled) or (ac.debuff and ac.debuff.enabled) or (ac.externals and ac.externals.enabled)) or false end
 	local wantsDispelTint = st._wantsDispelTint == true
 	local wantsHealerBuffPlacement = st._wantsHealerBuffPlacement == true
+	if wantsHealerBuffPlacement and not (cfg and cfg.healerBuffPlacement and cfg.healerBuffPlacement.enabled == true) then
+		wantsHealerBuffPlacement = false
+		st._wantsHealerBuffPlacement = false
+	end
 	if wantsAuras == false and not wantsDispelTint and not wantsHealerBuffPlacement then
 		if st.buffContainer then st.buffContainer:Hide() end
 		if st.debuffContainer then st.debuffContainer:Hide() end
@@ -4604,7 +4611,8 @@ function GF:UpdateAuras(self, updateInfo)
 		hideAuraButtons(st.buffButtons, 1)
 		hideAuraButtons(st.debuffButtons, 1)
 		hideAuraButtons(st.externalButtons, 1)
-		if UF.GroupFramesHealerBuffs and UF.GroupFramesHealerBuffs.ClearButton then UF.GroupFramesHealerBuffs.ClearButton(self) end
+		if st._healerBuffPlacementActive and UF.GroupFramesHealerBuffs and UF.GroupFramesHealerBuffs.ClearButton then UF.GroupFramesHealerBuffs.ClearButton(self) end
+		st._healerBuffPlacementActive = nil
 		return
 	end
 	if wantsAuras == false then
@@ -4666,21 +4674,31 @@ function GF:UpdateAuras(self, updateInfo)
 		auraQueryMax.harmful = nil
 	end
 	auraQueryMax.external = wantExternals and externalMax or nil
+	local healerBuffCompiled = nil
+	if wantsHealerBuffPlacement and UF.GroupFramesHealerBuffs and UF.GroupFramesHealerBuffs.GetCompiled then
+		healerBuffCompiled = UF.GroupFramesHealerBuffs.GetCompiled(self._eqolGroupKind or "party", cfg)
+	end
 	local allCache = getAuraCache(st, "all")
 	st._auraKindById = st._auraKindById or {}
 	if not updateInfo or updateInfo.isFullUpdate then
 		fullScanGroupAuras(unit, st, allCache, helpfulFilter, harmfulFilter, externalFilter, dispelFilter, wantBuff, wantDebuff, wantExternals, wantsDispelTint, wantsHealerBuffPlacement, auraQueryMax)
 		if wantsAuras then
-			if wantBuff then updateAuraType(self, unit, st, ac, "buff", allCache) end
-			if wantDebuff then updateAuraType(self, unit, st, ac, "debuff", allCache) end
-			if wantExternals then updateAuraType(self, unit, st, ac, "externals", allCache) end
+			if wantBuff then updateAuraType(self, unit, st, ac, "buff", allCache, nil, healerBuffCompiled) end
+			if wantDebuff then updateAuraType(self, unit, st, ac, "debuff", allCache, nil, healerBuffCompiled) end
+			if wantExternals then updateAuraType(self, unit, st, ac, "externals", allCache, nil, healerBuffCompiled) end
 		end
 		if wantsDispelTint then
 			GF:UpdateDispelTint(self, allCache, dispelFilter, nil, AURA_KIND_DISPEL)
 		else
 			GF:UpdateDispelTint(self, nil, nil)
 		end
-		if UF.GroupFramesHealerBuffs and UF.GroupFramesHealerBuffs.UpdateFromAuras then UF.GroupFramesHealerBuffs.UpdateFromAuras(self, updateInfo, allCache, nil, true) end
+		if wantsHealerBuffPlacement and UF.GroupFramesHealerBuffs and UF.GroupFramesHealerBuffs.UpdateFromAuras then
+			UF.GroupFramesHealerBuffs.UpdateFromAuras(self, updateInfo, allCache, nil, true, healerBuffCompiled)
+			st._healerBuffPlacementActive = true
+		elseif st._healerBuffPlacementActive and UF.GroupFramesHealerBuffs and UF.GroupFramesHealerBuffs.ClearButton then
+			UF.GroupFramesHealerBuffs.ClearButton(self)
+			st._healerBuffPlacementActive = nil
+		end
 		return
 	end
 	local touchBuff, touchDebuff, touchExternals
@@ -4766,16 +4784,22 @@ function GF:UpdateAuras(self, updateInfo)
 		end
 	end
 	if wantsAuras then
-		if wantBuff and touchBuff then updateAuraType(self, unit, st, ac, "buff", allCache, changed) end
-		if wantDebuff and touchDebuff then updateAuraType(self, unit, st, ac, "debuff", allCache, changed) end
-		if wantExternals and touchExternals then updateAuraType(self, unit, st, ac, "externals", allCache, changed) end
+		if wantBuff and touchBuff then updateAuraType(self, unit, st, ac, "buff", allCache, changed, healerBuffCompiled) end
+		if wantDebuff and touchDebuff then updateAuraType(self, unit, st, ac, "debuff", allCache, changed, healerBuffCompiled) end
+		if wantExternals and touchExternals then updateAuraType(self, unit, st, ac, "externals", allCache, changed, healerBuffCompiled) end
 	end
 	if wantsDispelTint then
 		GF:UpdateDispelTint(self, allCache, dispelFilter, nil, AURA_KIND_DISPEL)
 	else
 		GF:UpdateDispelTint(self, nil, nil)
 	end
-	if UF.GroupFramesHealerBuffs and UF.GroupFramesHealerBuffs.UpdateFromAuras then UF.GroupFramesHealerBuffs.UpdateFromAuras(self, updateInfo, allCache, changed, false) end
+	if wantsHealerBuffPlacement and UF.GroupFramesHealerBuffs and UF.GroupFramesHealerBuffs.UpdateFromAuras then
+		UF.GroupFramesHealerBuffs.UpdateFromAuras(self, updateInfo, allCache, changed, false, healerBuffCompiled)
+		st._healerBuffPlacementActive = true
+	elseif st._healerBuffPlacementActive and UF.GroupFramesHealerBuffs and UF.GroupFramesHealerBuffs.ClearButton then
+		UF.GroupFramesHealerBuffs.ClearButton(self)
+		st._healerBuffPlacementActive = nil
+	end
 end
 
 function GF:UpdateSampleAuras(self)
@@ -4788,6 +4812,10 @@ function GF:UpdateSampleAuras(self)
 	local wantsDispelTint = resolveDispelIndicatorEnabled(cfg, self._eqolGroupKind or "party")
 	st._wantsDispelTint = wantsDispelTint
 	local wantsHealerBuffPlacement = st._wantsHealerBuffPlacement == true
+	if wantsHealerBuffPlacement and not (cfg and cfg.healerBuffPlacement and cfg.healerBuffPlacement.enabled == true) then
+		wantsHealerBuffPlacement = false
+		st._wantsHealerBuffPlacement = false
+	end
 	if cfg then GFH.SyncAurasEnabled(cfg) end
 	local wantsAuras = ((ac.buff and ac.buff.enabled) or (ac.debuff and ac.debuff.enabled) or (ac.externals and ac.externals.enabled)) or false
 	if ac.enabled == true then wantsAuras = true end
@@ -4808,9 +4836,11 @@ function GF:UpdateSampleAuras(self)
 		if UF.GroupFramesHealerBuffs then
 			if wantsHealerBuffPlacement and UF.GroupFramesHealerBuffs.UpdateSample then
 				UF.GroupFramesHealerBuffs.UpdateSample(self)
+				st._healerBuffPlacementActive = true
 				st._auraSampleActive = true
-			elseif UF.GroupFramesHealerBuffs.ClearButton then
+			elseif st._healerBuffPlacementActive and UF.GroupFramesHealerBuffs.ClearButton then
 				UF.GroupFramesHealerBuffs.ClearButton(self)
+				st._healerBuffPlacementActive = nil
 			end
 		end
 		return
@@ -4900,8 +4930,10 @@ function GF:UpdateSampleAuras(self)
 	if UF.GroupFramesHealerBuffs then
 		if wantsHealerBuffPlacement and UF.GroupFramesHealerBuffs.UpdateSample then
 			UF.GroupFramesHealerBuffs.UpdateSample(self)
-		elseif UF.GroupFramesHealerBuffs.ClearButton then
+			st._healerBuffPlacementActive = true
+		elseif st._healerBuffPlacementActive and UF.GroupFramesHealerBuffs.ClearButton then
 			UF.GroupFramesHealerBuffs.ClearButton(self)
+			st._healerBuffPlacementActive = nil
 		end
 	end
 	st._auraSampleActive = true
@@ -5493,7 +5525,7 @@ function GF:UpdatePrivateAuras(self)
 	local cfg = self._eqolCfg or getCfg(kind)
 	local def = DEFAULTS[kind] or {}
 	local pcfg = (cfg and cfg.privateAuras) or def.privateAuras
-	local privateAuraParent = st.health or st.barGroup or self
+	local privateAuraParent = st.barGroup or st.health or self
 	local privateAuraLevelParent = st.statusIconLayer or st.healthTextLayer or st.health or st.barGroup or self
 	if not st.privateAuras then
 		if not (pcfg and pcfg.enabled == true) then return end
@@ -6179,6 +6211,7 @@ function GF:UnitButton_ClearUnit(self)
 		clearDispelAuraState(st)
 	end
 	if UF.GroupFramesHealerBuffs and UF.GroupFramesHealerBuffs.ClearButton then UF.GroupFramesHealerBuffs.ClearButton(self) end
+	if st then st._healerBuffPlacementActive = nil end
 	if st and st.privateAuras and UFHelper then
 		if UFHelper.RemovePrivateAuras then UFHelper.RemovePrivateAuras(st.privateAuras) end
 		if UFHelper.UpdatePrivateAuraSound then UFHelper.UpdatePrivateAuraSound(st.privateAuras, nil, (self._eqolCfg and self._eqolCfg.privateAuras) or {}) end
@@ -6956,13 +6989,26 @@ function GF:RefreshHealerBuffPlacement(kind)
 		if kind ~= "party" and kind ~= "raid" then kind = nil end
 	end
 	local db = DB or ensureDB()
-	if db and db.party and db.raid then kind = nil end
-	if UF.GroupFramesHealerBuffs.InvalidateKind then
+	local hbm = UF.GroupFramesHealerBuffs
+	if hbm and hbm.MarkPlacementDirty and db then
+		local function markKind(value)
+			local cfg = db[value]
+			if cfg and cfg.healerBuffPlacement then hbm.MarkPlacementDirty(cfg.healerBuffPlacement) end
+		end
 		if kind then
-			UF.GroupFramesHealerBuffs.InvalidateKind(kind)
+			markKind(kind)
 		else
-			UF.GroupFramesHealerBuffs.InvalidateKind("party")
-			UF.GroupFramesHealerBuffs.InvalidateKind("raid")
+			markKind("party")
+			markKind("raid")
+		end
+	end
+	if db and db.party and db.raid then kind = nil end
+	if hbm and hbm.InvalidateKind then
+		if kind then
+			hbm.InvalidateKind(kind)
+		else
+			hbm.InvalidateKind("party")
+			hbm.InvalidateKind("raid")
 		end
 	end
 

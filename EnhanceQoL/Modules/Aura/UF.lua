@@ -5183,6 +5183,13 @@ function UF.resolveHealthColorCurveType(value)
 	return curveType.Cosine or curveType.Linear or curveType.Step
 end
 
+local function extractCurveColorRGBA(color)
+	if not color then return nil end
+	if color.GetRGBA then return color:GetRGBA() end
+	if color.r then return color.r, color.g, color.b, color.a end
+	return color[1], color[2], color[3], color[4]
+end
+
 function UF.getHealthPercentCurveColor(st, unit, hc, defH, maxR, maxG, maxB, maxA)
 	local useCurve = hc.usePercentColorCurve
 	if useCurve == nil then useCurve = defH.usePercentColorCurve end
@@ -5209,9 +5216,7 @@ function UF.getHealthPercentCurveColor(st, unit, hc, defH, maxR, maxG, maxB, max
 			fastColor = UnitHealthPercent(unit, true, curve)
 		end
 		if not fastColor then return nil end
-		if fastColor.GetRGBA then return fastColor:GetRGBA() end
-		if fastColor.r then return fastColor.r, fastColor.g, fastColor.b, fastColor.a end
-		return fastColor[1], fastColor[2], fastColor[3], fastColor[4]
+		return extractCurveColorRGBA(fastColor)
 	end
 
 	local pointsSource = hc.percentColorCurvePoints
@@ -5315,9 +5320,7 @@ function UF.getHealthPercentCurveColor(st, unit, hc, defH, maxR, maxG, maxB, max
 	end
 	if not color then return nil end
 
-	if color.GetRGBA then return color:GetRGBA() end
-	if color.r then return color.r, color.g, color.b, color.a end
-	return color[1], color[2], color[3], color[4]
+	return extractCurveColorRGBA(color)
 end
 
 local function updateHealth(cfg, unit)

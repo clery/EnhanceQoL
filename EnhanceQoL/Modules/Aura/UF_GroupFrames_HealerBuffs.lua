@@ -465,6 +465,15 @@ function HB.GetFamilyFromSpell(spellId)
 	return SPELL_TO_FAMILY[tonumber(spellId)]
 end
 
+function HB.MarkPlacementDirty(cfgOrPlacement)
+	if type(cfgOrPlacement) ~= "table" then return end
+	local placement = cfgOrPlacement.healerBuffPlacement
+	if type(placement) ~= "table" then placement = cfgOrPlacement end
+	if type(placement) ~= "table" then return end
+	placement._eqolDirty = true
+	placement._eqolNormalized = nil
+end
+
 local function newPlacementConfig()
 	return {
 		enabled = false,
@@ -618,6 +627,11 @@ function HB.EnsureConfig(cfg)
 		placement = newPlacementConfig()
 		cfg.healerBuffPlacement = placement
 	end
+	if placement._eqolNormalized == true and placement._eqolDirty ~= true then
+		if placement.enabled == nil then placement.enabled = false end
+		if placement.version == nil then placement.version = 1 end
+		return placement
+	end
 	if placement.enabled == nil then placement.enabled = false end
 	if placement.version == nil then placement.version = 1 end
 	placement.groupsById = type(placement.groupsById) == "table" and placement.groupsById or {}
@@ -640,6 +654,8 @@ function HB.EnsureConfig(cfg)
 	end
 	placement.rulesById = normalizedRules
 	placement.ruleOrder = normalizeOrder(placement.ruleOrder, normalizedRules)
+	placement._eqolDirty = nil
+	placement._eqolNormalized = true
 
 	return placement
 end
@@ -1031,9 +1047,9 @@ local function getFamilyForAura(compiled, aura)
 	return familyId
 end
 
-function HB.ShouldSuppressRegularBuffAura(kind, cfg, aura)
+function HB.ShouldSuppressRegularBuffAura(kind, cfg, aura, compiled)
 	if aura == nil or cfg == nil then return false end
-	local compiled = compile(kind, cfg)
+	compiled = compiled or compile(kind, cfg)
 	if not (compiled and compiled.enabled) then return false end
 	local familyId = getFamilyForAura(compiled, aura)
 	if familyId == nil then return false end
@@ -1713,13 +1729,13 @@ function HB.ClearButton(btn)
 	hideAllVisuals(btn, st, state)
 end
 
-function HB.UpdateFromAuras(btn, updateInfo, cache, changed, isFullUpdate)
+function HB.UpdateFromAuras(btn, updateInfo, cache, changed, isFullUpdate, compiledOverride)
 	local state, st = getState(btn)
 	if not (state and st and btn) then return end
 	local kind = normalizeKind(btn._eqolGroupKind or KIND_PARTY)
 	local cfg = btn._eqolCfg
 	if not cfg then return end
-	local compiled = compile(kind, cfg)
+	local compiled = compiledOverride or compile(kind, cfg)
 	if not (compiled and compiled.enabled) then
 		HB.ClearButton(btn)
 		return

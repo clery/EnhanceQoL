@@ -291,6 +291,74 @@ local function setEnchantTextLinkCache(link, value)
 	enchantTextLinkCache[link] = value
 end
 
+local function trimText(text)
+	if type(text) ~= "string" then return nil end
+	text = text:gsub("^%s+", ""):gsub("%s+$", "")
+	if text == "" then return nil end
+	return text
+end
+
+local enchantPrefixKeywords = nil
+local function getEnchantPrefixKeywords()
+	if enchantPrefixKeywords then return enchantPrefixKeywords end
+	enchantPrefixKeywords = {}
+	local seen = {}
+	local function addKeyword(keyword)
+		keyword = trimText(keyword)
+		if not keyword then return end
+		if seen[keyword] then return end
+		seen[keyword] = true
+		table.insert(enchantPrefixKeywords, keyword)
+	end
+
+	addKeyword(TRADEFRAME_ENCHANT_SLOT_LABEL)
+	addKeyword(ENCHANT)
+	addKeyword(ENCHANTS)
+	addKeyword(PROFESSIONS_ENCHANTING)
+
+	return enchantPrefixKeywords
+end
+
+local function prefixLooksLikeEnchant(prefixText)
+	local keywords = getEnchantPrefixKeywords()
+	if #keywords == 0 then return false end
+	local loweredPrefix = strlower(prefixText)
+	for _, keyword in ipairs(keywords) do
+		if prefixText:find(keyword, 1, true) then return true end
+		local loweredKeyword = strlower(keyword)
+		if loweredKeyword ~= keyword and loweredPrefix:find(loweredKeyword, 1, true) then return true end
+	end
+	return false
+end
+
+local function stripEnchantCraftPrefix(text)
+	text = trimText(text)
+	if not text then return nil end
+
+	for _, separator in ipairs({ " - " }) do
+		local separatorPos = text:find(separator, 1, true)
+		if separatorPos then
+			local left = trimText(text:sub(1, separatorPos - 1))
+			local right = trimText(text:sub(separatorPos + #separator))
+			if left and right and not left:find("%d") then
+				if prefixLooksLikeEnchant(left) then return right end
+
+				-- Language-agnostic fallback:
+				-- New crafted enchant names commonly follow "<craft prefix> - <enchant name>".
+				-- Keep this conservative to avoid stripping arbitrary long names.
+				local wordCount = 0
+				for _ in left:gmatch("%S+") do
+					wordCount = wordCount + 1
+					if wordCount > 4 then break end
+				end
+				if wordCount >= 1 and wordCount <= 4 and #left <= 32 and #right >= 2 then return right end
+			end
+		end
+	end
+
+	return text
+end
+
 local function getTooltipInfoFromLink(link)
 	if not link then return nil end
 
@@ -319,11 +387,14 @@ local function getTooltipInfoFromLink(link)
 					local text = strmatch(gsub(gsub(gsub(v.leftText, "%s?|A.-|a", ""), "|cn.-:(.-)|r", "%1"), "[&+] ?", ""), addon.variables.enchantString)
 					local icons = {}
 					v.leftText:gsub("(|A.-|a)", function(iconString) table.insert(icons, iconString) end)
-					text = text:gsub("(%d+)", "%1")
-					text = text:gsub("(%a%a%a)%a+", "%1")
-					text = text:gsub("%%", "%%%%")
-					enchantText = colorHex .. text .. (icons[1] or "") .. "|r"
-					break
+					text = stripEnchantCraftPrefix(text)
+					if text then
+						text = text:gsub("(%d+)", "%1")
+						text = text:gsub("(%a%a%a)%a+", "%1")
+						text = text:gsub("%%", "%%%%")
+						enchantText = colorHex .. text .. (icons[1] or "") .. "|r"
+						break
+					end
 				end
 			end
 		end

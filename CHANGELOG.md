@@ -11,6 +11,7 @@
 
 - Standalone Castbar: Fixed unnecessary runtime work while disabled by making frame creation, Edit Mode registration, and cast-event registration lazy/active-only.
 - Group Frames (Healer Buff Placement): Fixed `NOT (active when missing)` so it only activates for spell families the current player class/spec can provide.
+- Combat Text: Fixed `-Combat` occasionally using entering-combat color after login/instance transitions by applying style fallback color from the current combat state.
 
 ---
 

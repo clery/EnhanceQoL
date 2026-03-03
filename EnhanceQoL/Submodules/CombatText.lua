@@ -193,7 +193,12 @@ function CombatText:ApplyStyle(r, g, b, a)
 		fallbackUsed = true
 	end
 	if r == nil or g == nil or b == nil then
-		r, g, b, a = self:GetEnterColor()
+		local inCombat = type(InCombatLockdown) == "function" and InCombatLockdown() == true
+		if inCombat then
+			r, g, b, a = self:GetEnterColor()
+		else
+			r, g, b, a = self:GetLeaveColor()
+		end
 	end
 	self.frame.text:SetTextColor(r, g, b, a or 1)
 	self:_debugTrace("ApplyStyle", {

@@ -17,6 +17,8 @@ addon.SharedMedia.sounds = {
 	{ key = "cartoonbite", label = "EQOL: Bite", path = effectPath .. "cartoonbite.ogg" },
 	{ key = "gamingpunch", label = "EQOL: Punch", path = effectPath .. "gamingpunch.ogg" },
 	{ key = "yougotmail", label = "EQOL: You Got Mail", path = effectPath .. "yougotmail.ogg" },
+	{ key = "WrestlingBell", label = "EQOL: Wrestling bell", path = effectPath .. "dingdong.ogg" },
+
 
 	-- Voiceovers
 	{ key = "1", label = "EQOL: 1", path = voiceoverPath .. "1.ogg" },

@@ -2,8 +2,6 @@ local addonName, addon = ...
 
 local L = LibStub("AceLocale-3.0"):GetLocale(addonName)
 local LMP = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_MythicPlus")
-local LSM = LibStub("LibSharedMedia-3.0")
-local wipe = wipe
 
 ---- REGION Functions
 local timeoutReleaseDifficultyLookup = {}
@@ -608,6 +606,7 @@ if not sectionDungeon then
 		name = L["DungeonsMythicPlus"],
 		expanded = false,
 		colorizeTitle = false,
+		newTagID = "DungeonsMythicPlus",
 	})
 	addon.SettingsLayout.gameplayDungeonsMythicSection = sectionDungeon
 end
@@ -754,6 +753,20 @@ if cChar and sectionDungeon then
 				addon.MythicPlus.functions.createBRFrame()
 			elseif addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.setObjectiveFrames then
 				addon.MythicPlus.functions.setObjectiveFrames()
+			end
+		end,
+		parentSection = sectionDungeon,
+	})
+
+	addon.functions.SettingsCreateCheckbox(cChar, {
+		var = "mythicPlusBloodlustTrackerEnabled",
+		text = LMP["mythicPlusBloodlustTrackerEnabled"],
+		desc = LMP["mythicPlusBloodlustTrackerEditModeHint"],
+		func = function(v)
+			addon.db["mythicPlusBloodlustTrackerEnabled"] = v
+			if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.createBloodlustFrame then
+				addon.MythicPlus.functions.createBloodlustFrame()
+				if addon.MythicPlus.functions.refreshBloodlustTracker then addon.MythicPlus.functions.refreshBloodlustTracker(false) end
 			end
 		end,
 		parentSection = sectionDungeon,

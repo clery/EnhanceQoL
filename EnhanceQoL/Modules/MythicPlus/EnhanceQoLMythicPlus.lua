@@ -84,6 +84,7 @@ local bloodlustTrackedAuraInstanceIDs = {}
 local bloodlustStateActive = false
 local bloodlustStateInitialized = false
 local bloodlustCooldownDeferredApplyPending = false
+local bloodlustUnitAuraRegistered = false
 
 local function normalizeBRSize(value)
 	local size = tonumber(value) or defaultButtonSize
@@ -116,6 +117,20 @@ local function safeRegisterUnitEvent(frame, event, ...)
 	if not frame or not frame.RegisterUnitEvent or type(event) ~= "string" then return false end
 	local ok = pcall(frame.RegisterUnitEvent, frame, event, ...)
 	return ok
+end
+
+local function syncBloodlustUnitAuraRegistration()
+	local enabled = addon and addon.db and addon.db["mythicPlusBloodlustTrackerEnabled"] == true
+
+	if enabled then
+		if bloodlustUnitAuraRegistered then return end
+		bloodlustUnitAuraRegistered = safeRegisterUnitEvent(frameLoad, "UNIT_AURA", "player") == true
+		return
+	end
+
+	if not bloodlustUnitAuraRegistered then return end
+	frameLoad:UnregisterEvent("UNIT_AURA")
+	bloodlustUnitAuraRegistered = false
 end
 
 local function buildBRLayoutSnapshot()
@@ -1476,6 +1491,7 @@ local function refreshBloodlustTracker(playReadySound)
 end
 
 addon.MythicPlus.functions.refreshBloodlustTracker = refreshBloodlustTracker
+addon.MythicPlus.functions.syncBloodlustUnitAuraRegistration = syncBloodlustUnitAuraRegistration
 
 local function setBRInfo(info)
 	if brButton and brButton.cooldownFrame and info then
@@ -1706,10 +1722,10 @@ function addon.MythicPlus.functions.InitMain()
 	frameLoad:RegisterEvent("SPELL_UPDATE_CHARGES")
 	frameLoad:RegisterEvent("ENCOUNTER_END")
 	frameLoad:RegisterEvent("ENCOUNTER_START")
-	safeRegisterUnitEvent(frameLoad, "UNIT_AURA", "player")
 
 	-- Setze den Event-Handler
 	frameLoad:SetScript("OnEvent", eventHandler)
+	syncBloodlustUnitAuraRegistration()
 
 	if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.createBRFrame then addon.MythicPlus.functions.createBRFrame() end
 	if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.createBloodlustFrame then addon.MythicPlus.functions.createBloodlustFrame() end

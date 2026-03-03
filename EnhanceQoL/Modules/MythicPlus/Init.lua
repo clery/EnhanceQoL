@@ -21,6 +21,7 @@ function addon.MythicPlus.functions.InitDB()
 	if not addon.db or not addon.functions or not addon.functions.InitDBValue then return end
 	addon.MythicPlus.variables.dbInitialized = true
 	local init = addon.functions.InitDBValue
+	local globalFontKey = addon.functions.GetGlobalFontConfigKey and addon.functions.GetGlobalFontConfigKey() or "__EQOL_GLOBAL_FONT__"
 
 	-- Always use the improved Keystone Helper UI (legacy removed)
 	-- PullTimer
@@ -56,6 +57,34 @@ function addon.MythicPlus.functions.InitDB()
 	init("mythicPlusBRTrackerPoint", "CENTER")
 	init("mythicPlusBRTrackerX", 0)
 	init("mythicPlusBRTrackerY", 0)
+
+	-- Bloodlust Tracker
+	init("mythicPlusBloodlustTrackerEnabled", false)
+	init("mythicPlusBloodlustButtonSize", 50)
+	init("mythicPlusBloodlustTrackerPoint", "CENTER")
+	init("mythicPlusBloodlustTrackerX", 0)
+	init("mythicPlusBloodlustTrackerY", 0)
+	init("mythicPlusBloodlustTrackerIcon", 136090)
+	init("mythicPlusBloodlustTrackerBorderEnabled", true)
+	init("mythicPlusBloodlustTrackerBorderTexture", "DEFAULT")
+	init("mythicPlusBloodlustTrackerBorderSize", 1)
+	init("mythicPlusBloodlustTrackerBorderOffset", 0)
+	init("mythicPlusBloodlustTrackerBorderColor", { 1, 1, 1, 1 })
+	init("mythicPlusBloodlustTrackerCooldownDrawSwipe", true)
+	init("mythicPlusBloodlustTrackerCooldownDrawEdge", false)
+	init("mythicPlusBloodlustTrackerCooldownDrawBling", false)
+	init("mythicPlusBloodlustTrackerCooldownFontFace", globalFontKey)
+	init("mythicPlusBloodlustTrackerCooldownTextSize", 16)
+	init("mythicPlusBloodlustTrackerCooldownTextOutline", "OUTLINE")
+	init("mythicPlusBloodlustTrackerCooldownTextColor", { 1, 1, 1, 1 })
+	init("mythicPlusBloodlustTrackerCooldownTextOffsetX", 0)
+	init("mythicPlusBloodlustTrackerCooldownTextOffsetY", 0)
+	init("mythicPlusBloodlustTrackerSoundOnDebuffActive", false)
+	init("mythicPlusBloodlustTrackerUseCustomDebuffSound", false)
+	init("mythicPlusBloodlustTrackerDebuffSoundFile", "")
+	init("mythicPlusBloodlustTrackerReadySoundOnEncounterStart", false)
+	init("mythicPlusBloodlustTrackerUseCustomReadySound", false)
+	init("mythicPlusBloodlustTrackerReadySoundFile", "")
 
 	-- Talent Reminder
 	init("talentReminderEnabled", false)

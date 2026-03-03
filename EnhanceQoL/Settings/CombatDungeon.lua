@@ -764,6 +764,7 @@ if cChar and sectionDungeon then
 		desc = LMP["mythicPlusBloodlustTrackerEditModeHint"],
 		func = function(v)
 			addon.db["mythicPlusBloodlustTrackerEnabled"] = v
+			if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.syncBloodlustUnitAuraRegistration then addon.MythicPlus.functions.syncBloodlustUnitAuraRegistration() end
 			if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.createBloodlustFrame then
 				addon.MythicPlus.functions.createBloodlustFrame()
 				if addon.MythicPlus.functions.refreshBloodlustTracker then addon.MythicPlus.functions.refreshBloodlustTracker(false) end

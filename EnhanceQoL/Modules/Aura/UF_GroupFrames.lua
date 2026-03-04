@@ -2976,6 +2976,14 @@ function GF:BuildButton(self)
 		st._sizeHooked = true
 		self:HookScript("OnSizeChanged", function(btn) GF:OnUnitButtonSizeChanged(btn) end)
 	end
+	if not st._dispelOnHideHooked then
+		st._dispelOnHideHooked = true
+		self:HookScript("OnHide", function(btn)
+			local s = getState(btn)
+			hideDispelTint(s)
+			stopDispelGlow((s and s.barGroup) or btn)
+		end)
+	end
 
 	self:SetClampedToScreen(true)
 	self:SetScript("OnMouseDown", nil)
@@ -6191,6 +6199,8 @@ function GF:UnitButton_ClearUnit(self)
 	local st = self._eqolUFState
 	if st then
 		GFH.CancelReadyCheckIconTimer(st)
+		hideDispelTint(st)
+		stopDispelGlow(st.barGroup or self)
 		st._guid = nil
 		st._unitToken = nil
 		st._class = nil
@@ -20007,6 +20017,10 @@ registerFeatureEvents = function(frame)
 		frame:RegisterEvent("PARTY_LEADER_CHANGED")
 		frame:RegisterEvent("PLAYER_ROLES_ASSIGNED")
 		frame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+		frame:RegisterEvent("PLAYER_TALENT_UPDATE")
+		frame:RegisterEvent("TRAIT_CONFIG_UPDATED")
+		frame:RegisterEvent("SPELLS_CHANGED")
+		frame:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
 		frame:RegisterEvent("INSPECT_READY")
 		frame:RegisterEvent("RAID_TARGET_UPDATE")
 		frame:RegisterEvent("PLAYER_TARGET_CHANGED")
@@ -20028,6 +20042,10 @@ unregisterFeatureEvents = function(frame)
 		frame:UnregisterEvent("PARTY_LEADER_CHANGED")
 		frame:UnregisterEvent("PLAYER_ROLES_ASSIGNED")
 		frame:UnregisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+		frame:UnregisterEvent("PLAYER_TALENT_UPDATE")
+		frame:UnregisterEvent("TRAIT_CONFIG_UPDATED")
+		frame:UnregisterEvent("SPELLS_CHANGED")
+		frame:UnregisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
 		frame:UnregisterEvent("INSPECT_READY")
 		frame:UnregisterEvent("RAID_TARGET_UPDATE")
 		frame:UnregisterEvent("PLAYER_TARGET_CHANGED")
@@ -20181,6 +20199,9 @@ do
 			local cfg = getCfg("raid")
 			local custom = cfg and GFH and GFH.EnsureCustomSortConfig and GFH.EnsureCustomSortConfig(cfg)
 			if custom and custom.separateMeleeRanged == true and resolveSortMethod(cfg) == "NAMELIST" and GFH and GFH.QueueInspectGroup then GFH.QueueInspectGroup() end
+			refreshAllAuras()
+		elseif event == "PLAYER_TALENT_UPDATE" or event == "TRAIT_CONFIG_UPDATED" or event == "SPELLS_CHANGED" or event == "ACTIVE_TALENT_GROUP_CHANGED" then
+			refreshAllAuras()
 		end
 	end)
 end

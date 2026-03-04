@@ -61,15 +61,53 @@ end
 local function getUnitFrameEntries()
 	local list = {}
 	local seen = {}
+	local excluded = {
+		MicroMenu = true,
+		BagsBar = true,
+		MinimapCluster = true,
+		BuffFrame = true,
+		DebuffFrame = true,
+	}
 	local entries = addon.variables and addon.variables.unitFrameNames
 	if type(entries) == "table" then
 		for _, info in ipairs(entries) do
 			local name = info and info.name
-			if type(name) == "string" and name ~= "" and not seen[name] then
+			if type(name) == "string" and name ~= "" and not excluded[name] and not seen[name] then
 				seen[name] = true
 				list[#list + 1] = { name = name, label = info.text or name, allowMissing = true }
 			end
 		end
+	end
+	return list
+end
+
+local function getUIFrameEntries()
+	local list = {}
+	local seen = {}
+	local included = {
+		MicroMenu = true,
+		BagsBar = true,
+		MinimapCluster = true,
+		BuffFrame = true,
+		DebuffFrame = true,
+	}
+	local entries = addon.variables and addon.variables.unitFrameNames
+	if type(entries) == "table" then
+		for _, info in ipairs(entries) do
+			local name = info and info.name
+			if type(name) == "string" and name ~= "" and included[name] and not seen[name] then
+				seen[name] = true
+				list[#list + 1] = { name = name, label = info.text or name, allowMissing = true }
+			end
+		end
+	end
+	if not seen.DamageMeter then
+		seen.DamageMeter = true
+		list[#list + 1] = {
+			name = "DamageMeter",
+			label = L["VisibilityDamageMeter"] or "Damage Meter",
+			allowMissing = true,
+		}
 	end
 	return list
 end
@@ -94,6 +132,78 @@ local function getCooldownViewerEntries()
 			seen[name] = true
 			list[#list + 1] = { name = name, label = labels[name] or name, allowMissing = true }
 		end
+	end
+	return list
+end
+
+local function getCooldownPanelEntries()
+	local list = {}
+	local seenFrames = {}
+	local function add(name, label)
+		if type(name) ~= "string" or name == "" or seenFrames[name] then return end
+		seenFrames[name] = true
+		list[#list + 1] = { name = name, label = label or name, allowMissing = true }
+	end
+
+	local panelLabel = L["VisibilityCooldownPanel"] or "Cooldown Panel"
+
+	local root = addon and addon.db and addon.db.cooldownPanels or nil
+	local panels = root and root.panels
+	if type(panels) ~= "table" then return list end
+
+	local seenPanelIds = {}
+	local orderedPanels = {}
+	local extraPanels = {}
+	local function collect(rawId, panel, destination)
+		if type(panel) ~= "table" then return end
+		local numericId = tonumber(rawId)
+		local idText = numericId and tostring(numericId) or tostring(rawId or "")
+		if idText == "" or seenPanelIds[idText] then return end
+		seenPanelIds[idText] = true
+		destination[#destination + 1] = {
+			idText = idText,
+			numericId = numericId,
+			panel = panel,
+		}
+	end
+
+	if type(root.order) == "table" then
+		for _, rawId in ipairs(root.order) do
+			local numericId = tonumber(rawId)
+			local panel = panels[numericId] or panels[tostring(rawId)]
+			collect(rawId, panel, orderedPanels)
+		end
+	end
+	for rawId, panel in pairs(panels) do
+		collect(rawId, panel, extraPanels)
+	end
+	table.sort(extraPanels, function(a, b)
+		local an = a and a.numericId
+		local bn = b and b.numericId
+		if an and bn and an ~= bn then return an < bn end
+		local ak = a and a.idText or ""
+		local bk = b and b.idText or ""
+		return ak < bk
+	end)
+
+	local function appendPanelEntry(info)
+		local idText = info and info.idText
+		if type(idText) ~= "string" or idText == "" then return end
+		local panelName = info and info.panel and info.panel.name
+		local label
+		if type(panelName) == "string" and panelName ~= "" then
+			label = string.format("%s %s: %s", panelLabel, idText, panelName)
+		else
+			label = string.format("%s %s", panelLabel, idText)
+		end
+		add("EQOL_CooldownPanel" .. idText, label)
+	end
+
+	for _, info in ipairs(orderedPanels) do
+		appendPanelEntry(info)
+	end
+	for _, info in ipairs(extraPanels) do
+		appendPanelEntry(info)
 	end
 	return list
 end
@@ -154,6 +264,7 @@ local KNOWN_FRAME_LABEL_FALLBACKS = {
 	MinimapCluster = _G.MINIMAP_LABEL or "Minimap",
 	BuffFrame = L["BuffFrame"] or "Buff Frame",
 	DebuffFrame = L["DebuffFrame"] or "Debuff Frame",
+	DamageMeter = L["VisibilityDamageMeter"] or "Damage Meter",
 	EssentialCooldownViewer = L["cooldownViewerEssential"] or "Essential Cooldown Viewer",
 	UtilityCooldownViewer = L["cooldownViewerUtility"] or "Utility Cooldown Viewer",
 	BuffBarCooldownViewer = L["cooldownViewerBuffBar"] or "Buff Bar Cooldowns",
@@ -173,8 +284,10 @@ local function buildKnownFrameLabelMap()
 
 	addEntries(getActionBarFrameEntries())
 	addEntries(getUnitFrameEntries())
+	addEntries(getUIFrameEntries())
 	addEntries(getResourceBarEntries())
 	addEntries(getCooldownViewerEntries())
+	addEntries(getCooldownPanelEntries())
 
 	for name, label in pairs(KNOWN_FRAME_LABEL_FALLBACKS) do
 		if labels[name] == nil and type(label) == "string" and label ~= "" then labels[name] = label end
@@ -934,8 +1047,10 @@ local function showKnownFramesMenu(owner)
 		root:CreateTitle(L["VisibilityKnownFrames"] or "Known frames")
 		addGroup(root, L["visibilityKindActionBars"] or "Action Bars", L["VisibilityAllActionBars"] or "All Action Bars", getActionBarFrameEntries())
 		addGroup(root, L["VisibilityKnownUnitFrames"] or "Unit Frames", L["VisibilityAllUnitFrames"] or "All Unit Frames", getUnitFrameEntries())
+		addGroup(root, L["VisibilityKnownUIFrames"] or "UI Frames", L["VisibilityAllUIFrames"] or "All UI Frames", getUIFrameEntries())
 		addGroup(root, L["VisibilityKnownResourceBars"] or "Resource Bars", L["VisibilityAllResourceBars"] or "All Resource Bars", getResourceBarEntries())
 		addGroup(root, L["VisibilityKnownCooldownViewer"] or "Cooldown Viewer", L["VisibilityAllCooldownViewers"] or "All Cooldown Viewers", getCooldownViewerEntries())
+		addGroup(root, L["VisibilityKnownCooldownPanels"] or "Cooldown Panels", L["VisibilityAllCooldownPanels"] or "All Cooldown Panels", getCooldownPanelEntries())
 	end)
 end
 

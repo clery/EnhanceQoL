@@ -1,5 +1,13 @@
 # Changelog
 
+## [8.9.0] - 2026-03-04
+
+### ✨ Added
+
+- Unit Frames (Secondary Power / Stagger): Added a dedicated top-level `Stagger colors` section so Brewmaster stagger color settings are no longer nested under `Secondary Power Bar`.
+
+---
+
 ## [8.8.1] - 2026-03-04
 
 ### 🐛 Fixed

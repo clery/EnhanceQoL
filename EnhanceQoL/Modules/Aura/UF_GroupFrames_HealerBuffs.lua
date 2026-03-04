@@ -337,6 +337,59 @@ local function canPlayerProvideFamily(familyId)
 	return true
 end
 
+local _playerFamilyProvisionCache = {
+	key = nil,
+	map = nil,
+}
+
+local function getPlayerFamilyProvisionMap()
+	local classToken = addon.variables and addon.variables.unitClass
+	if type(classToken) == "string" and classToken == "" then classToken = nil end
+	if classToken == nil and UnitClass then
+		local _, token = UnitClass("player")
+		if type(token) == "string" and token ~= "" then classToken = token end
+	end
+	local specId = addon.variables and addon.variables.unitSpecId
+	specId = tonumber(specId)
+	if specId == nil or specId <= 0 then specId = getPlayerSpecId() end
+	specId = tonumber(specId) or 0
+
+	local cacheKey = tostring(classToken or "") .. "|" .. tostring(specId)
+	if _playerFamilyProvisionCache.key == cacheKey and _playerFamilyProvisionCache.map ~= nil then
+		return _playerFamilyProvisionCache.map
+	end
+
+	local map = {}
+	local specMap = classToken and PROVIDER_SPEC_IDS[classToken] or nil
+	for familyId, family in pairs(FAMILY_BY_ID) do
+		if family and family.classToken then
+			local familyIdKey = tostring(familyId)
+			if tostring(family.classToken) ~= classToken then
+				map[familyIdKey] = false
+			else
+				local classSpec = family.spec and tostring(family.spec) or nil
+				if classSpec == nil or classSpec == "" then
+					map[familyIdKey] = true
+				else
+					local requiredSpec = specMap and specMap[classSpec] or nil
+					map[familyIdKey] = requiredSpec ~= nil and requiredSpec == specId or false
+				end
+			end
+		end
+	end
+	_playerFamilyProvisionCache.key = cacheKey
+	_playerFamilyProvisionCache.map = map
+	return map
+end
+
+local function canPlayerProvideFamilyCached(familyId)
+	local family = familyId and FAMILY_BY_ID[tostring(familyId)] or nil
+	if family == nil or family.classToken == nil then return canPlayerProvideFamily(familyId) end
+	local map = getPlayerFamilyProvisionMap()
+	if map == nil then return false end
+	return map[tostring(familyId)] == true
+end
+
 local function wipeTable(tbl)
 	if not tbl then return end
 	if wipe then
@@ -1154,6 +1207,33 @@ local function shouldIgnoreFamilyForUnit(familyId, unit)
 	return isNpcUnit(unit)
 end
 
+local PLAYER_HELPFUL_FILTER = "HELPFUL|PLAYER"
+local PLAYER_HARMFUL_FILTER = "HARMFUL|PLAYER"
+local HELPFUL_FILTER = "HELPFUL"
+local HARMFUL_FILTER = "HARMFUL"
+local function isAuraFilteredByInstanceFilter(unit, aura, filter)
+	if aura == nil or filter == nil then return false end
+	return not C_UnitAuras.IsAuraFilteredOutByInstanceID(unit, aura.auraInstanceID, filter)
+end
+
+local function isAuraFromPlayer(unit, aura, familyId)
+	if aura == nil then return false end
+
+	local family = familyId and FAMILY_BY_ID[tostring(familyId)] or nil
+	if family and family.classToken ~= nil then
+		if not canPlayerProvideFamilyCached(familyId) then return false end
+		local isHarmful = aura.isHarmful
+		if issecretvalue and issecretvalue(isHarmful) then return false end
+		if not C_UnitAuras or not C_UnitAuras.IsAuraFilteredOutByInstanceID then return false end
+		return isAuraFilteredByInstanceFilter(unit, aura, isHarmful and HARMFUL_FILTER or HELPFUL_FILTER)
+	end
+
+	if not C_UnitAuras or not C_UnitAuras.IsAuraFilteredOutByInstanceID then return false end
+	local isHarmful = aura.isHarmful
+	if issecretvalue and issecretvalue(isHarmful) then return false end
+	return isAuraFilteredByInstanceFilter(unit, aura, isHarmful and PLAYER_HARMFUL_FILTER or PLAYER_HELPFUL_FILTER)
+end
+
 local function getFamilyForAura(compiled, aura, unit)
 	if not (compiled and aura) then return nil end
 	local spellId = aura.spellId
@@ -1162,20 +1242,8 @@ local function getFamilyForAura(compiled, aura, unit)
 	local familyId = compiled.spellToFamily[tonumber(spellId)]
 	if familyId == nil then return nil end
 	if shouldIgnoreFamilyForUnit(familyId, unit) then return nil end
-
-	local sourceUnit = aura.sourceUnit
-	if issecretvalue and issecretvalue(sourceUnit) then return nil end
-	if sourceUnit ~= nil then
-		local fromPlayer = sourceUnit == "player" or sourceUnit == "pet" or sourceUnit == "vehicle"
-		if not fromPlayer and UnitIsUnit then fromPlayer = UnitIsUnit(sourceUnit, "player") or UnitIsUnit(sourceUnit, "pet") or UnitIsUnit(sourceUnit, "vehicle") end
-		if fromPlayer then return familyId end
-		return nil
-	end
-
-	local isFromPlayerOrPlayerPet = aura.isFromPlayerOrPlayerPet
-	if issecretvalue and issecretvalue(isFromPlayerOrPlayerPet) then return nil end
-	if isFromPlayerOrPlayerPet == true then return familyId end
-	return nil
+	if not isAuraFromPlayer(unit, aura, familyId) then return nil end
+	return familyId
 end
 
 function HB.ShouldSuppressRegularBuffAura(kind, cfg, aura, compiled, unit)
@@ -1315,7 +1383,7 @@ end
 local function evaluateRuleActive(rule, familyCounts, unit)
 	if not rule or rule.enabled == false then return false end
 	if shouldIgnoreFamilyForUnit(rule.spellFamilyId, unit) then return false end
-	if rule["not"] and not canPlayerProvideFamily(rule.spellFamilyId) then return false end
+	if rule["not"] and not canPlayerProvideFamilyCached(rule.spellFamilyId) then return false end
 	local active = (familyCounts[rule.spellFamilyId] or 0) > 0
 	if rule["not"] then active = not active end
 	return active

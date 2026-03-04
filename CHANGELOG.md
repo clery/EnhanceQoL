@@ -1,5 +1,13 @@
 # Changelog
 
+## [8.8.1] - 2026-03-04
+
+### 🐛 Fixed
+
+- Resource Bars (Druid): Fixed Cat/Bear shapeshift flicker in combat when combining `Show in` (form filters) with `Show when` visibility rules by merging form-based hides into the secure visibility driver.
+
+---
+
 ## [8.8.0] - 2026-03-03
 
 ### ✨ Added

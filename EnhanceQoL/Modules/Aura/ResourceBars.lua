@@ -5069,6 +5069,35 @@ function visibilityLogic:AppendDruidTravelClauses(clauses, seen, action)
 	end
 end
 
+function visibilityLogic:AppendDruidFormHideClauses(clauses, seen, showForms)
+	if addon.variables.unitClass ~= "DRUID" then return end
+	if type(showForms) ~= "table" then return end
+
+	local map = getDruidFormStanceMap()
+	for _, key in ipairs(DRUID_FORM_SEQUENCE) do
+		if showForms[key] == false then
+			if key == "HUMANOID" then
+				self:AppendUniqueClause(clauses, seen, "nostance", "hide")
+			else
+				local indices = map and map[key]
+				local appended = false
+				if type(indices) == "table" then
+					for _, idx in ipairs(indices) do
+						if idx and idx > 0 then
+							self:AppendUniqueClause(clauses, seen, "stance:" .. idx, "hide")
+							appended = true
+						end
+					end
+				end
+				if not appended then
+					local idx = formKeyToIndex[key]
+					if idx and idx > 0 then self:AppendUniqueClause(clauses, seen, "stance:" .. idx, "hide") end
+				end
+			end
+		end
+	end
+end
+
 function visibilityLogic:BuildDriver(cfg)
 	cfg = cfg or {}
 	local shouldHideOutOfCombat = ResourceBars.ShouldHideOutOfCombat and ResourceBars.ShouldHideOutOfCombat(cfg)
@@ -5076,6 +5105,7 @@ function visibilityLogic:BuildDriver(cfg)
 	local hideVehicle = ResourceBars.ShouldHideInVehicle and ResourceBars.ShouldHideInVehicle(cfg)
 	local hidePetBattle = ResourceBars.ShouldHideInPetBattle and ResourceBars.ShouldHideInPetBattle(cfg)
 	local visibilityUseAnd = cfg.visibilityMatchAll == true
+	local useDruidFormDriver = shouldUseDruidFormDriver(cfg)
 
 	-- Cache driver generation by a compact signature of visibility-relevant config.
 	local function hashStep(hash, value) return ((hash * 131) + value) % 2147483647 end
@@ -5086,6 +5116,7 @@ function visibilityLogic:BuildDriver(cfg)
 	if shouldHideOutOfCombat then driverSignature = hashStep(driverSignature, 4) end
 	if shouldHideMounted then driverSignature = hashStep(driverSignature, 5) end
 	if cfg.visibilityExplicit == true then driverSignature = hashStep(driverSignature, 6) end
+	if useDruidFormDriver then driverSignature = hashStep(driverSignature, 7) end
 	local unitClass = tostring(addon.variables and addon.variables.unitClass or "")
 	for i = 1, #unitClass do
 		driverSignature = hashStep(driverSignature, unitClass:byte(i))
@@ -5096,6 +5127,18 @@ function visibilityLogic:BuildDriver(cfg)
 		for i = 1, #sortedKeys do
 			local key = sortedKeys[i]
 			if rawVisibility[key] == true then driverSignature = hashStep(driverSignature, 100 + i) end
+		end
+	end
+	local showForms = type(cfg.showForms) == "table" and cfg.showForms or nil
+	if showForms then
+		for i = 1, #DRUID_FORM_SEQUENCE do
+			local key = DRUID_FORM_SEQUENCE[i]
+			local value = showForms[key]
+			if value == false then
+				driverSignature = hashStep(driverSignature, 200 + i)
+			elseif value == true then
+				driverSignature = hashStep(driverSignature, 300 + i)
+			end
 		end
 	end
 
@@ -5116,7 +5159,7 @@ function visibilityLogic:BuildDriver(cfg)
 		self.driverCache[cfg] = { signature = driverSignature, expr = nil, usesManualVisibility = true, visibilityCfg = visibilityCfg }
 		return nil, true, visibilityCfg
 	end
-	if not visibilityCfg and not hideVehicle and not hidePetBattle then
+	if not visibilityCfg and not hideVehicle and not hidePetBattle and not useDruidFormDriver then
 		self.driverCache[cfg] = { signature = driverSignature, expr = nil, usesManualVisibility = false, visibilityCfg = visibilityCfg }
 		return nil, false, visibilityCfg
 	end
@@ -5126,6 +5169,7 @@ function visibilityLogic:BuildDriver(cfg)
 
 	if hidePetBattle then clauses[#clauses + 1] = "[petbattle] hide" end
 	if hideVehicle then clauses[#clauses + 1] = "[vehicleui] hide" end
+	if useDruidFormDriver then self:AppendDruidFormHideClauses(clauses, seen, showForms) end
 
 	if visibilityCfg then
 		if visibilityCfg.PLAYER_NOT_MOUNTED then

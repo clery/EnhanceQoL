@@ -1261,18 +1261,15 @@ function ExperienceBar:ApplyBlizzardTrackingVisibility()
 					if ExperienceBar and ExperienceBar.WantsBlizzardTrackingHidden and ExperienceBar:WantsBlizzardTrackingHidden() then
 						shownFrame._eqolXPBarHidden = true
 						shownFrame:SetAlpha(0)
-						if shownFrame.EnableMouse then shownFrame:EnableMouse(false) end
 					end
 				end)
 			end
 			if hide then
 				frame._eqolXPBarHidden = true
 				frame:SetAlpha(0)
-				if frame.EnableMouse then frame:EnableMouse(false) end
 			elseif frame._eqolXPBarHidden then
 				frame._eqolXPBarHidden = nil
 				frame:SetAlpha(1)
-				if frame.EnableMouse then frame:EnableMouse(true) end
 			end
 		end
 	end

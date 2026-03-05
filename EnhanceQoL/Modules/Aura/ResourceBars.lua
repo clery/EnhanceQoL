@@ -87,6 +87,7 @@ local ResourcebarVars = {
 	VOID_METAMORPHOSIS_SPELL_ID = 1225789,
 	VOID_META_TALENT_SOUL_GLUTTON_SPELL_ID = 1247534,
 	COLLAPSING_STAR_SPELL_ID = 1227702,
+	TIP_OF_THE_SPEAR_SPELL_ID = 260286,
 	DEFAULT_MAELSTROM_WEAPON_FIVE_COLOR = { 0.10, 0.85, 0.55, 1 },
 	ROGUE_CHARGED_COMBO_DEFAULTS = {
 		enabled = true,
@@ -338,6 +339,7 @@ ResourceBars.PowerLabels = {
 	MAELSTROM_WEAPON = (C_Spell.GetSpellName(RB.MAELSTROM_WEAPON_SPELL_ID)) or "Maelstrom Weapon",
 	ICICLES = (C_Spell.GetSpellName(RB.ICICLES_SPELL_ID)) or (L and L["Icicles"]) or "Icicles",
 	VOID_METAMORPHOSIS = (C_Spell.GetSpellName(RB.VOID_METAMORPHOSIS_SPELL_ID)) or "Void Metamorphosis",
+	TIP_OF_THE_SPEAR = (C_Spell.GetSpellName(RB.TIP_OF_THE_SPEAR_SPELL_ID)) or "Tip of the Spear",
 	STAGGER = (_G and _G["STAGGER"]) or "Stagger",
 }
 
@@ -357,6 +359,14 @@ RB.AURA_POWER_CONFIG = {
 		maxStacks = 5,
 		visualSegments = 5,
 		defaultColor = { 0.45, 0.80, 1.00, 1 },
+		useMaxColorDefault = true,
+		defaultShowSeparator = true,
+	},
+	TIP_OF_THE_SPEAR = {
+		spellIds = { RB.TIP_OF_THE_SPEAR_SPELL_ID },
+		maxStacks = 3,
+		visualSegments = 3,
+		defaultColor = { 1.00, 0.60, 0.20, 1 },
 		useMaxColorDefault = true,
 		defaultShowSeparator = true,
 	},
@@ -2838,7 +2848,7 @@ powertypeClasses = {
 	HUNTER = {
 		[1] = { MAIN = "FOCUS" },
 		[2] = { MAIN = "FOCUS" },
-		[3] = { MAIN = "FOCUS" },
+		[3] = { MAIN = "FOCUS", TIP_OF_THE_SPEAR = true },
 	},
 	ROGUE = {
 		[1] = { MAIN = "ENERGY", COMBO_POINTS = true },
@@ -2902,6 +2912,7 @@ classPowerTypes = {
 	"INSANITY",
 	"ARCANE_CHARGES",
 	"ICICLES",
+	"TIP_OF_THE_SPEAR",
 	"MANA",
 }
 
@@ -2915,6 +2926,7 @@ ResourceBars.separatorEligible = {
 	CHI = true,
 	COMBO_POINTS = true,
 	ICICLES = true,
+	TIP_OF_THE_SPEAR = true,
 	VOID_METAMORPHOSIS = true,
 	MAELSTROM_WEAPON = true,
 	RUNES = true,

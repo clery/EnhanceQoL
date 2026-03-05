@@ -116,6 +116,7 @@ Helper.PANEL_LAYOUT_DEFAULTS = {
 	strata = "MEDIUM",
 	rangeOverlayEnabled = false,
 	rangeOverlayColor = { 1, 0.1, 0.1, 0.35 },
+	readyGlowColor = { 1, 0.82, 0.2, 1 },
 	checkPower = false,
 	powerTintColor = { 0.5, 0.5, 1, 1 },
 	unusableTintColor = { 0.6, 0.6, 0.6, 1 },
@@ -739,6 +740,7 @@ function Helper.NormalizePanel(panel, defaults)
 	for key, value in pairs(layoutDefaults) do
 		if panel.layout[key] == nil then panel.layout[key] = value end
 	end
+	panel.layout.readyGlowColor = Helper.NormalizeColor(panel.layout.readyGlowColor, layoutDefaults.readyGlowColor or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor)
 	if type(panel.anchor) ~= "table" then panel.anchor = {} end
 	local anchor = panel.anchor
 	if anchor.point == nil then anchor.point = panel.point or "CENTER" end

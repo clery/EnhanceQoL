@@ -196,14 +196,6 @@ local data = {
 			},
 		},
 	},
-	{
-		var = "mapFade",
-		text = L["mapFade"],
-		get = function() return getCVarOptionState("mapFade") end,
-		func = function(value) setCVarOptionState("mapFade", value) end,
-		default = false,
-		parentSection = mapExpandable,
-	},
 }
 
 table.sort(data, function(a, b) return a.text < b.text end)

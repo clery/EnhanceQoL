@@ -899,12 +899,6 @@ addon.variables.cvarOptions = {
 		persistent = true,
 		category = "cvarCategoryUtility",
 	},
-	["mapFade"] = {
-		trueValue = "1",
-		falseValue = "0",
-		description = addon.L["mapFade"],
-		category = "cvarCategoryDisplay",
-	},
 	["ShowClassColorInNameplate"] = {
 		trueValue = "1",
 		falseValue = "0",

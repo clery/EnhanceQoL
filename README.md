@@ -127,7 +127,7 @@ English • German • French • Spanish • Italian • Russian • Korean •
 ### Map & CVars
 
 *   Provide basic `/way` command for waypoints.
-*   Expose CVars as toggles (autodismount, map fade, nameplate colours, castbars, disable tutorials, enhanced tooltips, etc.).
+*   Expose CVars as toggles (autodismount, nameplate colours, castbars, disable tutorials, enhanced tooltips, etc.).
 
 ### Combat Meter
 

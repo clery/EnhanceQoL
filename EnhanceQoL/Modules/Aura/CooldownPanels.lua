@@ -29,6 +29,166 @@ CooldownPanels.ENTRY_TYPE = {
 	MACRO = "MACRO",
 }
 
+CooldownPanels.itemHighestRankByID = CooldownPanels.itemHighestRankByID
+	or {
+		-- Potion of Recklessness (rank1 -> rank2)
+		[241289] = { 241289, 241288 },
+		[241288] = { 241289, 241288 },
+		-- Light's Potential (rank1 -> rank2)
+		[241309] = { 241309, 241308 },
+		[241308] = { 241309, 241308 },
+	}
+
+function CooldownPanels:RegisterItemRankGroup(rankList)
+	if type(rankList) ~= "table" then return false end
+	local ids = {}
+	for i = 1, #rankList do
+		local itemID = tonumber(rankList[i])
+		if itemID and itemID > 0 then ids[#ids + 1] = itemID end
+	end
+	if #ids < 2 then return false end
+	local rankMap = self.itemHighestRankByID
+	if type(rankMap) ~= "table" then
+		rankMap = {}
+		self.itemHighestRankByID = rankMap
+	end
+	for i = 1, #ids do
+		rankMap[ids[i]] = ids
+	end
+	return true
+end
+
+function CooldownPanels:IngestRankGroupsByRank(entries, keyPrefix)
+	if type(entries) ~= "table" then return false end
+	local groups = {}
+	for typeKey, list in pairs(entries) do
+		if type(list) == "table" then
+			for _, entry in ipairs(list) do
+				local itemID = tonumber(entry and entry.id)
+				local rank = tonumber(entry and entry.rank)
+				if itemID and itemID > 0 and rank and rank > 0 then
+					local rawKey = type(entry.key) == "string" and entry.key or tostring(itemID)
+					local baseKey = rawKey:gsub("%d+$", "")
+					local requiredLevel = tonumber(entry.requiredLevel) or 0
+					local groupKey = string.format("%s:%s:%d:%s", keyPrefix or "rank", baseKey, requiredLevel, tostring(typeKey))
+					groups[groupKey] = groups[groupKey] or {}
+					groups[groupKey][rank] = itemID
+				end
+			end
+		end
+	end
+	local added = false
+	for _, byRank in pairs(groups) do
+		local ordered = {}
+		for rank = 1, 9 do
+			local itemID = byRank[rank]
+			if itemID then ordered[#ordered + 1] = itemID end
+		end
+		if #ordered >= 2 and self:RegisterItemRankGroup(ordered) then added = true end
+	end
+	return added
+end
+
+function CooldownPanels:IngestHealthPotionRankGroups()
+	local healthList = addon.Health and addon.Health.healthList
+	if type(healthList) ~= "table" then return false end
+	local groups = {}
+	local implicitGroups = {}
+	for _, entry in ipairs(healthList) do
+		local itemID = tonumber(entry and entry.id)
+		local rawKey = type(entry and entry.key) == "string" and entry.key or nil
+		local rankSuffix = rawKey and tonumber(rawKey:match("(%d+)$")) or nil
+		if itemID and itemID > 0 and rawKey and rankSuffix and rankSuffix > 0 then
+			local baseKey = rawKey:gsub("%d+$", "")
+			local requiredLevel = tonumber(entry.requiredLevel) or 0
+			local groupKey = string.format("health:%s:%d", baseKey, requiredLevel)
+			groups[groupKey] = groups[groupKey] or {}
+			groups[groupKey][rankSuffix] = itemID
+		elseif itemID and itemID > 0 and rawKey then
+			local requiredLevel = tonumber(entry.requiredLevel) or 0
+			local groupKey = string.format("health:%s:%d", rawKey, requiredLevel)
+			implicitGroups[groupKey] = implicitGroups[groupKey] or {}
+			implicitGroups[groupKey][#implicitGroups[groupKey] + 1] = {
+				id = itemID,
+				heal = tonumber(entry.heal),
+			}
+		end
+	end
+	local added = false
+	for _, byRank in pairs(groups) do
+		local ordered = {}
+		for rank = 1, 9 do
+			local itemID = byRank[rank]
+			if itemID then ordered[#ordered + 1] = itemID end
+		end
+		if #ordered >= 2 and self:RegisterItemRankGroup(ordered) then added = true end
+	end
+	for _, items in pairs(implicitGroups) do
+		if #items >= 2 then
+			table.sort(items, function(a, b)
+				local aHeal = tonumber(a and a.heal) or 0
+				local bHeal = tonumber(b and b.heal) or 0
+				if aHeal ~= bHeal then return aHeal < bHeal end
+				return (tonumber(a and a.id) or 0) < (tonumber(b and b.id) or 0)
+			end)
+			local ordered = {}
+			for i = 1, #items do
+				local itemID = tonumber(items[i] and items[i].id)
+				if itemID and itemID > 0 then ordered[#ordered + 1] = itemID end
+			end
+			if #ordered >= 2 and self:RegisterItemRankGroup(ordered) then added = true end
+		end
+	end
+	return added
+end
+
+function CooldownPanels:IngestFlaskRankGroups()
+	local flasks = addon.Flasks
+	if type(flasks) ~= "table" then return false end
+	local added = false
+	if self:IngestRankGroupsByRank(flasks.typeFlasks, "flask") then added = true end
+	if self:IngestRankGroupsByRank(flasks.fleetingTypeFlasks, "flask_fleeting") then added = true end
+	return added
+end
+
+function CooldownPanels:EnsureFoodRankGroupsLoaded()
+	self.runtime = self.runtime or {}
+	local state = self.runtime.itemRankSourcesLoaded
+	if type(state) ~= "table" then
+		state = { health = false, flasks = false }
+		self.runtime.itemRankSourcesLoaded = state
+	end
+	if not state.health and self:IngestHealthPotionRankGroups() then state.health = true end
+	if not state.flasks and self:IngestFlaskRankGroups() then state.flasks = true end
+end
+
+function CooldownPanels:GetCanonicalItemRankID(itemID)
+	self:EnsureFoodRankGroupsLoaded()
+	local numericID = tonumber(itemID)
+	if not numericID then return nil, false, nil end
+	local rankMap = CooldownPanels.itemHighestRankByID
+	local group = rankMap and rankMap[numericID]
+	if not group or type(group) ~= "table" or #group == 0 then return numericID, false, nil end
+	local lowestRankID = tonumber(group[1]) or numericID
+	return lowestRankID, lowestRankID ~= numericID, group
+end
+
+function CooldownPanels.ResolveEntryItemID(entry, itemID)
+	CooldownPanels:EnsureFoodRankGroupsLoaded()
+	local numericID = tonumber(itemID)
+	if not numericID then return nil end
+	if not (entry and entry.type == "ITEM" and entry.useHighestRank == true) then return numericID end
+	local rankMap = CooldownPanels.itemHighestRankByID
+	local group = rankMap and rankMap[numericID]
+	if not group then return numericID end
+	for i = #group, 1, -1 do
+		local candidateID = group[i]
+		local count = Api.GetItemCount(candidateID, true, false) or 0
+		if count > 0 then return candidateID end
+	end
+	return numericID
+end
+
 _G["BINDING_NAME_EQOL_TOGGLE_COOLDOWN_PANELS"] = L["CooldownPanelBindingToggle"] or "Toggle Cooldown Panel Editor"
 
 CooldownPanels.runtime = CooldownPanels.runtime or {}
@@ -1515,9 +1675,16 @@ function CooldownPanels:AddEntry(panelId, entryType, idValue, overrides)
 	if typeKey ~= "SPELL" and typeKey ~= "ITEM" and typeKey ~= "SLOT" and typeKey ~= "STANCE" and typeKey ~= "MACRO" then return nil end
 	local entryValue = idValue
 	local numericValue = tonumber(idValue)
+	local itemWasHigherRank = false
 	if typeKey == "SPELL" or typeKey == "ITEM" or typeKey == "SLOT" then
 		if not numericValue then return nil end
-		if typeKey == "SPELL" then numericValue = getBaseSpellId(numericValue) or numericValue end
+		if typeKey == "SPELL" then
+			numericValue = getBaseSpellId(numericValue) or numericValue
+		elseif typeKey == "ITEM" then
+			local canonicalItemID, wasHigherRank = self:GetCanonicalItemRankID(numericValue)
+			numericValue = canonicalItemID
+			itemWasHigherRank = wasHigherRank == true
+		end
 		entryValue = numericValue
 	elseif typeKey == "STANCE" then
 		local stanceDef = CooldownPanels.GetStanceDefinition and CooldownPanels:GetStanceDefinition(idValue) or nil
@@ -1538,6 +1705,7 @@ function CooldownPanels:AddEntry(panelId, entryType, idValue, overrides)
 			entry[key] = value
 		end
 	end
+	if entry.type == "ITEM" and itemWasHigherRank then entry.useHighestRank = true end
 	if entry.type == "MACRO" then
 		entry.macroID = tonumber(entry.macroID)
 		entry.macroName = CooldownPanels.NormalizeMacroName(entry.macroName)
@@ -1563,6 +1731,10 @@ function CooldownPanels:FindEntryByValue(panelId, entryType, idValue)
 	if not panel then return nil end
 	local typeKey = entryType and tostring(entryType):upper() or nil
 	local numericValue = tonumber(idValue)
+	if typeKey == "ITEM" and numericValue then
+		local canonicalItemID = self:GetCanonicalItemRankID(numericValue)
+		numericValue = canonicalItemID or numericValue
+	end
 	local macroName = CooldownPanels.NormalizeMacroName(type(idValue) == "string" and idValue or nil)
 	local stanceDef = typeKey == "STANCE" and CooldownPanels.GetStanceDefinition and CooldownPanels:GetStanceDefinition(idValue) or nil
 	local stanceID = stanceDef and stanceDef.id or nil
@@ -1570,7 +1742,13 @@ function CooldownPanels:FindEntryByValue(panelId, entryType, idValue)
 	for entryId, entry in pairs(panel.entries or {}) do
 		if entry and entry.type == typeKey then
 			if typeKey == "SPELL" and entry.spellID == numericValue then return entryId, entry end
-			if typeKey == "ITEM" and entry.itemID == numericValue then return entryId, entry end
+			if typeKey == "ITEM" then
+				local entryItemID = tonumber(entry.itemID)
+				if entryItemID then
+					local canonicalEntryItemID = self:GetCanonicalItemRankID(entryItemID) or entryItemID
+					if canonicalEntryItemID == numericValue then return entryId, entry end
+				end
+			end
 			if typeKey == "SLOT" and entry.slotID == numericValue then return entryId, entry end
 			if typeKey == "STANCE" and stanceID and entry.stanceID == stanceID then return entryId, entry end
 			if typeKey == "MACRO" then
@@ -1776,6 +1954,11 @@ function CooldownPanels:NormalizeAll()
 		for entryId, entry in pairs(panel.entries) do
 			if entry and entry.id == nil then entry.id = entryId end
 			Helper.NormalizeEntry(entry, root.defaults)
+			if entry and entry.type == "ITEM" then
+				local canonicalItemID, wasHigherRank = self:GetCanonicalItemRankID(entry.itemID)
+				if canonicalItemID then entry.itemID = canonicalItemID end
+				if wasHigherRank then entry.useHighestRank = true end
+			end
 		end
 	end
 	self:RebuildSpellIndex()
@@ -1853,11 +2036,25 @@ function CooldownPanels:AddEntrySafe(panelId, entryType, idValue, overrides)
 		finalOverrides.macroName = macroName
 		return self:AddEntry(panelId, typeKey, numericValue or idValue, finalOverrides)
 	end
+	local finalOverrides = overrides
+	if typeKey == "ITEM" and numericValue then
+		local canonicalItemID, wasHigherRank = self:GetCanonicalItemRankID(baseValue)
+		if canonicalItemID then baseValue = canonicalItemID end
+		if wasHigherRank then
+			finalOverrides = {}
+			if type(overrides) == "table" then
+				for key, value in pairs(overrides) do
+					finalOverrides[key] = value
+				end
+			end
+			finalOverrides.useHighestRank = true
+		end
+	end
 	if self:FindEntryByValue(panelId, typeKey, baseValue) then
 		showErrorMessage(L["CooldownPanelEntry"] and (L["CooldownPanelEntry"] .. " already exists.") or "Entry already exists.")
 		return nil
 	end
-	return self:AddEntry(panelId, typeKey, baseValue, overrides)
+	return self:AddEntry(panelId, typeKey, baseValue, finalOverrides)
 end
 
 function CooldownPanels:HandleCursorDrop(panelId)
@@ -2949,28 +3146,26 @@ local function showSlotMenu(owner, panelId)
 					CooldownPanels:RefreshEditor()
 				end)
 			end
-			end
-			if stanceEntries and #stanceEntries > 0 then
-				local stanceMenu = rootDescription:CreateButton((CooldownPanels.GetStanceTypeLabel and CooldownPanels:GetStanceTypeLabel()) or (_G.STANCE or "Stance"))
-				for _, classData in ipairs(stanceEntries) do
-					local classMenu = stanceMenu:CreateButton(classData.label or tostring(classData.classTag or "Class"))
-					for _, stance in ipairs(classData.entries or {}) do
-						local menuLabel = stance.label or (_G.STEALTH or "Stealth")
-						local iconToken = stance.icon
-						local iconType = type(iconToken)
-						if (iconType == "string" and iconToken ~= "") or iconType == "number" then
-							menuLabel = string.format("|T%s:14:14:0:0:64:64:4:60:4:60|t %s", tostring(iconToken), menuLabel)
-						end
-						classMenu:CreateButton(menuLabel, function()
-							local overrides = CooldownPanels.GetStanceDefaultOverrides and CooldownPanels:GetStanceDefaultOverrides() or nil
-							CooldownPanels:AddEntrySafe(panelId, "STANCE", stance.id, overrides)
-							CooldownPanels:RefreshEditor()
-						end)
-					end
+		end
+		if stanceEntries and #stanceEntries > 0 then
+			local stanceMenu = rootDescription:CreateButton((CooldownPanels.GetStanceTypeLabel and CooldownPanels:GetStanceTypeLabel()) or (_G.STANCE or "Stance"))
+			for _, classData in ipairs(stanceEntries) do
+				local classMenu = stanceMenu:CreateButton(classData.label or tostring(classData.classTag or "Class"))
+				for _, stance in ipairs(classData.entries or {}) do
+					local menuLabel = stance.label or (_G.STEALTH or "Stealth")
+					local iconToken = stance.icon
+					local iconType = type(iconToken)
+					if (iconType == "string" and iconToken ~= "") or iconType == "number" then menuLabel = string.format("|T%s:14:14:0:0:64:64:4:60:4:60|t %s", tostring(iconToken), menuLabel) end
+					classMenu:CreateButton(menuLabel, function()
+						local overrides = CooldownPanels.GetStanceDefaultOverrides and CooldownPanels:GetStanceDefaultOverrides() or nil
+						CooldownPanels:AddEntrySafe(panelId, "STANCE", stance.id, overrides)
+						CooldownPanels:RefreshEditor()
+					end)
 				end
 			end
-		end)
-	end
+		end
+	end)
+end
 
 local function getSpellIdFromCooldownManagerChild(child)
 	if not child then return nil end
@@ -3533,8 +3728,11 @@ local function ensureEditor()
 	local cbItemUses = Helper.CreateCheck(rightContent, L["CooldownPanelShowItemUses"] or "Show item uses")
 	cbItemUses:SetPoint("TOPLEFT", cbItemCount, "BOTTOMLEFT", 0, -4)
 
+	local cbUseHighestRank = Helper.CreateCheck(rightContent, L["CooldownPanelUseHighestRank"] or "Use highest rank")
+	cbUseHighestRank:SetPoint("TOPLEFT", cbItemUses, "BOTTOMLEFT", 0, -4)
+
 	local cbShowWhenEmpty = Helper.CreateCheck(rightContent, L["CooldownPanelShowWhenEmpty"] or "Show when empty")
-	cbShowWhenEmpty:SetPoint("TOPLEFT", cbItemUses, "BOTTOMLEFT", 0, -4)
+	cbShowWhenEmpty:SetPoint("TOPLEFT", cbUseHighestRank, "BOTTOMLEFT", 0, -4)
 
 	local cbShowWhenNoCooldown = Helper.CreateCheck(rightContent, L["CooldownPanelShowWhenNoCooldown"] or "Show even without cooldown")
 	cbShowWhenNoCooldown:SetPoint("TOPLEFT", cbShowWhenEmpty, "BOTTOMLEFT", 0, -4)
@@ -3732,6 +3930,7 @@ local function ensureEditor()
 			cbStacks = cbStacks,
 			cbItemCount = cbItemCount,
 			cbItemUses = cbItemUses,
+			cbUseHighestRank = cbUseHighestRank,
 			cbShowWhenEmpty = cbShowWhenEmpty,
 			cbShowWhenNoCooldown = cbShowWhenNoCooldown,
 			staticTextLabel = staticTextLabel,
@@ -3852,6 +4051,7 @@ local function ensureEditor()
 			return
 		end
 		local newValue = value
+		local enableHighestRank = false
 		if entry.type == "SPELL" then
 			local baseValue = getBaseSpellId(value) or value
 			if not spellExistsSafe(value) and not spellExistsSafe(baseValue) then
@@ -3861,6 +4061,10 @@ local function ensureEditor()
 				return
 			end
 			newValue = baseValue
+		elseif entry.type == "ITEM" then
+			local canonicalItemID, wasHigherRank = CooldownPanels:GetCanonicalItemRankID(newValue)
+			if canonicalItemID then newValue = canonicalItemID end
+			enableHighestRank = wasHigherRank == true
 		end
 		local existingId = CooldownPanels:FindEntryByValue(panelId, entry.type, newValue)
 		if existingId and existingId ~= entryId then
@@ -3873,6 +4077,7 @@ local function ensureEditor()
 			entry.spellID = newValue
 		elseif entry.type == "ITEM" then
 			entry.itemID = newValue
+			if enableHighestRank then entry.useHighestRank = true end
 		elseif entry.type == "SLOT" then
 			entry.slotID = newValue
 		elseif entry.type == "MACRO" then
@@ -3938,6 +4143,7 @@ local function ensureEditor()
 	end)
 	bindEntryToggle(cbItemCount, "showItemCount")
 	bindEntryToggle(cbItemUses, "showItemUses")
+	bindEntryToggle(cbUseHighestRank, "useHighestRank")
 	bindEntryToggle(cbShowWhenEmpty, "showWhenEmpty")
 	bindEntryToggle(cbShowWhenNoCooldown, "showWhenNoCooldown")
 	bindEntryToggle(cbStaticTextDuringCD, "staticTextShowOnCooldown")
@@ -4290,10 +4496,11 @@ local function entryIsAvailableForPreview(entry)
 		if not entry.spellID then return false end
 		return true
 	elseif entry.type == "ITEM" then
-		if not entry.itemID then return false end
-		if itemHasUseSpell and not itemHasUseSpell(entry.itemID) then return false end
+		local itemID = CooldownPanels.ResolveEntryItemID(entry, entry.itemID)
+		if not itemID then return false end
+		if itemHasUseSpell and not itemHasUseSpell(itemID) then return false end
 		if entry.showWhenEmpty == true then return true end
-		return hasItem(entry.itemID)
+		return hasItem(itemID)
 	elseif entry.type == "SLOT" then
 		if entry.slotID and Api.GetInventoryItemID then
 			local itemId = Api.GetInventoryItemID("player", entry.slotID)
@@ -4491,6 +4698,7 @@ local function layoutInspectorToggles(inspector, entry)
 		hideToggle(inspector.cbStacks)
 		hideToggle(inspector.cbItemCount)
 		hideToggle(inspector.cbItemUses)
+		hideToggle(inspector.cbUseHighestRank)
 		hideToggle(inspector.cbShowWhenEmpty)
 		hideToggle(inspector.cbShowWhenNoCooldown)
 		hideControl(inspector.staticTextLabel)
@@ -4534,6 +4742,7 @@ local function layoutInspectorToggles(inspector, entry)
 		place(inspector.cbStacks, true)
 		place(inspector.cbItemCount, false)
 		place(inspector.cbItemUses, false)
+		place(inspector.cbUseHighestRank, false)
 		place(inspector.cbShowWhenEmpty, false)
 		place(inspector.cbShowWhenNoCooldown, false)
 	elseif effectiveType == "ITEM" then
@@ -4542,6 +4751,10 @@ local function layoutInspectorToggles(inspector, entry)
 		place(inspector.cbStacks, false)
 		place(inspector.cbItemCount, true)
 		place(inspector.cbItemUses, true)
+		CooldownPanels:EnsureFoodRankGroupsLoaded()
+		local itemID = tonumber(entry and entry.itemID)
+		local rankMap = CooldownPanels.itemHighestRankByID
+		place(inspector.cbUseHighestRank, entry and entry.type == "ITEM" and itemID and rankMap and rankMap[itemID] ~= nil)
 		place(inspector.cbShowWhenEmpty, true)
 		place(inspector.cbShowWhenNoCooldown, false)
 	elseif effectiveType == "SLOT" then
@@ -4550,6 +4763,7 @@ local function layoutInspectorToggles(inspector, entry)
 		place(inspector.cbStacks, false)
 		place(inspector.cbItemCount, false)
 		place(inspector.cbItemUses, false)
+		place(inspector.cbUseHighestRank, false)
 		place(inspector.cbShowWhenEmpty, false)
 		place(inspector.cbShowWhenNoCooldown, true)
 	elseif effectiveType == "STANCE" then
@@ -4558,6 +4772,7 @@ local function layoutInspectorToggles(inspector, entry)
 		place(inspector.cbStacks, false)
 		place(inspector.cbItemCount, false)
 		place(inspector.cbItemUses, false)
+		place(inspector.cbUseHighestRank, false)
 		place(inspector.cbShowWhenEmpty, false)
 		place(inspector.cbShowWhenNoCooldown, false)
 	else
@@ -4566,6 +4781,7 @@ local function layoutInspectorToggles(inspector, entry)
 		place(inspector.cbStacks, false)
 		place(inspector.cbItemCount, false)
 		place(inspector.cbItemUses, false)
+		place(inspector.cbUseHighestRank, false)
 		place(inspector.cbShowWhenEmpty, false)
 		place(inspector.cbShowWhenNoCooldown, false)
 	end
@@ -4685,13 +4901,13 @@ local function refreshInspector(editor, panel, entry)
 			effectiveType = (macro and macro.kind) or "MACRO"
 		end
 		if inspector.entryId and inspector.entryId.SetNumeric then inspector.entryId:SetNumeric(effectiveType ~= "STANCE") end
-			if inspector.cbAlwaysShow and inspector.cbAlwaysShow.Text then
-				if effectiveType == "STANCE" then
-					inspector.cbAlwaysShow.Text:SetText(L["CooldownPanelShowWhenMissing"] or "Show when missing")
-				else
-					inspector.cbAlwaysShow.Text:SetText(L["CooldownPanelAlwaysShow"] or "Always show")
-				end
+		if inspector.cbAlwaysShow and inspector.cbAlwaysShow.Text then
+			if effectiveType == "STANCE" then
+				inspector.cbAlwaysShow.Text:SetText(L["CooldownPanelShowWhenMissing"] or "Show when missing")
+			else
+				inspector.cbAlwaysShow.Text:SetText(L["CooldownPanelAlwaysShow"] or "Always show")
 			end
+		end
 		if inspector.cbGlow and inspector.cbGlow.Text then
 			if effectiveType == "STANCE" then
 				inspector.cbGlow.Text:SetText(_G.GLOW or "Glow")
@@ -4710,6 +4926,7 @@ local function refreshInspector(editor, panel, entry)
 		inspector.cbStacks:SetChecked(entry.showStacks and true or false)
 		inspector.cbItemCount:SetChecked(effectiveType == "ITEM" and entry.showItemCount ~= false)
 		inspector.cbItemUses:SetChecked(effectiveType == "ITEM" and entry.showItemUses == true)
+		if inspector.cbUseHighestRank then inspector.cbUseHighestRank:SetChecked(effectiveType == "ITEM" and entry.type == "ITEM" and entry.useHighestRank == true) end
 		inspector.cbShowWhenEmpty:SetChecked(effectiveType == "ITEM" and entry.showWhenEmpty == true)
 		inspector.cbShowWhenNoCooldown:SetChecked(effectiveType == "SLOT" and entry.showWhenNoCooldown == true)
 		inspector.cbGlow:SetChecked(entry.type ~= "MACRO" and entry.glowReady and true or false)
@@ -4924,7 +5141,8 @@ function CooldownPanels:UpdatePreviewIcons(panelId, countOverride)
 		local entry = entryId and panel.entries and panel.entries[entryId] or nil
 		local macro = entry and entry.type == "MACRO" and CooldownPanels.ResolveMacroEntry(entry) or nil
 		local resolvedType = entry and ((macro and macro.kind) or entry.type) or nil
-		local previewItemId = resolvedType == "ITEM" and ((macro and macro.itemID) or entry.itemID) or nil
+		local previewBaseItemId = resolvedType == "ITEM" and ((macro and macro.itemID) or entry.itemID) or nil
+		local previewItemId = resolvedType == "ITEM" and CooldownPanels.ResolveEntryItemID(entry, previewBaseItemId) or nil
 		local icon = frame.icons[i]
 		local showCooldown = entry and entry.showCooldown ~= false
 		local staticCooldown = entry and entry.staticTextShowOnCooldown == true or false
@@ -5019,7 +5237,7 @@ local function updateItemCountCache()
 		for _, entry in pairs(panel and panel.entries or {}) do
 			local itemId
 			if entry and entry.type == "ITEM" and entry.itemID then
-				itemId = entry.itemID
+				itemId = CooldownPanels.ResolveEntryItemID(entry, entry.itemID)
 			elseif entry and entry.type == "MACRO" then
 				local macro = CooldownPanels.ResolveMacroEntry(entry)
 				if macro and macro.kind == "ITEM" and macro.itemID then itemId = macro.itemID end
@@ -5153,7 +5371,8 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 		if entry then
 			local macro = entry.type == "MACRO" and CooldownPanels.ResolveMacroEntry(entry) or nil
 			local resolvedType = (macro and macro.kind) or entry.type
-			local resolvedItemId = resolvedType == "ITEM" and ((macro and macro.itemID) or entry.itemID) or nil
+			local resolvedBaseItemId = resolvedType == "ITEM" and ((macro and macro.itemID) or entry.itemID) or nil
+			local resolvedItemId = resolvedType == "ITEM" and CooldownPanels.ResolveEntryItemID(entry, resolvedBaseItemId) or nil
 			local resolvedSlotId = resolvedType == "SLOT" and entry.slotID or nil
 			local showCooldown = entry.showCooldown ~= false
 			local showCooldownText = entry.showCooldownText ~= false
@@ -5164,9 +5383,9 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			local showStacks = entry.showStacks == true and resolvedType == "SPELL"
 			local showItemCount = resolvedType == "ITEM" and entry.showItemCount ~= false
 			local showItemUses = resolvedType == "ITEM" and entry.showItemUses == true
-				local showWhenEmpty = resolvedType == "ITEM" and entry.showWhenEmpty == true
-				local showWhenNoCooldown = resolvedType == "SLOT" and entry.showWhenNoCooldown == true
-				local showWhenMissing = resolvedType == "STANCE" and entry.showWhenMissing == true
+			local showWhenEmpty = resolvedType == "ITEM" and entry.showWhenEmpty == true
+			local showWhenNoCooldown = resolvedType == "SLOT" and entry.showWhenNoCooldown == true
+			local showWhenMissing = resolvedType == "STANCE" and entry.showWhenMissing == true
 			local alwaysShow = entry.alwaysShow ~= false
 			local glowReady = entry.type ~= "MACRO" and entry.glowReady ~= false
 			local glowDuration = Helper.ClampInt(entry.glowDuration, 0, 30, 0)
@@ -5174,8 +5393,8 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			local soundName = normalizeSoundName(entry.soundReadyFile)
 			local baseSpellId = resolvedType == "SPELL" and ((macro and macro.spellID) or entry.spellID) or nil
 			local effectiveSpellId = baseSpellId and getEffectiveSpellId(baseSpellId) or nil
-				local stanceRelevant = resolvedType == "STANCE" and CooldownPanels.IsStanceEntryRelevant and CooldownPanels:IsStanceEntryRelevant(entry) or false
-				local stanceActive = stanceRelevant and CooldownPanels.IsStanceEntryActive and CooldownPanels:IsStanceEntryActive(entry) or false
+			local stanceRelevant = resolvedType == "STANCE" and CooldownPanels.IsStanceEntryRelevant and CooldownPanels:IsStanceEntryRelevant(entry) or false
+			local stanceActive = stanceRelevant and CooldownPanels.IsStanceEntryActive and CooldownPanels:IsStanceEntryActive(entry) or false
 			local spellPassive = baseSpellId and isSpellPassiveSafe(baseSpellId, effectiveSpellId) or false
 			-- local function isSpellFlagged(map)
 			-- 	if not map then return false end
@@ -5318,15 +5537,15 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 						show = true
 					end
 				end
-				elseif resolvedType == "STANCE" then
-					if not stanceRelevant then
-						show = false
-					elseif showWhenMissing then
-						show = not stanceActive
-					else
-						show = stanceActive
-					end
+			elseif resolvedType == "STANCE" then
+				if not stanceRelevant then
+					show = false
+				elseif showWhenMissing then
+					show = not stanceActive
+				else
+					show = stanceActive
 				end
+			end
 
 			if show then
 				visibleCount = visibleCount + 1
@@ -5347,6 +5566,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				data.keybindText = showKeybinds and Keybinds.GetEntryKeybindText(entry, layout) or nil
 				data.entry = entry
 				data.entryId = entryId
+				data.resolvedType = resolvedType
 				data.overlayGlow = overlayGlow
 				if resolvedType == "STANCE" and glowReady then data.overlayGlow = true end
 				data.powerInsufficient = powerInsufficient
@@ -5642,6 +5862,17 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			end
 		end
 		setAssistedHighlight(icon, data.assistedSuggested == true)
+
+		if data.readyAt and (data.resolvedType == "ITEM" or data.resolvedType == "SLOT") then
+			local itemCooldownRunning = durationActive or (cooldownEnabledOk and isCooldownActive(cooldownStart, cooldownDuration))
+			if itemCooldownRunning then
+				runtime.readyAt[data.entryId] = nil
+				data.readyAt = nil
+				local timer = glowTimers[data.entryId]
+				if timer and timer.Cancel then timer:Cancel() end
+				glowTimers[data.entryId] = nil
+			end
+		end
 
 		local overlayGlow = data.overlayGlow == true
 		if data.glowReady then
@@ -7178,7 +7409,9 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 				isShown = function() return hasStaticTextEntries() end,
 				get = function()
 					local entry = getStaticTextEntry()
-					return Helper.ResolveFontPath(entry and entry.staticTextFont, countFontPath)
+					local configured = entry and entry.staticTextFont
+					if type(configured) == "string" and configured ~= "" then return configured end
+					return countFontPath
 				end,
 				set = function(_, value)
 					local entry = getStaticTextEntry()
@@ -7189,7 +7422,10 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 					for _, option in ipairs(fontOptions()) do
 						root:CreateRadio(option.label, function()
 							local entry = getStaticTextEntry()
-							return entry and Helper.ResolveFontPath(entry.staticTextFont, countFontPath) == option.value
+							if not entry then return false end
+							local configured = entry.staticTextFont
+							if type(configured) == "string" and configured ~= "" then return configured == option.value end
+							return countFontPath == option.value
 						end, function()
 							local entry = getStaticTextEntry()
 							if not entry then return end

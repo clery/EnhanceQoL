@@ -167,6 +167,7 @@ Helper.ENTRY_DEFAULTS = {
 	showStacks = false,
 	showItemUses = false,
 	showWhenEmpty = false,
+	useHighestRank = false,
 	showWhenNoCooldown = false,
 	showWhenMissing = false,
 	glowReady = false,
@@ -450,9 +451,17 @@ function Helper.NormalizeOpacity(value, fallback)
 end
 
 function Helper.ResolveFontPath(value, fallback)
-	if addon.functions and addon.functions.IsGlobalFontConfigValue and addon.functions.IsGlobalFontConfigValue(value) then value = nil end
+	local useGlobalConfig = false
+	if addon.functions and addon.functions.IsGlobalFontConfigValue and addon.functions.IsGlobalFontConfigValue(value) then
+		useGlobalConfig = true
+		value = nil
+	end
 	if addon.functions and addon.functions.IsGlobalFontConfigValue and addon.functions.IsGlobalFontConfigValue(fallback) then fallback = nil end
 	if type(value) == "string" and value ~= "" then return value end
+	if useGlobalConfig and addon.functions and addon.functions.GetGlobalDefaultFontFace then
+		local globalFace = addon.functions.GetGlobalDefaultFontFace()
+		if type(globalFace) == "string" and globalFace ~= "" then return globalFace end
+	end
 	if type(fallback) == "string" and fallback ~= "" then return fallback end
 	if addon.functions and addon.functions.GetGlobalDefaultFontFace then return addon.functions.GetGlobalDefaultFontFace() end
 	return STANDARD_TEXT_FONT

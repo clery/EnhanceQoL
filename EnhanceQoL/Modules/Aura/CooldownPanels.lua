@@ -913,6 +913,21 @@ local function clearRuntimeLayoutShapeCache(runtime)
 	runtime._eqolLayoutIconBorderColorA = nil
 end
 
+CooldownPanels.ClearRuntimeResolvedLayoutCache = function(runtime)
+	if not runtime then return end
+	runtime._eqolResolvedRuntimeLayout = nil
+end
+
+CooldownPanels.ClearAppliedAnchorCache = function(runtime)
+	if not runtime then return end
+	runtime._eqolAnchorAppliedFrame = nil
+	runtime._eqolAnchorPoint = nil
+	runtime._eqolAnchorRelativePoint = nil
+	runtime._eqolAnchorRelativeFrame = nil
+	runtime._eqolAnchorX = nil
+	runtime._eqolAnchorY = nil
+end
+
 local function didLayoutShapeChange(runtime, layout, layoutCount)
 	if not runtime then return true end
 	if not layout then
@@ -985,6 +1000,157 @@ local function didLayoutShapeChange(runtime, layout, layoutCount)
 	runtime._eqolLayoutIconBorderColorB = borderColorB
 	runtime._eqolLayoutIconBorderColorA = borderColorA
 	return true
+end
+
+CooldownPanels.ResolveRuntimeLayout = function(runtime, frame, layout)
+	if not runtime or not frame then return nil end
+	local defaults = Helper.PANEL_LAYOUT_DEFAULTS
+	local cache = runtime._eqolResolvedRuntimeLayout
+	local readyGlowColor = layout.readyGlowColor
+	local readyGlowR = readyGlowColor and (readyGlowColor.r or readyGlowColor[1]) or nil
+	local readyGlowG = readyGlowColor and (readyGlowColor.g or readyGlowColor[2]) or nil
+	local readyGlowB = readyGlowColor and (readyGlowColor.b or readyGlowColor[3]) or nil
+	local readyGlowA = readyGlowColor and (readyGlowColor.a or readyGlowColor[4]) or nil
+	local powerTintColor = layout.powerTintColor
+	local powerTintSrcR = powerTintColor and (powerTintColor.r or powerTintColor[1]) or nil
+	local powerTintSrcG = powerTintColor and (powerTintColor.g or powerTintColor[2]) or nil
+	local powerTintSrcB = powerTintColor and (powerTintColor.b or powerTintColor[3]) or nil
+	local powerTintSrcA = powerTintColor and (powerTintColor.a or powerTintColor[4]) or nil
+	local unusableTintColor = layout.unusableTintColor
+	local unusableTintSrcR = unusableTintColor and (unusableTintColor.r or unusableTintColor[1]) or nil
+	local unusableTintSrcG = unusableTintColor and (unusableTintColor.g or unusableTintColor[2]) or nil
+	local unusableTintSrcB = unusableTintColor and (unusableTintColor.b or unusableTintColor[3]) or nil
+	local unusableTintSrcA = unusableTintColor and (unusableTintColor.a or unusableTintColor[4]) or nil
+	local rangeOverlayColor = layout.rangeOverlayColor
+	local rangeOverlaySrcR = rangeOverlayColor and (rangeOverlayColor.r or rangeOverlayColor[1]) or nil
+	local rangeOverlaySrcG = rangeOverlayColor and (rangeOverlayColor.g or rangeOverlayColor[2]) or nil
+	local rangeOverlaySrcB = rangeOverlayColor and (rangeOverlayColor.b or rangeOverlayColor[3]) or nil
+	local rangeOverlaySrcA = rangeOverlayColor and (rangeOverlayColor.a or rangeOverlayColor[4]) or nil
+
+	if
+		cache
+		and cache.frame == frame
+		and cache.showTooltipsSource == layout.showTooltips
+		and cache.keybindsEnabledSource == layout.keybindsEnabled
+		and cache.showIconTextureSource == layout.showIconTexture
+		and cache.noDesaturationSource == layout.noDesaturation
+		and cache.checkPowerSource == layout.checkPower
+		and cache.readyGlowRSource == readyGlowR
+		and cache.readyGlowGSource == readyGlowG
+		and cache.readyGlowBSource == readyGlowB
+		and cache.readyGlowASource == readyGlowA
+		and cache.powerTintRSource == powerTintSrcR
+		and cache.powerTintGSource == powerTintSrcG
+		and cache.powerTintBSource == powerTintSrcB
+		and cache.powerTintASource == powerTintSrcA
+		and cache.unusableTintRSource == unusableTintSrcR
+		and cache.unusableTintGSource == unusableTintSrcG
+		and cache.unusableTintBSource == unusableTintSrcB
+		and cache.unusableTintASource == unusableTintSrcA
+		and cache.rangeOverlayEnabledSource == layout.rangeOverlayEnabled
+		and cache.rangeOverlayRSource == rangeOverlaySrcR
+		and cache.rangeOverlayGSource == rangeOverlaySrcG
+		and cache.rangeOverlayBSource == rangeOverlaySrcB
+		and cache.rangeOverlayASource == rangeOverlaySrcA
+		and cache.cooldownDrawEdgeSource == layout.cooldownDrawEdge
+		and cache.cooldownDrawBlingSource == layout.cooldownDrawBling
+		and cache.cooldownDrawSwipeSource == layout.cooldownDrawSwipe
+		and cache.hideOnCooldownSource == layout.hideOnCooldown
+		and cache.showOnCooldownSource == layout.showOnCooldown
+		and cache.cooldownGcdDrawEdgeSource == layout.cooldownGcdDrawEdge
+		and cache.cooldownGcdDrawBlingSource == layout.cooldownGcdDrawBling
+		and cache.cooldownGcdDrawSwipeSource == layout.cooldownGcdDrawSwipe
+	then
+		return cache
+	end
+
+	local showTooltips = layout.showTooltips == true
+	local showKeybinds = layout.keybindsEnabled == true
+	local showIconTexture = layout.showIconTexture ~= false
+	local noDesaturation = layout.noDesaturation == true
+	local checkPower = layout.checkPower == true
+	local staticFontPath, staticFontSize, staticFontStyle = Helper.GetCountFontDefaults(frame)
+	local normalizedReadyGlow = Helper.NormalizeColor(layout.readyGlowColor, defaults.readyGlowColor)
+	local powerTintR, powerTintG, powerTintB = Helper.ResolveColor(layout.powerTintColor, defaults.powerTintColor)
+	local unusableTintR, unusableTintG, unusableTintB = Helper.ResolveColor(layout.unusableTintColor, defaults.unusableTintColor)
+	local rangeOverlayEnabled = layout.rangeOverlayEnabled == true
+	local rangeOverlayR, rangeOverlayG, rangeOverlayB, rangeOverlayA = Helper.ResolveColor(layout.rangeOverlayColor, defaults.rangeOverlayColor)
+	local drawEdge = layout.cooldownDrawEdge ~= false
+	local drawBling = layout.cooldownDrawBling ~= false
+	local drawSwipe = layout.cooldownDrawSwipe ~= false
+	local hideOnCooldown = layout.hideOnCooldown == true
+	local showOnCooldown = layout.showOnCooldown == true
+	if showOnCooldown then hideOnCooldown = false end
+	local gcdDrawEdge = layout.cooldownGcdDrawEdge == true
+	local gcdDrawBling = layout.cooldownGcdDrawBling == true
+	local gcdDrawSwipe = layout.cooldownGcdDrawSwipe == true
+
+	cache = cache or {}
+	cache.frame = frame
+	cache.showTooltipsSource = layout.showTooltips
+	cache.keybindsEnabledSource = layout.keybindsEnabled
+	cache.showIconTextureSource = layout.showIconTexture
+	cache.noDesaturationSource = layout.noDesaturation
+	cache.checkPowerSource = layout.checkPower
+	cache.readyGlowRSource = readyGlowR
+	cache.readyGlowGSource = readyGlowG
+	cache.readyGlowBSource = readyGlowB
+	cache.readyGlowASource = readyGlowA
+	cache.powerTintRSource = powerTintSrcR
+	cache.powerTintGSource = powerTintSrcG
+	cache.powerTintBSource = powerTintSrcB
+	cache.powerTintASource = powerTintSrcA
+	cache.unusableTintRSource = unusableTintSrcR
+	cache.unusableTintGSource = unusableTintSrcG
+	cache.unusableTintBSource = unusableTintSrcB
+	cache.unusableTintASource = unusableTintSrcA
+	cache.rangeOverlayEnabledSource = layout.rangeOverlayEnabled
+	cache.rangeOverlayRSource = rangeOverlaySrcR
+	cache.rangeOverlayGSource = rangeOverlaySrcG
+	cache.rangeOverlayBSource = rangeOverlaySrcB
+	cache.rangeOverlayASource = rangeOverlaySrcA
+	cache.cooldownDrawEdgeSource = layout.cooldownDrawEdge
+	cache.cooldownDrawBlingSource = layout.cooldownDrawBling
+	cache.cooldownDrawSwipeSource = layout.cooldownDrawSwipe
+	cache.hideOnCooldownSource = layout.hideOnCooldown
+	cache.showOnCooldownSource = layout.showOnCooldown
+	cache.cooldownGcdDrawEdgeSource = layout.cooldownGcdDrawEdge
+	cache.cooldownGcdDrawBlingSource = layout.cooldownGcdDrawBling
+	cache.cooldownGcdDrawSwipeSource = layout.cooldownGcdDrawSwipe
+	cache.showTooltips = showTooltips
+	cache.showKeybinds = showKeybinds
+	cache.showIconTexture = showIconTexture
+	cache.noDesaturation = noDesaturation
+	cache.checkPower = checkPower
+	cache.staticFontPath = staticFontPath
+	cache.staticFontSize = staticFontSize
+	cache.staticFontStyle = staticFontStyle
+	cache.readyGlowColor = cache.readyGlowColor or {}
+	cache.readyGlowColor[1] = normalizedReadyGlow[1]
+	cache.readyGlowColor[2] = normalizedReadyGlow[2]
+	cache.readyGlowColor[3] = normalizedReadyGlow[3]
+	cache.readyGlowColor[4] = normalizedReadyGlow[4]
+	cache.powerTintR = powerTintR
+	cache.powerTintG = powerTintG
+	cache.powerTintB = powerTintB
+	cache.unusableTintR = unusableTintR
+	cache.unusableTintG = unusableTintG
+	cache.unusableTintB = unusableTintB
+	cache.rangeOverlayEnabled = rangeOverlayEnabled
+	cache.rangeOverlayR = rangeOverlayR
+	cache.rangeOverlayG = rangeOverlayG
+	cache.rangeOverlayB = rangeOverlayB
+	cache.rangeOverlayA = rangeOverlayA
+	cache.drawEdge = drawEdge
+	cache.drawBling = drawBling
+	cache.drawSwipe = drawSwipe
+	cache.hideOnCooldown = hideOnCooldown
+	cache.showOnCooldown = showOnCooldown
+	cache.gcdDrawEdge = gcdDrawEdge
+	cache.gcdDrawBling = gcdDrawBling
+	cache.gcdDrawSwipe = gcdDrawSwipe
+	runtime._eqolResolvedRuntimeLayout = cache
+	return cache
 end
 
 ensurePanelAnchor = function(panel)
@@ -1558,13 +1724,25 @@ ensureRoot = function()
 	local needsNormalize = not normalizedRoots[root] or type(root.panels) ~= "table" or type(root.order) ~= "table" or type(root.defaults) ~= "table"
 	if needsNormalize then
 		Helper.NormalizeRoot(root)
+		local runtime = CooldownPanels.runtime
+		if runtime and runtime._eqolPanelIdCacheRoot == root then
+			runtime._eqolPanelIdCache = nil
+			runtime._eqolPanelIdCacheRoot = nil
+		end
 		normalizedRoots[root] = true
 	end
 	return root
 end
 
 local function markRootOrderDirty(root)
-	if root then root._orderDirty = true end
+	if root then
+		root._orderDirty = true
+		local runtime = CooldownPanels.runtime
+		if runtime and runtime._eqolPanelIdCacheRoot == root then
+			runtime._eqolPanelIdCache = nil
+			runtime._eqolPanelIdCacheRoot = nil
+		end
+	end
 end
 
 local function syncRootOrderIfDirty(root, force)
@@ -1575,7 +1753,39 @@ local function syncRootOrderIfDirty(root, force)
 	end
 	Helper.SyncOrder(root.order, root.panels)
 	root._orderDirty = nil
+	local runtime = CooldownPanels.runtime
+	if runtime and runtime._eqolPanelIdCacheRoot == root then
+		runtime._eqolPanelIdCache = nil
+		runtime._eqolPanelIdCacheRoot = nil
+	end
 	return true
+end
+
+CooldownPanels.GetCachedPanelIds = function(root)
+	if not root then return {} end
+	CooldownPanels.runtime = CooldownPanels.runtime or {}
+	local runtime = CooldownPanels.runtime
+	local cached = runtime._eqolPanelIdCache
+	if cached and runtime._eqolPanelIdCacheRoot == root then return cached end
+
+	local panelIds = {}
+	local seen = {}
+	for _, panelId in ipairs(root.order or {}) do
+		if root.panels[panelId] and not seen[panelId] then
+			seen[panelId] = true
+			panelIds[#panelIds + 1] = panelId
+		end
+	end
+	for panelId in pairs(root.panels or {}) do
+		if not seen[panelId] then
+			seen[panelId] = true
+			panelIds[#panelIds + 1] = panelId
+		end
+	end
+
+	runtime._eqolPanelIdCache = panelIds
+	runtime._eqolPanelIdCacheRoot = root
+	return panelIds
 end
 
 function CooldownPanels:EnsureDB() return ensureRoot() end
@@ -3452,10 +3662,20 @@ function CooldownPanels:SyncEditModeDataFromPanel(panelId, editModeId)
 	if not data then return end
 
 	if anchor then
-		data.point = anchor.point or panel.point or "CENTER"
-		data.relativePoint = anchor.relativePoint or data.point
-		data.x = anchor.x or 0
-		data.y = anchor.y or 0
+		local point = anchor.point or panel.point or "CENTER"
+		local relativePoint = anchor.relativePoint or point
+		local x = anchor.x or 0
+		local y = anchor.y or 0
+		data.point = point
+		data.relativePoint = relativePoint
+		data.x = x
+		data.y = y
+		if EditMode.SetValue then
+			EditMode:SetValue(id, "point", point, layoutName, true)
+			EditMode:SetValue(id, "relativePoint", relativePoint, layoutName, true)
+			EditMode:SetValue(id, "x", x, layoutName, true)
+			EditMode:SetValue(id, "y", y, layoutName, true)
+		end
 	end
 
 	local baseIconSize = Helper.ClampInt(layout.iconSize, 12, 128, Helper.PANEL_LAYOUT_DEFAULTS.iconSize)
@@ -5165,6 +5385,7 @@ function CooldownPanels:ApplyLayout(panelId, countOverride)
 	local runtime = getRuntime(panelId)
 	local frame = runtime.frame
 	if not frame then return end
+	CooldownPanels.ClearRuntimeResolvedLayoutCache(runtime)
 	panel.layout = panel.layout or Helper.CopyTableShallow(Helper.PANEL_LAYOUT_DEFAULTS)
 	local layout = panel.layout
 
@@ -5360,26 +5581,35 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 	runtime._eqolHiddenByEligibility = nil
 	panel.layout = panel.layout or Helper.CopyTableShallow(Helper.PANEL_LAYOUT_DEFAULTS)
 	local layout = panel.layout
-	local showTooltips = layout.showTooltips == true
-	local showKeybinds = layout.keybindsEnabled == true
-	local showIconTexture = layout.showIconTexture ~= false
-	local noDesaturation = layout.noDesaturation == true
-	local checkPower = layout.checkPower == true
-	local staticFontPath, staticFontSize, staticFontStyle = Helper.GetCountFontDefaults(frame)
-	local readyGlowColor = Helper.NormalizeColor(layout.readyGlowColor, Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor)
-	local powerTintR, powerTintG, powerTintB = Helper.ResolveColor(layout.powerTintColor, Helper.PANEL_LAYOUT_DEFAULTS.powerTintColor)
-	local unusableTintR, unusableTintG, unusableTintB = Helper.ResolveColor(layout.unusableTintColor, Helper.PANEL_LAYOUT_DEFAULTS.unusableTintColor)
-	local rangeOverlayEnabled = layout.rangeOverlayEnabled == true
-	local rangeOverlayR, rangeOverlayG, rangeOverlayB, rangeOverlayA = Helper.ResolveColor(layout.rangeOverlayColor, Helper.PANEL_LAYOUT_DEFAULTS.rangeOverlayColor)
-	local drawEdge = layout.cooldownDrawEdge ~= false
-	local drawBling = layout.cooldownDrawBling ~= false
-	local drawSwipe = layout.cooldownDrawSwipe ~= false
-	local hideOnCooldown = layout.hideOnCooldown == true
-	local showOnCooldown = layout.showOnCooldown == true
-	if showOnCooldown then hideOnCooldown = false end
-	local gcdDrawEdge = layout.cooldownGcdDrawEdge == true
-	local gcdDrawBling = layout.cooldownGcdDrawBling == true
-	local gcdDrawSwipe = layout.cooldownGcdDrawSwipe == true
+	local resolvedLayout = CooldownPanels.ResolveRuntimeLayout(runtime, frame, layout)
+	local showTooltips = resolvedLayout and resolvedLayout.showTooltips
+	local showKeybinds = resolvedLayout and resolvedLayout.showKeybinds
+	local showIconTexture = resolvedLayout and resolvedLayout.showIconTexture
+	local noDesaturation = resolvedLayout and resolvedLayout.noDesaturation
+	local checkPower = resolvedLayout and resolvedLayout.checkPower
+	local staticFontPath = resolvedLayout and resolvedLayout.staticFontPath
+	local staticFontSize = resolvedLayout and resolvedLayout.staticFontSize
+	local staticFontStyle = resolvedLayout and resolvedLayout.staticFontStyle
+	local readyGlowColor = resolvedLayout and resolvedLayout.readyGlowColor
+	local powerTintR = resolvedLayout and resolvedLayout.powerTintR
+	local powerTintG = resolvedLayout and resolvedLayout.powerTintG
+	local powerTintB = resolvedLayout and resolvedLayout.powerTintB
+	local unusableTintR = resolvedLayout and resolvedLayout.unusableTintR
+	local unusableTintG = resolvedLayout and resolvedLayout.unusableTintG
+	local unusableTintB = resolvedLayout and resolvedLayout.unusableTintB
+	local rangeOverlayEnabled = resolvedLayout and resolvedLayout.rangeOverlayEnabled
+	local rangeOverlayR = resolvedLayout and resolvedLayout.rangeOverlayR
+	local rangeOverlayG = resolvedLayout and resolvedLayout.rangeOverlayG
+	local rangeOverlayB = resolvedLayout and resolvedLayout.rangeOverlayB
+	local rangeOverlayA = resolvedLayout and resolvedLayout.rangeOverlayA
+	local drawEdge = resolvedLayout and resolvedLayout.drawEdge
+	local drawBling = resolvedLayout and resolvedLayout.drawBling
+	local drawSwipe = resolvedLayout and resolvedLayout.drawSwipe
+	local hideOnCooldown = resolvedLayout and resolvedLayout.hideOnCooldown
+	local showOnCooldown = resolvedLayout and resolvedLayout.showOnCooldown
+	local gcdDrawEdge = resolvedLayout and resolvedLayout.gcdDrawEdge
+	local gcdDrawBling = resolvedLayout and resolvedLayout.gcdDrawBling
+	local gcdDrawSwipe = resolvedLayout and resolvedLayout.gcdDrawSwipe
 	local assistedHighlightEnabled = shared and shared.assistedHighlightEnabled
 	if assistedHighlightEnabled == nil then
 		if CooldownPanels.refreshAssistedHighlightCVarState then CooldownPanels.refreshAssistedHighlightCVarState(nil, true) end
@@ -5440,6 +5670,40 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 	local spellUnusableSpells = shared and shared.spellUnusable
 	local rangeOverlaySpells = shared and shared.rangeOverlaySpells
 	local powerCheckSpells = checkPower and shared and shared.powerCheckSpells or nil
+	local spellCooldownDurationCache = {}
+	local spellCooldownInfoCache = {}
+	local spellChargesInfoCache = {}
+	local function getCachedSpellCooldownDurationObject(spellId)
+		if not spellId then return nil end
+		local cached = spellCooldownDurationCache[spellId]
+		if cached ~= nil then
+			if cached == false then return nil end
+			return cached
+		end
+		local durationObject = getSpellCooldownDurationObject(spellId)
+		spellCooldownDurationCache[spellId] = durationObject or false
+		return durationObject
+	end
+	local function getCachedSpellCooldownInfo(spellId)
+		if not spellId then return 0, 0, false, 1 end
+		local cached = spellCooldownInfoCache[spellId]
+		if cached then return cached[1], cached[2], cached[3], cached[4], cached[5] end
+		local startTime, duration, enabled, modRate, isOnGCD = getSpellCooldownInfo(spellId)
+		cached = { startTime, duration, enabled, modRate, isOnGCD }
+		spellCooldownInfoCache[spellId] = cached
+		return startTime, duration, enabled, modRate, isOnGCD
+	end
+	local function getCachedSpellChargesInfo(spellId)
+		if not spellId or not Api.GetSpellChargesInfo then return nil end
+		local cached = spellChargesInfoCache[spellId]
+		if cached ~= nil then
+			if cached == false then return nil end
+			return cached
+		end
+		local info = Api.GetSpellChargesInfo(spellId)
+		spellChargesInfoCache[spellId] = info or false
+		return info
+	end
 	for _, entryId in ipairs(order) do
 		local entry = panel.entries and panel.entries[entryId]
 		if entry then
@@ -5510,9 +5774,9 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				elseif Api.IsSpellKnown and not Api.IsSpellKnown(spellId) then
 					show = false
 				else
-					if showCharges and Api.GetSpellChargesInfo then chargesInfo = Api.GetSpellChargesInfo(spellId) end
+					if showCharges then chargesInfo = getCachedSpellChargesInfo(spellId) end
 					if trackCooldown then
-						cooldownDurationObject = getSpellCooldownDurationObject(spellId)
+						cooldownDurationObject = getCachedSpellCooldownDurationObject(spellId)
 						cooldownRemaining = getDurationRemaining(cooldownDurationObject)
 						if cooldownRemaining ~= nil and cooldownRemaining <= 0 then
 							cooldownDurationObject = nil
@@ -5520,9 +5784,9 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 						end
 					end
 					if (trackCooldown or (showCharges and chargesInfo)) and not cooldownDurationObject then
-						cooldownStart, cooldownDuration, cooldownEnabled, cooldownRate, cooldownGCD = getSpellCooldownInfo(spellId)
+						cooldownStart, cooldownDuration, cooldownEnabled, cooldownRate, cooldownGCD = getCachedSpellCooldownInfo(spellId)
 					elseif cooldownDurationObject then
-						_, _, _, _, cooldownGCD = getSpellCooldownInfo(spellId)
+						_, _, _, _, cooldownGCD = getCachedSpellCooldownInfo(spellId)
 					end
 					if showStacks then
 						local cache = shared and shared.actionDisplayCounts
@@ -6017,6 +6281,22 @@ function CooldownPanels:ApplyPanelPosition(panelId)
 	local x = tonumber(anchor and anchor.x) or 0
 	local y = tonumber(anchor and anchor.y) or 0
 	local relativeFrame = resolveAnchorFrame(anchor)
+	if
+		runtime._eqolAnchorAppliedFrame == frame
+		and runtime._eqolAnchorPoint == point
+		and runtime._eqolAnchorRelativePoint == relativePoint
+		and runtime._eqolAnchorRelativeFrame == relativeFrame
+		and runtime._eqolAnchorX == x
+		and runtime._eqolAnchorY == y
+	then
+		return
+	end
+	runtime._eqolAnchorAppliedFrame = frame
+	runtime._eqolAnchorPoint = point
+	runtime._eqolAnchorRelativePoint = relativePoint
+	runtime._eqolAnchorRelativeFrame = relativeFrame
+	runtime._eqolAnchorX = x
+	runtime._eqolAnchorY = y
 	frame:ClearAllPoints()
 	frame:SetPoint(point, relativeFrame, relativePoint, x, y)
 end
@@ -6153,6 +6433,7 @@ function CooldownPanels:RefreshPanel(panelId)
 		return
 	end
 	self:EnsurePanelFrame(panelId)
+	self:ApplyPanelPosition(panelId)
 	local runtime = getRuntime(panelId)
 	if self:IsInEditMode() then
 		clearRuntimeLayoutShapeCache(runtime)
@@ -6203,20 +6484,7 @@ function CooldownPanels:RefreshAllPanels()
 		end
 	end
 	syncRootOrderIfDirty(root)
-	local panelIds = {}
-	local seen = {}
-	for _, panelId in ipairs(root.order) do
-		if root.panels[panelId] and not seen[panelId] then
-			seen[panelId] = true
-			panelIds[#panelIds + 1] = panelId
-		end
-	end
-	for panelId in pairs(root.panels) do
-		if not seen[panelId] then
-			seen[panelId] = true
-			panelIds[#panelIds + 1] = panelId
-		end
-	end
+	local panelIds = CooldownPanels.GetCachedPanelIds(root)
 	for _, panelId in ipairs(panelIds) do
 		self:EnsurePanelFrame(panelId)
 	end
@@ -8190,6 +8458,7 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 		onApply = function()
 			-- Addon profile is authoritative. Keep EditMode data mirrored from it.
 			syncEditModeLayoutFromAnchor()
+			CooldownPanels.ClearAppliedAnchorCache(getRuntime(panelId))
 			self:ApplyPanelPosition(panelId)
 			self:UpdateVisibility(panelId)
 			refreshEditModeSettingValues()
@@ -8719,7 +8988,10 @@ local function runRebuild()
 	rt.specRebuildCause = nil
 	CooldownPanels:RebuildSpellIndex()
 	Keybinds.InvalidateCache()
-	CooldownPanels:RequestUpdate(cause)
+	CooldownPanels:RequestUpdate({
+		cause = cause,
+		fullRefresh = true,
+	})
 end
 
 local function scheduleSpecAwareRebuild(event)
@@ -8788,6 +9060,21 @@ end
 local function shouldEnableUpdateFrame()
 	if CooldownPanels and CooldownPanels.IsInEditMode and CooldownPanels:IsInEditMode() then return true end
 	return hasEnabledPanels() or hasConfiguredEnabledPanels()
+end
+
+CooldownPanels.RequestEnabledPanelRefreshes = function()
+	local root = ensureRoot()
+	local runtime = CooldownPanels and CooldownPanels.runtime
+	local enabledPanels = runtime and runtime.enabledPanels
+	if not (root and root.panels and enabledPanels and next(enabledPanels)) then return false end
+	local queued = false
+	for _, panelId in ipairs(CooldownPanels.GetCachedPanelIds(root)) do
+		if enabledPanels[panelId] then
+			CooldownPanels:RefreshPanel(panelId)
+			queued = true
+		end
+	end
+	return queued
 end
 
 local assistedHighlightHooked = false
@@ -9137,23 +9424,40 @@ end
 
 function CooldownPanels:RequestUpdate(cause)
 	self.runtime = self.runtime or {}
+	local fullRefresh = false
+	if type(cause) == "table" then
+		fullRefresh = cause.fullRefresh == true
+		cause = cause.cause
+	end
 	if self:IsInEditMode() ~= true then
 		local enabledPanels = self.runtime.enabledPanels
 		if not enabledPanels or not next(enabledPanels) then
 			self:RefreshAllPanels()
 			return
 		end
+	else
+		fullRefresh = true
 	end
 	if self.runtime.updatePending then
 		if cause then self.runtime.updateCause = cause end
+		if fullRefresh then self.runtime.updateFullRefresh = true end
 		return
 	end
 	self.runtime.updatePending = true
 	self.runtime.updateCause = cause
+	self.runtime.updateFullRefresh = fullRefresh
 	C_Timer.After(0, function()
-		self.runtime.updatePending = nil
-		self.runtime.updateCause = nil
-		CooldownPanels:RefreshAllPanels()
+		local runtime = self.runtime
+		if not runtime then return end
+		local shouldFullRefresh = runtime.updateFullRefresh == true or self:IsInEditMode() == true
+		runtime.updatePending = nil
+		runtime.updateCause = nil
+		runtime.updateFullRefresh = nil
+		if shouldFullRefresh then
+			CooldownPanels:RefreshAllPanels()
+			return
+		end
+		if not CooldownPanels.RequestEnabledPanelRefreshes() then CooldownPanels:RefreshAllPanels() end
 	end)
 end
 

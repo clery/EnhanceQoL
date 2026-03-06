@@ -48,6 +48,7 @@ local getSeparatorSegmentCount
 local shouldUseDiscreteSeparatorSegments
 local refreshDiscreteSegmentsForBar
 local ensureEditModeRegistration
+local ensureRelativeFrameFallback
 local lastBarSelectionPerSpec = {}
 local lastSpecCopySelection = {}
 local lastProfileShareScope = {}
@@ -290,29 +291,61 @@ local wasMax = false
 local wasMaxPower = {}
 local curve = C_CurveUtil and C_CurveUtil.CreateColorCurve()
 local curvePower = {}
-local function SetColorCurvePoints(maxColor)
-	if curve then
-		curve = C_CurveUtil and C_CurveUtil.CreateColorCurve()
-		curve:SetType(Enum.LuaCurveType.Cosine)
-		if maxColor then
-			curve:AddPoint(1.0, CreateColor(maxColor[1], maxColor[2], maxColor[3], maxColor[4])) -- sattes Grün
-		else
-			curve:AddPoint(1.0, CreateColor(0.0, 0.85, 0.0, 1)) -- sattes Grün
-		end
-		curve:AddPoint(0.8, CreateColor(0.6, 0.85, 0.0, 1)) -- Gelbgrün
-		curve:AddPoint(0.6, CreateColor(0.9, 0.9, 0.0, 1)) -- Knallgelb
-		curve:AddPoint(0.4, CreateColor(0.95, 0.6, 0.0, 1)) -- Orange
-		curve:AddPoint(0.2, CreateColor(0.95, 0.25, 0.0, 1)) -- Rot-Orange
-		curve:AddPoint(0.0, CreateColor(0.9, 0.0, 0.0, 1)) -- Rot
+
+function ResourceBars.HashCurveStep(hash, value)
+	local numeric = tonumber(value)
+	if numeric == nil then numeric = 0 end
+	numeric = floor((numeric * 1000) + 0.5)
+	return ((hash * 131) + numeric) % 2147483647
+end
+
+function ResourceBars.HashCurveColor(hash, color)
+	if type(color) ~= "table" then
+		hash = ResourceBars.HashCurveStep(hash, 1)
+		hash = ResourceBars.HashCurveStep(hash, 1)
+		hash = ResourceBars.HashCurveStep(hash, 1)
+		hash = ResourceBars.HashCurveStep(hash, 1)
+		return hash
 	end
+	hash = ResourceBars.HashCurveStep(hash, color[1] or color.r or 1)
+	hash = ResourceBars.HashCurveStep(hash, color[2] or color.g or 1)
+	hash = ResourceBars.HashCurveStep(hash, color[3] or color.b or 1)
+	hash = ResourceBars.HashCurveStep(hash, color[4] or color.a or 1)
+	return hash
+end
+
+local function SetColorCurvePoints(maxColor)
+	if not (C_CurveUtil and C_CurveUtil.CreateColorCurve and CreateColor and Enum and Enum.LuaCurveType and Enum.LuaCurveType.Cosine) then return end
+	local signature = ResourceBars.HashCurveColor(17, maxColor)
+	if curve and ResourceBars._curveSignature == signature then return end
+	curve = C_CurveUtil.CreateColorCurve()
+	if not curve then return end
+	curve:SetType(Enum.LuaCurveType.Cosine)
+	if maxColor then
+		curve:AddPoint(1.0, CreateColor(maxColor[1], maxColor[2], maxColor[3], maxColor[4])) -- sattes Grün
+	else
+		curve:AddPoint(1.0, CreateColor(0.0, 0.85, 0.0, 1)) -- sattes Grün
+	end
+	curve:AddPoint(0.8, CreateColor(0.6, 0.85, 0.0, 1)) -- Gelbgrün
+	curve:AddPoint(0.6, CreateColor(0.9, 0.9, 0.0, 1)) -- Knallgelb
+	curve:AddPoint(0.4, CreateColor(0.95, 0.6, 0.0, 1)) -- Orange
+	curve:AddPoint(0.2, CreateColor(0.95, 0.25, 0.0, 1)) -- Rot-Orange
+	curve:AddPoint(0.0, CreateColor(0.9, 0.0, 0.0, 1)) -- Rot
+	ResourceBars._curveSignature = signature
 end
 local function SetColorCurvePointsPower(pType, maxColor, defColor)
-	if curve then
-		curvePower[pType] = C_CurveUtil and C_CurveUtil.CreateColorCurve()
-		curvePower[pType]:SetType(Enum.LuaCurveType.Cosine)
-		if maxColor then curvePower[pType]:AddPoint(1.0, CreateColor(maxColor[1], maxColor[2], maxColor[3], maxColor[4])) end
-		if defColor then curvePower[pType]:AddPoint(1.0, CreateColor(defColor[1], defColor[2], defColor[3], defColor[4])) end
-	end
+	if not pType then return end
+	if not (C_CurveUtil and C_CurveUtil.CreateColorCurve and CreateColor and Enum and Enum.LuaCurveType and Enum.LuaCurveType.Cosine) then return end
+	ResourceBars._curvePowerSignature = ResourceBars._curvePowerSignature or {}
+	local signature = ResourceBars.HashCurveColor(ResourceBars.HashCurveColor(17, maxColor), defColor)
+	if curvePower[pType] and ResourceBars._curvePowerSignature[pType] == signature then return end
+	local builtCurve = C_CurveUtil.CreateColorCurve()
+	if not builtCurve then return end
+	builtCurve:SetType(Enum.LuaCurveType.Cosine)
+	if maxColor then builtCurve:AddPoint(1.0, CreateColor(maxColor[1], maxColor[2], maxColor[3], maxColor[4])) end
+	if defColor then builtCurve:AddPoint(1.0, CreateColor(defColor[1], defColor[2], defColor[3], defColor[4])) end
+	curvePower[pType] = builtCurve
+	ResourceBars._curvePowerSignature[pType] = signature
 end
 SetColorCurvePoints()
 
@@ -2136,14 +2169,50 @@ end
 
 function ResourceBars.NormalizeAbsoluteThresholdColorPoints(cfg, pType)
 	if type(cfg) ~= "table" or cfg.useAbsoluteThresholdColors ~= true then return nil end
+	local cacheByType = cfg._eqolAbsoluteThresholdColorCache
+	if not cacheByType then
+		cacheByType = {}
+		cfg._eqolAbsoluteThresholdColorCache = cacheByType
+	end
+
 	local maxPoints = tonumber(RB.ABSOLUTE_THRESHOLD_COLOR_MAX_POINTS) or 10
 	local count = tonumber(cfg.absoluteThresholdColorPointCount) or tonumber(RB.ABSOLUTE_THRESHOLD_COLOR_DEFAULT_COUNT) or 2
 	count = floor(count + 0.5)
 	if count < 1 then count = 1 end
 	if count > maxPoints then count = maxPoints end
+	local signature = ResourceBars.HashCurveStep(ResourceBars.HashCurveStep(17, count), #tostring(pType or ""))
+	local source = cfg.absoluteThresholdColorPoints
+
+	for i = 1, count do
+		local defaultValue, defaultColor = ResourceBars.GetDefaultAbsoluteThresholdColorPoint(i, pType)
+		local entry = type(source) == "table" and source[i] or nil
+		local value = ResourceBars.ClampAbsoluteThresholdColorValue(entry and (entry.value or entry[1]), pType) or defaultValue
+		local color = entry and (entry.color or entry[2]) or defaultColor
+		local r, g, b, a
+		if type(color) == "table" then
+			if color.r then
+				r, g, b, a = color.r or defaultColor[1], color.g or defaultColor[2], color.b or defaultColor[3], color.a or defaultColor[4]
+			else
+				r = color[1] or defaultColor[1]
+				g = color[2] or defaultColor[2]
+				b = color[3] or defaultColor[3]
+				a = color[4] or defaultColor[4]
+			end
+		else
+			r, g, b, a = defaultColor[1], defaultColor[2], defaultColor[3], defaultColor[4]
+		end
+
+		signature = ResourceBars.HashCurveStep(signature, value)
+		signature = ResourceBars.HashCurveStep(signature, r)
+		signature = ResourceBars.HashCurveStep(signature, g)
+		signature = ResourceBars.HashCurveStep(signature, b)
+		signature = ResourceBars.HashCurveStep(signature, a)
+	end
+
+	local cached = cacheByType[pType]
+	if cached and cached.signature == signature then return cached.points end
 
 	local points = {}
-	local source = cfg.absoluteThresholdColorPoints
 	for i = 1, count do
 		local defaultValue, defaultColor = ResourceBars.GetDefaultAbsoluteThresholdColorPoint(i, pType)
 		local entry = type(source) == "table" and source[i] or nil
@@ -2167,6 +2236,10 @@ function ResourceBars.NormalizeAbsoluteThresholdColorPoints(cfg, pType)
 
 	if #points == 0 then return nil end
 	tsort(points, function(a, b) return (a.value or 0) < (b.value or 0) end)
+	cacheByType[pType] = {
+		signature = signature,
+		points = points,
+	}
 	return points
 end
 
@@ -2203,10 +2276,6 @@ function ResourceBars.ResolveAbsoluteThresholdColorForSecretPower(cfg, pType, po
 	if not points or #points == 0 then return nil end
 
 	if not (C_CurveUtil and C_CurveUtil.CreateColorCurve and CreateColor and Enum and Enum.LuaCurveType and Enum.LuaCurveType.Step) then return nil end
-	local curve = C_CurveUtil.CreateColorCurve()
-	if not curve then return nil end
-	curve:SetType(Enum.LuaCurveType.Step)
-
 	local br, bg, bb, ba = 1, 1, 1, 1
 	if type(baseColor) == "table" then
 		br = baseColor[1] or 1
@@ -2214,27 +2283,48 @@ function ResourceBars.ResolveAbsoluteThresholdColorForSecretPower(cfg, pType, po
 		bb = baseColor[3] or 1
 		ba = baseColor[4] or 1
 	end
-	local highest = points[#points] and points[#points].color
-	local hr = highest and highest[1] or br
-	local hg = highest and highest[2] or bg
-	local hb = highest and highest[3] or bb
-	local ha = highest and highest[4] or ba
 
-	curve:AddPoint(1.0, CreateColor(hr, hg, hb, ha))
-	for i = #points, 1, -1 do
-		local point = points[i]
-		local value = tonumber(point and point.value) or 0
-		local progress = value / 100
-		if progress < 0 then progress = 0 end
-		if progress > 1 then progress = 1 end
-		local color = point and point.color
-		local r = color and color[1] or 1
-		local g = color and color[2] or 1
-		local b = color and color[3] or 1
-		local a = color and color[4] or 1
-		curve:AddPoint(progress, CreateColor(r, g, b, a))
+	local pointsCache = cfg._eqolAbsoluteThresholdColorCache and cfg._eqolAbsoluteThresholdColorCache[pType]
+	local curveCacheByType = cfg._eqolAbsoluteThresholdCurveCache
+	if not curveCacheByType then
+		curveCacheByType = {}
+		cfg._eqolAbsoluteThresholdCurveCache = curveCacheByType
 	end
-	curve:AddPoint(0.0, CreateColor(br, bg, bb, ba))
+	local signature = ResourceBars.HashCurveStep(17, pointsCache and pointsCache.signature or #points)
+	signature = ResourceBars.HashCurveColor(signature, { br, bg, bb, ba })
+	local curveCache = curveCacheByType[pType]
+	local curve = curveCache and curveCache.curve or nil
+	if not (curve and curveCache.signature == signature) then
+		curve = C_CurveUtil.CreateColorCurve()
+		if not curve then return nil end
+		curve:SetType(Enum.LuaCurveType.Step)
+
+		local highest = points[#points] and points[#points].color
+		local hr = highest and highest[1] or br
+		local hg = highest and highest[2] or bg
+		local hb = highest and highest[3] or bb
+		local ha = highest and highest[4] or ba
+
+		curve:AddPoint(1.0, CreateColor(hr, hg, hb, ha))
+		for i = #points, 1, -1 do
+			local point = points[i]
+			local value = tonumber(point and point.value) or 0
+			local progress = value / 100
+			if progress < 0 then progress = 0 end
+			if progress > 1 then progress = 1 end
+			local color = point and point.color
+			local r = color and color[1] or 1
+			local g = color and color[2] or 1
+			local b = color and color[3] or 1
+			local a = color and color[4] or 1
+			curve:AddPoint(progress, CreateColor(r, g, b, a))
+		end
+		curve:AddPoint(0.0, CreateColor(br, bg, bb, ba))
+		curveCacheByType[pType] = {
+			signature = signature,
+			curve = curve,
+		}
+	end
 
 	local curveColor = getPowerPercent("player", powerEnum, curPower, maxPower, curve)
 	if curveColor and curveColor.GetRGBA then return curveColor:GetRGBA() end
@@ -2314,7 +2404,7 @@ local function applyBarFillColor(bar, cfg, pType)
 			elseif pType ~= "RUNES" then
 				local powerEnum = POWER_ENUM and POWER_ENUM[pType]
 				if powerEnum and UnitPowerPercent then
-					if not curvePower[pType] then SetColorCurvePointsPower(pType, cfg.maxColor or RB.DEFAULT_MAX_COLOR, { baseR, baseG, baseB, baseA or 1 }) end
+					SetColorCurvePointsPower(pType, cfg.maxColor or RB.DEFAULT_MAX_COLOR, { baseR, baseG, baseB, baseA or 1 })
 					if curvePower[pType] then secretCurveColor = UnitPowerPercent("player", powerEnum, false, curvePower[pType]) end
 				end
 			end
@@ -2668,9 +2758,24 @@ local function ensureDruidShowFormsDefaults(cfg, pType, specInfo)
 	cfg.showForms = sf
 end
 
+function ResourceBars.PrepareBarConfigForRuntime(cfg, pType, specInfo)
+	if type(cfg) ~= "table" then return cfg end
+
+	local stamp = tostring(addon.variables.unitClass or "") .. "|" .. tostring(addon.variables.unitSpec or "") .. "|" .. tostring(specInfo and specInfo.MAIN or "") .. "|" .. tostring(pType or "")
+	if cfg._eqolRuntimePrepareStamp == stamp then return cfg end
+
+	if cfg._rbType ~= pType then cfg._rbType = pType end
+	if isAuraPowerType and isAuraPowerType(pType) then ensureAuraPowerDefaults(pType, cfg) end
+	if ResourceBars.EnsureRogueChargedComboDefaults then ResourceBars.EnsureRogueChargedComboDefaults(cfg, pType) end
+	ensureDruidShowFormsDefaults(cfg, pType, specInfo)
+	ensureRelativeFrameFallback(cfg.anchor, pType, specInfo)
+	cfg._eqolRuntimePrepareStamp = stamp
+	return cfg
+end
+
 local function isEQOLBarFrameName(name) return type(name) == "string" and name:match("^EQOL.+Bar$") end
 
-local function ensureRelativeFrameFallback(anchor, pType, specInfo)
+ensureRelativeFrameFallback = function(anchor, pType, specInfo)
 	if pType == "HEALTH" then return end
 	if not anchor then return end
 	local rf = anchor.relativeFrame
@@ -3142,14 +3247,7 @@ function getBarSettings(pType)
 	if not ResourceBars.IsSpecBarTypeSupported(specInfo, pType) then return nil end
 	if addon.db.personalResourceBarSettings and addon.db.personalResourceBarSettings[class] and addon.db.personalResourceBarSettings[class][spec] then
 		local cfg = addon.db.personalResourceBarSettings[class][spec][pType]
-		if cfg then
-			if cfg._rbType ~= pType then cfg._rbType = pType end
-			if isAuraPowerType and isAuraPowerType(pType) then ensureAuraPowerDefaults(pType, cfg) end
-			if ResourceBars.EnsureRogueChargedComboDefaults then ResourceBars.EnsureRogueChargedComboDefaults(cfg, pType) end
-			ensureDruidShowFormsDefaults(cfg, pType, specInfo)
-			ensureRelativeFrameFallback(cfg.anchor, pType, specInfo)
-			return cfg
-		end
+		if cfg then return ResourceBars.PrepareBarConfigForRuntime(cfg, pType, specInfo) end
 	end
 	if class and spec then
 		local specCfg = ensureSpecCfg(spec)
@@ -3185,10 +3283,7 @@ function getBarSettings(pType)
 				local unsupportedRelative = relType and relType ~= "HEALTH" and specInfo and not (specInfo.MAIN == relType or specInfo[relType])
 				if crossTypeTemplate or unsupportedRelative then copied.anchor = nil end
 				specCfg[pType] = copied
-				if isAuraPowerType and isAuraPowerType(pType) then ensureAuraPowerDefaults(pType, specCfg[pType]) end
-				if ResourceBars.EnsureRogueChargedComboDefaults then ResourceBars.EnsureRogueChargedComboDefaults(specCfg[pType], pType) end
-				ensureDruidShowFormsDefaults(specCfg[pType], pType, specInfo)
-				ensureRelativeFrameFallback(specCfg[pType].anchor, pType, specInfo)
+				ResourceBars.PrepareBarConfigForRuntime(specCfg[pType], pType, specInfo)
 				if secondaryIdx and secondaryIdx > 1 then
 					local prevType = specSecondaries(specInfo)[secondaryIdx - 1]
 					if prevType then maybeChainSecondaryAnchor(specCfg[pType], prevType) end
@@ -3859,7 +3954,6 @@ function updatePowerBar(type, runeSlot)
 	end
 	local chargedPowerPointMap
 	if type == "COMBO_POINTS" and addon.variables.unitClass == "ROGUE" then
-		if ResourceBars.EnsureRogueChargedComboDefaults then ResourceBars.EnsureRogueChargedComboDefaults(cfg, type) end
 		local chargedCache = bar._rbChargedPowerPointMap or {}
 		for index in pairs(chargedCache) do
 			chargedCache[index] = nil
@@ -3991,7 +4085,7 @@ function updatePowerBar(type, runeSlot)
 			local useMaxColor = cfg.useMaxColor == true
 			local flag
 			if useMaxColor and UnitPowerPercent then
-				if not curvePower[type] then SetColorCurvePointsPower(type, cfg.maxColor or RB.DEFAULT_MAX_COLOR, { br, bgc, bb, ba }) end
+				SetColorCurvePointsPower(type, cfg.maxColor or RB.DEFAULT_MAX_COLOR, { br, bgc, bb, ba })
 				if curvePower[type] then
 					local curveColor = UnitPowerPercent("player", pType, false, curvePower[type])
 					if curveColor then

@@ -397,6 +397,13 @@ local function formatPercentDisplay(value, cfg)
 	return (addon.variables and addon.variables.isMidnight) and (percentText .. "%") or percentText
 end
 
+function ResourceBars.FormatBarTextByStyle(style, currentText, maxText, percentText)
+	if style == "PERCENT" then return percentText end
+	if style == "CURRENT" then return currentText end
+	if style == "CURPERCENT" then return currentText .. " - " .. percentText end
+	return currentText .. " / " .. maxText
+end
+
 local function isSpellKnownSafe(spellId)
 	if not spellId then return false end
 	if issecretvalue and issecretvalue(spellId) then return false end
@@ -2828,14 +2835,7 @@ function updateHealthBar(evt)
 					healthBar._lastText = ""
 				end
 			else
-				local text
-				if style == "PERCENT" then
-					text = percentStr
-				elseif style == "CURRENT" then
-					text = formatNumber(curHealth, useShortNumbers)
-				else -- CURMAX
-					text = formatNumber(curHealth, useShortNumbers) .. " / " .. formatNumber(maxHealth, useShortNumbers)
-				end
+				local text = ResourceBars.FormatBarTextByStyle(style, formatNumber(curHealth, useShortNumbers), formatNumber(maxHealth, useShortNumbers), percentStr)
 				if not addon.variables.isMidnight and healthBar._lastText ~= text then
 					healthBar.text:SetText(text)
 					healthBar._lastText = text
@@ -3739,14 +3739,7 @@ function updatePowerBar(type, runeSlot)
 					bar._lastText = ""
 				end
 			else
-				local text
-				if style == "PERCENT" then
-					text = percentStr
-				elseif style == "CURRENT" then
-					text = formatNumber(curPower, useShortNumbers)
-				else
-					text = formatNumber(curPower, useShortNumbers) .. " / " .. formatNumber(maxHealth, useShortNumbers)
-				end
+				local text = ResourceBars.FormatBarTextByStyle(style, formatNumber(curPower, useShortNumbers), formatNumber(maxHealth, useShortNumbers), percentStr)
 				if (not addon.variables.isMidnight or (issecretvalue and not issecretvalue(text))) and bar._lastText ~= text then
 					bar.text:SetText(text)
 					bar._lastText = text
@@ -3838,14 +3831,7 @@ function updatePowerBar(type, runeSlot)
 					bar._lastText = ""
 				end
 			else
-				local text
-				if style == "PERCENT" then
-					text = percentStr
-				elseif style == "CURRENT" then
-					text = formatNumber(stacks, useShortNumbers)
-				else
-					text = formatNumber(stacks, useShortNumbers) .. " / " .. formatNumber(logicalMax, useShortNumbers)
-				end
+				local text = ResourceBars.FormatBarTextByStyle(style, formatNumber(stacks, useShortNumbers), formatNumber(logicalMax, useShortNumbers), percentStr)
 				if (not addon.variables.isMidnight or (issecretvalue and not issecretvalue(text))) and bar._lastText ~= text then
 					bar.text:SetText(text)
 					bar._lastText = text
@@ -3990,22 +3976,16 @@ function updatePowerBar(type, runeSlot)
 				bar._lastText = ""
 			end
 		else
-			local text
-			if style == "PERCENT" then
-				text = percentStr
-			elseif style == "CURRENT" then
-				if isSoulShards then
-					text = formatSoulShardValue(displayCur)
-				else
-					text = formatNumber(curPower, useShortNumbers)
-				end
-			else -- CURMAX
-				if isSoulShards then
-					text = formatSoulShardValue(displayCur) .. " / " .. formatSoulShardValue(displayMax)
-				else
-					text = formatNumber(curPower, useShortNumbers) .. " / " .. formatNumber(maxPower, useShortNumbers)
-				end
+			local currentText
+			local maxText
+			if isSoulShards then
+				currentText = formatSoulShardValue(displayCur)
+				maxText = formatSoulShardValue(displayMax)
+			else
+				currentText = formatNumber(curPower, useShortNumbers)
+				maxText = formatNumber(maxPower, useShortNumbers)
 			end
+			local text = ResourceBars.FormatBarTextByStyle(style, currentText, maxText, percentStr)
 			if (not addon.variables.isMidnight or (issecretvalue and not issecretvalue(text))) and bar._lastText ~= text then
 				bar.text:SetText(text)
 				bar._lastText = text

@@ -1933,12 +1933,13 @@ local function registerEditModeBars()
 					{ key = "PERCENT", label = STATUS_TEXT_PERCENT },
 					{ key = "CURMAX", label = L["Current/Max"] or "Current/Max" },
 					{ key = "CURRENT", label = L["Current"] or "Current" },
+					{ key = "CURPERCENT", label = L["Current - Percent"] or "Current - Percent" },
 					{ key = "NONE", label = NONE },
 				}
 				settingsList[#settingsList + 1] = {
 					name = L["Text"] or STATUS_TEXT,
 					kind = settingType.Dropdown,
-					height = 180,
+					height = 220,
 					field = "textStyle",
 					parentId = "textsettings",
 					get = function()

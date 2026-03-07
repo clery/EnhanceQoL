@@ -1902,9 +1902,7 @@ function CooldownPanels:AddEntry(panelId, entryType, idValue, overrides)
 	local panel = self:GetPanel(panelId)
 	if not panel then return nil end
 	local typeKey = entryType and tostring(entryType):upper() or nil
-	if typeKey ~= "SPELL" and typeKey ~= "ITEM" and typeKey ~= "SLOT" and typeKey ~= "STANCE" and typeKey ~= "MACRO" and typeKey ~= "CDM_AURA" then
-		return nil
-	end
+	if typeKey ~= "SPELL" and typeKey ~= "ITEM" and typeKey ~= "SLOT" and typeKey ~= "STANCE" and typeKey ~= "MACRO" and typeKey ~= "CDM_AURA" then return nil end
 	local entryValue = idValue
 	local numericValue = tonumber(idValue)
 	local itemWasHigherRank = false
@@ -3429,9 +3427,7 @@ local function showSlotMenu(owner, panelId)
 	local stanceEntries = CooldownPanels.GetStanceMenuEntries and CooldownPanels:GetStanceMenuEntries() or nil
 	local cdmAuras = CooldownPanels.CDMAuras
 	local hasCDMMenu = cdmAuras and cdmAuras.AppendAddMenu
-	if ((not slotEntries) or #slotEntries == 0) and ((not stanceEntries) or #stanceEntries == 0) and not hasCDMMenu then
-		return
-	end
+	if ((not slotEntries) or #slotEntries == 0) and ((not stanceEntries) or #stanceEntries == 0) and not hasCDMMenu then return end
 	Api.MenuUtil.CreateContextMenu(owner, function(_, rootDescription)
 		rootDescription:SetTag("MENU_EQOL_COOLDOWN_PANEL_ENTRY_ADD")
 		rootDescription:CreateTitle(L["CooldownPanelAddSlot"] or "Add more")
@@ -5291,9 +5287,7 @@ local function refreshInspector(editor, panel, entry)
 		inspector.entryType:SetText(getEntryTypeLabel(entry.type))
 		local entryIdText = tostring(entry.spellID or entry.itemID or entry.slotID or entry.stanceID or entry.macroID or "")
 		local cdmAuras = CooldownPanels.CDMAuras
-		if entry.type == "CDM_AURA" and cdmAuras and cdmAuras.GetEntryIdText then
-			entryIdText = tostring(cdmAuras:GetEntryIdText(entry) or "")
-		end
+		if entry.type == "CDM_AURA" and cdmAuras and cdmAuras.GetEntryIdText then entryIdText = tostring(cdmAuras:GetEntryIdText(entry) or "") end
 		inspector.entryId:SetText(entryIdText)
 		local effectiveType = entry and entry.type or nil
 		if effectiveType == "MACRO" then
@@ -6097,6 +6091,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				data.cdmAuraActive = cdmAuraData and cdmAuraData.active == true
 				data.cdmAuraDurationActive = cdmAuraData and cdmAuraData.durationActive == true
 				data.cdmAuraUsesExpirationTime = cdmAuraData and cdmAuraData.cooldownUsesExpirationTime == true
+				data.cdmAuraUsesStartTime = cdmAuraData and cdmAuraData.cooldownUsesStartTime == true
 				if powerCheckSpells and resolvedType == "SPELL" then
 					local spellId = effectiveSpellId or baseSpellId
 					if spellId and powerCheckSpells[spellId] and not visiblePowerSpellSeen[spellId] then
@@ -6142,12 +6137,8 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 		icon.texture:SetShown(showIconTexture)
 		CooldownPanels.ApplyIconTooltip(icon, data.entry, showTooltips)
 		icon.cooldown:SetHideCountdownNumbers(not data.showCooldownText)
-		if icon.cooldown.SetReverse then
-			icon.cooldown:SetReverse(data.resolvedType == "CDM_AURA")
-		end
-		if icon.cooldown.SetUseAuraDisplayTime then
-			icon.cooldown:SetUseAuraDisplayTime(data.resolvedType == "CDM_AURA")
-		end
+		if icon.cooldown.SetReverse then icon.cooldown:SetReverse(data.resolvedType == "CDM_AURA") end
+		if icon.cooldown.SetUseAuraDisplayTime then icon.cooldown:SetUseAuraDisplayTime(data.resolvedType == "CDM_AURA") end
 
 		-- Context for OnCooldownDone (sound/glow) - keep this in sync every update.
 		icon.cooldown._eqolPanelId = panelId
@@ -6171,6 +6162,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 		local cdmAuraActive = data.cdmAuraActive == true
 		local cdmAuraDurationActive = data.cdmAuraDurationActive == true
 		local cdmAuraUsesExpirationTime = data.cdmAuraUsesExpirationTime == true
+		local cdmAuraUsesStartTime = data.cdmAuraUsesStartTime == true
 		local cooldownActive = data.showCooldown and (durationActive or (cooldownEnabledOk and isCooldownActive(cooldownStart, cooldownDuration)))
 		local usingCooldown = false
 		local desaturate = false
@@ -6321,6 +6313,9 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				if cdmAuraUsesExpirationTime and icon.cooldown.SetCooldownFromExpirationTime then
 					icon.cooldown:Clear()
 					icon.cooldown:SetCooldownFromExpirationTime(cooldownStart, cooldownDuration, cooldownRate)
+				elseif cdmAuraUsesStartTime then
+					icon.cooldown:Clear()
+					icon.cooldown:SetCooldown(cooldownStart or 0, cooldownDuration or 0, cooldownRate)
 				elseif isSafeNumber(cooldownStart) and isSafeNumber(cooldownDuration) then
 					icon.cooldown:Clear()
 					icon.cooldown:SetCooldown(cooldownStart, cooldownDuration, cooldownRate)
@@ -6397,10 +6392,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 		end
 		local staticTextCooldown = false
 		if data.entry and data.entry.staticTextShowOnCooldown == true then
-			staticTextCooldown = data.stanceActive == true
-				or cdmAuraActive
-				or durationActive
-				or (cooldownEnabledOk and isCooldownActive(cooldownStart, cooldownDuration))
+			staticTextCooldown = data.stanceActive == true or cdmAuraActive or durationActive or (cooldownEnabledOk and isCooldownActive(cooldownStart, cooldownDuration))
 		end
 		applyStaticText(icon, data.entry, staticFontPath, staticFontSize, staticFontStyle, staticTextCooldown)
 		if icon.rangeOverlay then

@@ -25,9 +25,7 @@ local SOURCE_BAR = "bar"
 local IMPORT_SOURCE_ICON = "BUFF_ICON"
 local IMPORT_SOURCE_BAR = "BUFF_BAR"
 
-local function isSecretValue(value)
-	return Api.issecretvalue and Api.issecretvalue(value)
-end
+local function isSecretValue(value) return Api.issecretvalue and Api.issecretvalue(value) end
 
 local function showErrorMessage(msg)
 	if UIErrorsFrame and msg then UIErrorsFrame:AddMessage(msg, 1, 0.2, 0.2, 1) end
@@ -48,9 +46,7 @@ local function getRuntime()
 	return runtime
 end
 
-local function getEntryKey(panelId, entryId)
-	return Helper.GetEntryKey(panelId, entryId)
-end
+local function getEntryKey(panelId, entryId) return Helper.GetEntryKey(panelId, entryId) end
 
 local function requestPanelRefresh(panelId)
 	if not panelId then return end
@@ -90,9 +86,7 @@ local function getImportSourceType(sourceKind)
 	return nil
 end
 
-local function hasAuraInstanceID(value)
-	return type(value) == "number" and not isSecretValue(value) and value > 0
-end
+local function hasAuraInstanceID(value) return type(value) == "number" and not isSecretValue(value) and value > 0 end
 
 local function resolveAuraStackCount(auraUnit, auraInstanceID, applications)
 	local displayCount = applications
@@ -139,12 +133,8 @@ end
 local function getCooldownIDFromFrame(frame, sourceType)
 	if not frame then return nil end
 	local cooldownID = frame.cooldownID
-	if not cooldownID and frame.cooldownInfo then
-		cooldownID = frame.cooldownInfo.cooldownID
-	end
-	if not cooldownID and sourceType == SOURCE_BAR and frame.Icon and frame.Icon.cooldownID then
-		cooldownID = frame.Icon.cooldownID
-	end
+	if not cooldownID and frame.cooldownInfo then cooldownID = frame.cooldownInfo.cooldownID end
+	if not cooldownID and sourceType == SOURCE_BAR and frame.Icon and frame.Icon.cooldownID then cooldownID = frame.Icon.cooldownID end
 	if not isValidCooldownID(cooldownID) then return nil end
 	return cooldownID
 end
@@ -166,12 +156,6 @@ local function getFrameIconTexture(frame)
 	return nil
 end
 
-local function isFrameActive(frame)
-	if not (frame and frame.IsActive) then return false end
-	local ok, active = pcall(frame.IsActive, frame)
-	return ok and active == true
-end
-
 local function getFrameCooldownValues(frame)
 	if not (frame and frame.GetCooldownValues) then return nil, nil, nil, nil end
 	local ok, expirationTime, duration, timeMod, paused = pcall(frame.GetCooldownValues, frame)
@@ -184,6 +168,28 @@ local function getFrameApplications(frame)
 	local ok, applications = pcall(frame.GetApplicationsText, frame)
 	if not ok or applications == "" then return nil end
 	return applications
+end
+
+local function getTotemSlot(frame)
+	if not frame then return nil end
+	if frame.preferredTotemUpdateSlot then return frame.preferredTotemUpdateSlot end
+	if frame.totemData then
+		local ok, slot = pcall(function() return frame.totemData.slot end)
+		if ok then return slot end
+	end
+	return nil
+end
+
+local function getTotemCooldownInfo(frame)
+	if not (frame and frame.totemData ~= nil and GetTotemInfo) then return nil, nil, nil end
+	local slot = getTotemSlot(frame)
+	if not slot then return nil, nil, nil end
+	local _, _, startTime, duration = GetTotemInfo(slot)
+	if not duration then return nil, nil, nil end
+	local modRate = 1
+	local okMod, rawModRate = pcall(function() return frame.totemData and frame.totemData.modRate end)
+	if okMod and rawModRate then modRate = rawModRate end
+	return startTime, duration, modRate
 end
 
 local function resolveSpellFromCooldownID(cooldownID, frame)
@@ -269,7 +275,7 @@ local function collectFrame(scan, frame, sourceType, viewerName, seenFrames)
 	if spellID and not info.spellID then info.spellID = spellID end
 	if buffName and (not info.buffName or info.buffName == "") then info.buffName = buffName end
 	if iconTextureID and not info.iconTextureID then info.iconTextureID = iconTextureID end
-	if hasAuraInstanceID(frame.auraInstanceID) or isFrameActive(frame) then info.isActive = true end
+	if hasAuraInstanceID(frame.auraInstanceID) or frame.totemData ~= nil then info.isActive = true end
 end
 
 local function collectFramesFromContainer(scan, container, sourceType, viewerName, seenFrames)
@@ -329,9 +335,7 @@ end
 
 function CDMAuras:ScanTrackedBuffs(force)
 	local runtime = getRuntime()
-	if not force and runtime.scan and runtime.scan.list and runtime.scan.byCooldownID then
-		return runtime.scan.list, runtime.scan.byCooldownID
-	end
+	if not force and runtime.scan and runtime.scan.list and runtime.scan.byCooldownID then return runtime.scan.list, runtime.scan.byCooldownID end
 
 	local scan = {
 		list = {},
@@ -402,16 +406,8 @@ local function hookFrame(frame)
 	if runtime.hookedFrames[frame] then return end
 	runtime.hookedFrames[frame] = true
 
-	if frame.SetAuraInstanceInfo then
-		hooksecurefunc(frame, "SetAuraInstanceInfo", function(self)
-			CDMAuras:HandleFrameAuraMutation(self, false)
-		end)
-	end
-	if frame.ClearAuraInstanceInfo then
-		hooksecurefunc(frame, "ClearAuraInstanceInfo", function(self)
-			CDMAuras:HandleFrameAuraMutation(self, true)
-		end)
-	end
+	if frame.SetAuraInstanceInfo then hooksecurefunc(frame, "SetAuraInstanceInfo", function(self) CDMAuras:HandleFrameAuraMutation(self, false) end) end
+	if frame.ClearAuraInstanceInfo then hooksecurefunc(frame, "ClearAuraInstanceInfo", function(self) CDMAuras:HandleFrameAuraMutation(self, true) end) end
 end
 
 local function registerFrameBinding(runtime, key, frame)
@@ -444,9 +440,7 @@ function CDMAuras:SweepInvalidStates()
 	if root and root.panels then
 		for panelId, panel in pairs(root.panels) do
 			for entryId, entry in pairs(panel and panel.entries or {}) do
-				if entry and entry.type == ENTRY_TYPE then
-					valid[getEntryKey(panelId, entryId)] = true
-				end
+				if entry and entry.type == ENTRY_TYPE then valid[getEntryKey(panelId, entryId)] = true end
 			end
 		end
 	end
@@ -469,9 +463,7 @@ local function isFrameShowingTrackedSpell(frame, entry)
 	local cooldownInfo = frame.cooldownInfo
 	local linkedSpellID = cooldownInfo and cooldownInfo.linkedSpellID
 	if linkedSpellID == nil then return true end
-	local ok, matches = pcall(function()
-		return linkedSpellID == entry.spellID
-	end)
+	local ok, matches = pcall(function() return linkedSpellID == entry.spellID end)
 	if ok then return matches end
 	return true
 end
@@ -579,9 +571,7 @@ function CDMAuras:FindEntryByValue(panel, idValue)
 	local lookup = type(idValue) == "table" and idValue.cooldownID or idValue
 	if not isValidCooldownID(lookup) then return nil end
 	for entryId, entry in pairs(panel.entries) do
-		if entry and entry.type == ENTRY_TYPE and cooldownIDsEqual(entry.cooldownID, lookup) then
-			return entryId, entry
-		end
+		if entry and entry.type == ENTRY_TYPE and cooldownIDsEqual(entry.cooldownID, lookup) then return entryId, entry end
 	end
 	return nil
 end
@@ -607,9 +597,7 @@ function CDMAuras:GetEntryIdText(entry)
 	return tostring(entry.cooldownID or "")
 end
 
-function CDMAuras:EntryIsAvailableForPreview(entry)
-	return entry and entry.type == ENTRY_TYPE and isValidCooldownID(entry.cooldownID)
-end
+function CDMAuras:EntryIsAvailableForPreview(entry) return entry and entry.type == ENTRY_TYPE and isValidCooldownID(entry.cooldownID) end
 
 function CDMAuras:ApplyPreview(icon, entry)
 	if not (icon and entry and entry.type == ENTRY_TYPE) then return end
@@ -680,9 +668,7 @@ function CDMAuras:AppendAddMenu(rootDescription, panelId)
 	local panel = CooldownPanels.GetPanel and CooldownPanels:GetPanel(panelId) or nil
 	local existing = {}
 	for _, entry in pairs(panel and panel.entries or {}) do
-		if entry and entry.type == ENTRY_TYPE and isValidCooldownID(entry.cooldownID) then
-			existing[tostring(entry.cooldownID)] = true
-		end
+		if entry and entry.type == ENTRY_TYPE and isValidCooldownID(entry.cooldownID) then existing[tostring(entry.cooldownID)] = true end
 	end
 
 	local availableCount = 0
@@ -700,18 +686,12 @@ function CDMAuras:AppendAddMenu(rootDescription, panelId)
 			end)
 		end
 	end
-	if availableCount == 0 then
-		buffsMenu:CreateTitle(L["CooldownPanelCDMAuraAllAdded"] or "All tracked buffs are already in this panel.")
-	end
+	if availableCount == 0 then buffsMenu:CreateTitle(L["CooldownPanelCDMAuraAllAdded"] or "All tracked buffs are already in this panel.") end
 end
 
 function CDMAuras:GetImportSourceLabel(sourceKind)
-	if sourceKind == IMPORT_SOURCE_BAR then
-		return L["CooldownPanelImportCDMBuffBar"] or "Buff Bar"
-	end
-	if sourceKind == IMPORT_SOURCE_ICON then
-		return L["CooldownPanelImportCDMBuffIcon"] or "Buff Icon"
-	end
+	if sourceKind == IMPORT_SOURCE_BAR then return L["CooldownPanelImportCDMBuffBar"] or "Buff Bar" end
+	if sourceKind == IMPORT_SOURCE_ICON then return L["CooldownPanelImportCDMBuffIcon"] or "Buff Icon" end
 	return nil
 end
 
@@ -721,9 +701,7 @@ function CDMAuras:ImportEntries(panelId, sourceKind)
 	if not sourceType then return nil, "SOURCE_NOT_FOUND", sourceLabel end
 
 	local viewerName = sourceType == SOURCE_BAR and BAR_VIEWER or ICON_VIEWER
-	if type(_G[viewerName]) ~= "table" then
-		return nil, "SOURCE_NOT_FOUND", sourceLabel
-	end
+	if type(_G[viewerName]) ~= "table" then return nil, "SOURCE_NOT_FOUND", sourceLabel end
 
 	local panel = CooldownPanels.GetPanel and CooldownPanels:GetPanel(panelId) or nil
 	if not panel then return nil, "PANEL_NOT_FOUND", sourceLabel end
@@ -735,9 +713,7 @@ function CDMAuras:ImportEntries(panelId, sourceKind)
 
 	local existingByCooldownID = {}
 	for _, entry in pairs(panel.entries) do
-		if entry and entry.type == ENTRY_TYPE and isValidCooldownID(entry.cooldownID) then
-			existingByCooldownID[tostring(entry.cooldownID)] = true
-		end
+		if entry and entry.type == ENTRY_TYPE and isValidCooldownID(entry.cooldownID) then existingByCooldownID[tostring(entry.cooldownID)] = true end
 	end
 
 	local list = self:ScanTrackedBuffs(true)
@@ -804,9 +780,7 @@ function CDMAuras:AddEntrySafe(panelId, idValue, overrides)
 	return CooldownPanels:AddEntry(panelId, ENTRY_TYPE, info, overrides)
 end
 
-function CDMAuras:HandleRootRefresh()
-	self:SweepInvalidStates()
-end
+function CDMAuras:HandleRootRefresh() self:SweepInvalidStates() end
 
 function CDMAuras:BuildRuntimeData(panelId, entryId, entry)
 	if not (entry and entry.type == ENTRY_TYPE) then return nil end
@@ -851,9 +825,7 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry)
 			availableSources[sourceType] = true
 		end
 	end
-	if not next(availableSources) then
-		availableSources[normalizeSourceType(entry.sourceType)] = true
-	end
+	if not next(availableSources) then availableSources[normalizeSourceType(entry.sourceType)] = true end
 
 	local preferredSource = normalizeSourceType(entry.sourceType)
 	local preferredFrame = scanInfo and ((preferredSource == SOURCE_BAR) and scanInfo.barFrame or scanInfo.iconFrame) or nil
@@ -861,9 +833,7 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry)
 
 	local chosenFrame = preferredFrame
 	local chosenSource = preferredSource
-	if chosenFrame and not cooldownIDsEqual(getCooldownIDFromFrame(chosenFrame, chosenSource), entry.cooldownID) then
-		chosenFrame = nil
-	end
+	if chosenFrame and not cooldownIDsEqual(getCooldownIDFromFrame(chosenFrame, chosenSource), entry.cooldownID) then chosenFrame = nil end
 	if not chosenFrame and fallbackFrame then
 		local fallbackSource = preferredSource == SOURCE_BAR and SOURCE_ICON or SOURCE_BAR
 		if cooldownIDsEqual(getCooldownIDFromFrame(fallbackFrame, fallbackSource), entry.cooldownID) then
@@ -899,8 +869,7 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry)
 	end
 
 	if not auraData and hasAuraInstanceID(state.trackedAuraInstanceID) and state.trackedAuraUnit then
-		local cachedAuraData = C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID
-			and C_UnitAuras.GetAuraDataByAuraInstanceID(state.trackedAuraUnit, state.trackedAuraInstanceID)
+		local cachedAuraData = C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID and C_UnitAuras.GetAuraDataByAuraInstanceID(state.trackedAuraUnit, state.trackedAuraInstanceID)
 		if cachedAuraData then
 			auraData = cachedAuraData
 			auraUnit = state.trackedAuraUnit
@@ -913,10 +882,15 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry)
 
 	registerAuraMapping(runtime, key, state, auraInstanceID)
 
-	local frameActive = isFrameActive(chosenFrame)
-	local active = auraData ~= nil or frameActive
-	local iconTextureID = auraData and auraData.icon or getFrameIconTexture(chosenFrame) or entry.iconTextureID or (scanInfo and scanInfo.iconTextureID) or getSpellTexture(entry.spellID) or Helper.PREVIEW_ICON
-	local applications = auraData and auraData.applications or getFrameApplications(chosenFrame)
+	local hasTotemData = chosenFrame and chosenFrame.totemData ~= nil
+	local active = auraData ~= nil or hasTotemData
+	local iconTextureID = auraData and auraData.icon
+		or getFrameIconTexture(chosenFrame)
+		or entry.iconTextureID
+		or (scanInfo and scanInfo.iconTextureID)
+		or getSpellTexture(entry.spellID)
+		or Helper.PREVIEW_ICON
+	local applications = auraData and auraData.applications or nil
 	local stackCount = resolveAuraStackCount(auraUnit, auraInstanceID, applications)
 	local rawDuration = auraData and auraData.duration or nil
 	local rawExpirationTime = auraData and auraData.expirationTime or nil
@@ -926,17 +900,9 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry)
 	local cooldownRate = 1
 	local durationActive = false
 	local cooldownUsesExpirationTime = false
+	local cooldownUsesStartTime = false
 
-	if chosenFrame and (rawDuration == nil or rawExpirationTime == nil) then
-		local frameExpirationTime, frameDuration, frameTimeMod = getFrameCooldownValues(chosenFrame)
-		if frameExpirationTime ~= nil and frameDuration ~= nil then
-			rawExpirationTime = frameExpirationTime
-			rawDuration = frameDuration
-			if frameTimeMod ~= nil then rawTimeMod = frameTimeMod end
-		end
-	end
-
-	if active and rawDuration ~= nil and rawExpirationTime ~= nil then
+	if auraData and active and rawDuration ~= nil and rawExpirationTime ~= nil then
 		if isSecretValue(rawDuration) or isSecretValue(rawExpirationTime) then
 			cooldownStart = rawExpirationTime
 			cooldownDuration = rawDuration
@@ -957,6 +923,17 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry)
 		end
 	end
 
+	if not durationActive and hasTotemData then
+		local startTime, duration, modRate = getTotemCooldownInfo(chosenFrame)
+		if duration then
+			cooldownStart = startTime
+			cooldownDuration = duration
+			cooldownRate = modRate or 1
+			durationActive = true
+			cooldownUsesStartTime = true
+		end
+	end
+
 	local show = active or entry.alwaysShow ~= false
 	local data = {
 		show = show,
@@ -967,6 +944,7 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry)
 		cooldownEnabled = durationActive,
 		cooldownRate = cooldownRate,
 		cooldownUsesExpirationTime = cooldownUsesExpirationTime,
+		cooldownUsesStartTime = cooldownUsesStartTime,
 		cooldownID = entry.cooldownID,
 		spellID = entry.spellID,
 		buffName = entry.buffName or (scanInfo and scanInfo.buffName) or getSpellName(entry.spellID) or tostring(entry.cooldownID),
@@ -978,9 +956,7 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry)
 		availableSources = availableSources,
 	}
 
-	if state.lastActive == true and not active then
-		requestPanelRefresh(panelId)
-	end
+	if state.lastActive == true and not active then requestPanelRefresh(panelId) end
 	state.lastActive = active
 	return data
 end

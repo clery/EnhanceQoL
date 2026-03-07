@@ -29,6 +29,7 @@
 
 - Mythic+ (Party Keystone): Fixed an issue where opening the party keystone panel could trigger an error instead of showing the entries correctly.
 - Class Buff Reminder: Fixed reminders showing while your character is dead or a ghost.
+- Food Reminder: Fixed the mage-food leave button appearing in non-follower LFG dungeons. It now only shows inside follower dungeons.
 
 ---
 

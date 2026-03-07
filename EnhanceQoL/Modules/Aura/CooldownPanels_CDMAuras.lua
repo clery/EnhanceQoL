@@ -208,8 +208,8 @@ local function getCooldownViewerInfo(cooldownID)
 end
 
 local function resolveSpellFromCooldownID(cooldownID, frame)
-	local spellID
-	local buffName
+	local spellID = nil
+	local buffName = nil
 	local iconTextureID
 
 	local frameInfo = frame and frame.cooldownInfo or nil

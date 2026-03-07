@@ -791,6 +791,9 @@ function Helper.NormalizeEntry(entry, defaults)
 	if entry.type == "SPELL" then
 		if not hadShowCharges then entry.showCharges = spellHasCharges(entry.spellID) end
 		if not hadShowStacks then entry.showStacks = false end
+	elseif entry.type == "CDM_AURA" then
+		local cdmAuras = CooldownPanels and CooldownPanels.CDMAuras
+		if cdmAuras and cdmAuras.NormalizeEntry then cdmAuras:NormalizeEntry(entry, defaults) end
 	elseif entry.type == "MACRO" then
 		entry.macroID = tonumber(entry.macroID)
 		if type(entry.macroName) == "string" and strtrim then entry.macroName = strtrim(entry.macroName) end
@@ -872,6 +875,17 @@ function Helper.CreateEntry(entryType, idValue, defaults)
 		entry.spellID = tonumber(idValue)
 		entry.showCharges = spellHasCharges(entry.spellID)
 		entry.showStacks = false
+	elseif entryType == "CDM_AURA" then
+		local cdmAuras = CooldownPanels and CooldownPanels.CDMAuras
+		if cdmAuras and cdmAuras.CreateEntryData then
+			local created = cdmAuras:CreateEntryData(idValue, nil, defaults)
+			if type(created) == "table" then
+				for key, value in pairs(created) do
+					entry[key] = value
+				end
+				entry.type = "CDM_AURA"
+			end
+		end
 	elseif entryType == "ITEM" then
 		entry.itemID = tonumber(idValue)
 		if entry.showItemCount == nil then entry.showItemCount = true end

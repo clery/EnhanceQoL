@@ -2633,6 +2633,66 @@ function CooldownPanels:ApplyEntryCooldownTextStyle(icon, layout, entry)
 	fontString:SetTextColor(fontColor[1] or 1, fontColor[2] or 1, fontColor[3] or 1, fontColor[4] or 1)
 end
 
+function CooldownPanels:ResolveEntryStackTextStyle(layout, entry, fallbackFontPath, fallbackFontSize, fallbackFontStyle)
+	local panelFontPath = Helper.ResolveFontPath(layout and layout.stackFont, fallbackFontPath)
+	local panelFontSize = Helper.ClampInt(layout and layout.stackFontSize, 6, 64, fallbackFontSize or 12)
+	local panelFontStyleChoice = Helper.NormalizeFontStyleChoice(layout and layout.stackFontStyle, fallbackFontStyle)
+	local panelFontStyle = Helper.NormalizeFontStyle(panelFontStyleChoice, fallbackFontStyle) or ""
+	local panelFontColor = Helper.NormalizeColor(layout and layout.stackColor, Helper.PANEL_LAYOUT_DEFAULTS.stackColor or { 1, 1, 1, 1 })
+	local panelAnchor = Helper.NormalizeAnchor(layout and layout.stackAnchor, Helper.PANEL_LAYOUT_DEFAULTS.stackAnchor or "BOTTOMRIGHT")
+	local panelX = Helper.ClampInt(layout and layout.stackX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.PANEL_LAYOUT_DEFAULTS.stackX or 0)
+	local panelY = Helper.ClampInt(layout and layout.stackY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.PANEL_LAYOUT_DEFAULTS.stackY or 0)
+	if not entry or entry.stackStyleUseGlobal ~= false then return panelFontPath, panelFontSize, panelFontStyle, panelFontColor, panelAnchor, panelX, panelY end
+	local fontPath = Helper.ResolveFontPath(entry.stackFont, panelFontPath)
+	local fontSize = Helper.ClampInt(entry.stackFontSize, 6, 64, panelFontSize)
+	local fontStyleChoice = Helper.NormalizeFontStyleChoice(entry.stackFontStyle, panelFontStyleChoice)
+	local fontStyle = Helper.NormalizeFontStyle(fontStyleChoice, panelFontStyle) or ""
+	local fontColor = Helper.NormalizeColor(entry.stackColor, panelFontColor)
+	local anchor = Helper.NormalizeAnchor(entry.stackAnchor, panelAnchor)
+	local x = Helper.ClampInt(entry.stackX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, panelX)
+	local y = Helper.ClampInt(entry.stackY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, panelY)
+	return fontPath, fontSize, fontStyle, fontColor, anchor, x, y
+end
+
+function CooldownPanels:ApplyEntryStackTextStyle(icon, layout, entry, fallbackFontPath, fallbackFontSize, fallbackFontStyle)
+	if not (icon and icon.count) then return end
+	local fontPath, fontSize, fontStyle, fontColor, anchor, x, y = self:ResolveEntryStackTextStyle(layout, entry, fallbackFontPath, fallbackFontSize, fallbackFontStyle)
+	icon.count:ClearAllPoints()
+	icon.count:SetPoint(anchor, icon, anchor, x, y)
+	icon.count:SetFont(fontPath, fontSize, fontStyle)
+	icon.count:SetTextColor(fontColor[1] or 1, fontColor[2] or 1, fontColor[3] or 1, fontColor[4] or 1)
+end
+
+function CooldownPanels:ResolveEntryChargesTextStyle(layout, entry, fallbackFontPath, fallbackFontSize, fallbackFontStyle)
+	local panelFontPath = Helper.ResolveFontPath(layout and layout.chargesFont, fallbackFontPath)
+	local panelFontSize = Helper.ClampInt(layout and layout.chargesFontSize, 6, 64, fallbackFontSize or 12)
+	local panelFontStyleChoice = Helper.NormalizeFontStyleChoice(layout and layout.chargesFontStyle, fallbackFontStyle)
+	local panelFontStyle = Helper.NormalizeFontStyle(panelFontStyleChoice, fallbackFontStyle) or ""
+	local panelFontColor = Helper.NormalizeColor(layout and layout.chargesColor, Helper.PANEL_LAYOUT_DEFAULTS.chargesColor or { 1, 1, 1, 1 })
+	local panelAnchor = Helper.NormalizeAnchor(layout and layout.chargesAnchor, Helper.PANEL_LAYOUT_DEFAULTS.chargesAnchor or "TOP")
+	local panelX = Helper.ClampInt(layout and layout.chargesX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.PANEL_LAYOUT_DEFAULTS.chargesX or 0)
+	local panelY = Helper.ClampInt(layout and layout.chargesY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.PANEL_LAYOUT_DEFAULTS.chargesY or 0)
+	if not entry or entry.chargesStyleUseGlobal ~= false then return panelFontPath, panelFontSize, panelFontStyle, panelFontColor, panelAnchor, panelX, panelY end
+	local fontPath = Helper.ResolveFontPath(entry.chargesFont, panelFontPath)
+	local fontSize = Helper.ClampInt(entry.chargesFontSize, 6, 64, panelFontSize)
+	local fontStyleChoice = Helper.NormalizeFontStyleChoice(entry.chargesFontStyle, panelFontStyleChoice)
+	local fontStyle = Helper.NormalizeFontStyle(fontStyleChoice, panelFontStyle) or ""
+	local fontColor = Helper.NormalizeColor(entry.chargesColor, panelFontColor)
+	local anchor = Helper.NormalizeAnchor(entry.chargesAnchor, panelAnchor)
+	local x = Helper.ClampInt(entry.chargesX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, panelX)
+	local y = Helper.ClampInt(entry.chargesY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, panelY)
+	return fontPath, fontSize, fontStyle, fontColor, anchor, x, y
+end
+
+function CooldownPanels:ApplyEntryChargesTextStyle(icon, layout, entry, fallbackFontPath, fallbackFontSize, fallbackFontStyle)
+	if not (icon and icon.charges) then return end
+	local fontPath, fontSize, fontStyle, fontColor, anchor, x, y = self:ResolveEntryChargesTextStyle(layout, entry, fallbackFontPath, fallbackFontSize, fallbackFontStyle)
+	icon.charges:ClearAllPoints()
+	icon.charges:SetPoint(anchor, icon, anchor, x, y)
+	icon.charges:SetFont(fontPath, fontSize, fontStyle)
+	icon.charges:SetTextColor(fontColor[1] or 1, fontColor[2] or 1, fontColor[3] or 1, fontColor[4] or 1)
+end
+
 function CooldownPanels:ResolveEntryStaticTextStyle(layout, entry, fallbackFontPath, fallbackFontSize, fallbackFontStyle)
 	local panelFontPath = Helper.ResolveFontPath(layout and layout.staticTextFont, fallbackFontPath)
 	local panelFontSize = Helper.ClampInt(layout and layout.staticTextSize, 6, 64, (layout and layout.staticTextSize) or Helper.PANEL_LAYOUT_DEFAULTS.staticTextSize or fallbackFontSize or 12)
@@ -3593,10 +3653,12 @@ local function applyIconLayout(frame, count, layout)
 	local countFontPath = Helper.ResolveFontPath(layout.stackFont, fontPath)
 	local countFontSize = Helper.ClampInt(layout.stackFontSize, 6, 64, fontSize or 12)
 	local countFontStyle = Helper.NormalizeFontStyle(layout.stackFontStyle, fontStyle)
+	local countFontColor = Helper.NormalizeColor(layout.stackColor, Helper.PANEL_LAYOUT_DEFAULTS.stackColor or { 1, 1, 1, 1 })
 	local chargesFontPath, chargesFontSize, chargesFontStyle = Helper.GetChargesFontDefaults(frame)
 	local chargesPath = Helper.ResolveFontPath(layout.chargesFont, chargesFontPath)
 	local chargesSize = Helper.ClampInt(layout.chargesFontSize, 6, 64, chargesFontSize or 12)
 	local chargesStyle = Helper.NormalizeFontStyle(layout.chargesFontStyle, chargesFontStyle)
+	local chargesFontColor = Helper.NormalizeColor(layout.chargesColor, Helper.PANEL_LAYOUT_DEFAULTS.chargesColor or { 1, 1, 1, 1 })
 	local keybindFontPath = Helper.ResolveFontPath(layout.keybindFont, countFontPath)
 	local keybindFontSize = Helper.ClampInt(layout.keybindFontSize, 6, 64, Helper.PANEL_LAYOUT_DEFAULTS.keybindFontSize or math.min(countFontSize, 10))
 	local keybindFontStyle = Helper.NormalizeFontStyle(layout.keybindFontStyle, countFontStyle)
@@ -3650,11 +3712,13 @@ local function applyIconLayout(frame, count, layout)
 			icon.count:ClearAllPoints()
 			icon.count:SetPoint(stackAnchor, icon, stackAnchor, stackX, stackY)
 			icon.count:SetFont(countFontPath, countFontSize, countFontStyle)
+			icon.count:SetTextColor(countFontColor[1] or 1, countFontColor[2] or 1, countFontColor[3] or 1, countFontColor[4] or 1)
 		end
 		if icon.charges then
 			icon.charges:ClearAllPoints()
 			icon.charges:SetPoint(chargesAnchor, icon, chargesAnchor, chargesX, chargesY)
 			icon.charges:SetFont(chargesPath, chargesSize, chargesStyle)
+			icon.charges:SetTextColor(chargesFontColor[1] or 1, chargesFontColor[2] or 1, chargesFontColor[3] or 1, chargesFontColor[4] or 1)
 		end
 		if icon.keybind then
 			icon.keybind:ClearAllPoints()
@@ -4568,6 +4632,24 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 		refreshEntryViews()
 	end
 
+	local function setStackStyleOverrideEnabled(value)
+		local _, currentEntry = getEntry()
+		if not currentEntry then return end
+		local useGlobal = value ~= true
+		if currentEntry.stackStyleUseGlobal == useGlobal then return end
+		currentEntry.stackStyleUseGlobal = useGlobal
+		refreshEntryViews()
+	end
+
+	local function setChargesStyleOverrideEnabled(value)
+		local _, currentEntry = getEntry()
+		if not currentEntry then return end
+		local useGlobal = value ~= true
+		if currentEntry.chargesStyleUseGlobal == useGlobal then return end
+		currentEntry.chargesStyleUseGlobal = useGlobal
+		refreshEntryViews()
+	end
+
 	local function setSoundReadyFile(soundName)
 		local _, currentEntry = getEntry()
 		if not currentEntry then return end
@@ -4615,6 +4697,46 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 		local layout = getLayout()
 		local _, currentEntry = getEntry()
 		local _, _, _, color = CooldownPanels:ResolveEntryStaticTextStyle(layout, currentEntry, defaultStaticFontPath, defaultStaticFontSize, defaultStaticFontStyle)
+		return color
+	end
+
+	local function getStackFontSelection()
+		local _, currentEntry = getEntry()
+		return CooldownPanels:GetFontDropdownValue(currentEntry and currentEntry.stackFont)
+	end
+
+	local function getResolvedStackStyleChoice()
+		local layout = getLayout()
+		local _, currentEntry = getEntry()
+		local panelChoice = Helper.NormalizeFontStyleChoice(layout and layout.stackFontStyle, defaultCountFontStyle)
+		if currentEntry and currentEntry.stackStyleUseGlobal == false then return Helper.NormalizeFontStyleChoice(currentEntry.stackFontStyle, panelChoice) end
+		return panelChoice
+	end
+
+	local function getResolvedStackColor()
+		local layout = getLayout()
+		local _, currentEntry = getEntry()
+		local _, _, _, color = CooldownPanels:ResolveEntryStackTextStyle(layout, currentEntry, defaultCountFontPath, defaultCountFontSize, defaultCountFontStyle)
+		return color
+	end
+
+	local function getChargesFontSelection()
+		local _, currentEntry = getEntry()
+		return CooldownPanels:GetFontDropdownValue(currentEntry and currentEntry.chargesFont)
+	end
+
+	local function getResolvedChargesStyleChoice()
+		local layout = getLayout()
+		local _, currentEntry = getEntry()
+		local panelChoice = Helper.NormalizeFontStyleChoice(layout and layout.chargesFontStyle, defaultChargesFontStyle)
+		if currentEntry and currentEntry.chargesStyleUseGlobal == false then return Helper.NormalizeFontStyleChoice(currentEntry.chargesFontStyle, panelChoice) end
+		return panelChoice
+	end
+
+	local function getResolvedChargesColor()
+		local layout = getLayout()
+		local _, currentEntry = getEntry()
+		local _, _, _, color = CooldownPanels:ResolveEntryChargesTextStyle(layout, currentEntry, defaultChargesFontPath, defaultChargesFontSize, defaultChargesFontStyle)
 		return color
 	end
 
@@ -4833,6 +4955,369 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 				return Helper.ClampInt(currentEntry and currentEntry.iconOffsetY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0)
 			end,
 			set = function(_, value) setEntryField("iconOffsetY", Helper.ClampInt(value, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0)) end,
+			formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
+		},
+		{
+			name = L["CooldownPanelStacksHeader"] or "Stacks / Item Count",
+			kind = SettingType.Collapsible,
+			id = "cooldownPanelStandaloneStacks",
+			defaultCollapsed = true,
+			isShown = function()
+				local effectiveType = getEffectiveType()
+				return effectiveType == "SPELL" or effectiveType == "CDM_AURA" or effectiveType == "ITEM"
+			end,
+		},
+		{
+			name = L["CooldownPanelOverwriteGlobalDefault"] or "Overwrite global default",
+			kind = SettingType.Checkbox,
+			parentId = "cooldownPanelStandaloneStacks",
+			isShown = function()
+				local effectiveType = getEffectiveType()
+				return effectiveType == "SPELL" or effectiveType == "CDM_AURA" or effectiveType == "ITEM"
+			end,
+			get = function()
+				local _, currentEntry = getEntry()
+				return currentEntry and currentEntry.stackStyleUseGlobal == false or false
+			end,
+			set = function(_, value) setStackStyleOverrideEnabled(value) end,
+		},
+		{
+			name = L["CooldownPanelCountAnchor"] or "Count anchor",
+			kind = SettingType.Dropdown,
+			parentId = "cooldownPanelStandaloneStacks",
+			height = 160,
+			isShown = function()
+				local effectiveType = getEffectiveType()
+				return effectiveType == "SPELL" or effectiveType == "CDM_AURA" or effectiveType == "ITEM"
+			end,
+			disabled = function()
+				local _, currentEntry = getEntry()
+				return not (currentEntry and currentEntry.stackStyleUseGlobal == false)
+			end,
+			get = function()
+				local _, _, _, _, anchor = CooldownPanels:ResolveEntryStackTextStyle(getLayout(), select(2, getEntry()), defaultCountFontPath, defaultCountFontSize, defaultCountFontStyle)
+				return anchor
+			end,
+			set = function(_, value) setEntryField("stackAnchor", Helper.NormalizeAnchor(value, Helper.PANEL_LAYOUT_DEFAULTS.stackAnchor or "BOTTOMRIGHT")) end,
+			generator = function(_, root)
+				for _, option in ipairs(Helper.AnchorOptions) do
+					root:CreateRadio(option.label, function()
+						local _, _, _, _, anchor = CooldownPanels:ResolveEntryStackTextStyle(getLayout(), select(2, getEntry()), defaultCountFontPath, defaultCountFontSize, defaultCountFontStyle)
+						return anchor == option.value
+					end, function() setEntryField("stackAnchor", option.value) end)
+				end
+			end,
+		},
+		{
+			name = L["CooldownPanelCountOffsetX"] or "Count X",
+			kind = SettingType.Slider,
+			parentId = "cooldownPanelStandaloneStacks",
+			minValue = -Helper.OFFSET_RANGE,
+			maxValue = Helper.OFFSET_RANGE,
+			valueStep = 1,
+			allowInput = true,
+			isShown = function()
+				local effectiveType = getEffectiveType()
+				return effectiveType == "SPELL" or effectiveType == "CDM_AURA" or effectiveType == "ITEM"
+			end,
+			disabled = function()
+				local _, currentEntry = getEntry()
+				return not (currentEntry and currentEntry.stackStyleUseGlobal == false)
+			end,
+			get = function()
+				local _, _, _, _, _, x = CooldownPanels:ResolveEntryStackTextStyle(getLayout(), select(2, getEntry()), defaultCountFontPath, defaultCountFontSize, defaultCountFontStyle)
+				return x
+			end,
+			set = function(_, value) setEntryField("stackX", Helper.ClampInt(value, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0)) end,
+			formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
+		},
+		{
+			name = L["CooldownPanelCountOffsetY"] or "Count Y",
+			kind = SettingType.Slider,
+			parentId = "cooldownPanelStandaloneStacks",
+			minValue = -Helper.OFFSET_RANGE,
+			maxValue = Helper.OFFSET_RANGE,
+			valueStep = 1,
+			allowInput = true,
+			isShown = function()
+				local effectiveType = getEffectiveType()
+				return effectiveType == "SPELL" or effectiveType == "CDM_AURA" or effectiveType == "ITEM"
+			end,
+			disabled = function()
+				local _, currentEntry = getEntry()
+				return not (currentEntry and currentEntry.stackStyleUseGlobal == false)
+			end,
+			get = function()
+				local _, _, _, _, _, _, y = CooldownPanels:ResolveEntryStackTextStyle(getLayout(), select(2, getEntry()), defaultCountFontPath, defaultCountFontSize, defaultCountFontStyle)
+				return y
+			end,
+			set = function(_, value) setEntryField("stackY", Helper.ClampInt(value, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0)) end,
+			formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
+		},
+		{
+			name = L["Font"] or "Font",
+			kind = SettingType.Dropdown,
+			parentId = "cooldownPanelStandaloneStacks",
+			height = 220,
+			isShown = function()
+				local effectiveType = getEffectiveType()
+				return effectiveType == "SPELL" or effectiveType == "CDM_AURA" or effectiveType == "ITEM"
+			end,
+			disabled = function()
+				local _, currentEntry = getEntry()
+				return not (currentEntry and currentEntry.stackStyleUseGlobal == false)
+			end,
+			get = function() return getStackFontSelection() end,
+			set = function(_, value) setEntryField("stackFont", value) end,
+			generator = function(_, root)
+				for _, option in ipairs(Helper.GetFontOptions(defaultCountFontPath)) do
+					root:CreateRadio(option.label, function() return getStackFontSelection() == option.value end, function() setEntryField("stackFont", option.value) end)
+				end
+			end,
+		},
+		{
+			name = L["CooldownPanelFontStyle"] or "Font style",
+			kind = SettingType.Dropdown,
+			parentId = "cooldownPanelStandaloneStacks",
+			height = 120,
+			isShown = function()
+				local effectiveType = getEffectiveType()
+				return effectiveType == "SPELL" or effectiveType == "CDM_AURA" or effectiveType == "ITEM"
+			end,
+			disabled = function()
+				local _, currentEntry = getEntry()
+				return not (currentEntry and currentEntry.stackStyleUseGlobal == false)
+			end,
+			get = function() return getResolvedStackStyleChoice() end,
+			set = function(_, value) setEntryField("stackFontStyle", Helper.NormalizeFontStyleChoice(value, Helper.PANEL_LAYOUT_DEFAULTS.stackFontStyle or "OUTLINE")) end,
+			generator = function(_, root)
+				for _, option in ipairs(Helper.FontStyleOptions) do
+					root:CreateRadio(option.label, function() return getResolvedStackStyleChoice() == option.value end, function() setEntryField("stackFontStyle", option.value) end)
+				end
+			end,
+		},
+		{
+			name = _G.COLOR or "Color",
+			kind = SettingType.Color,
+			parentId = "cooldownPanelStandaloneStacks",
+			hasOpacity = true,
+			isShown = function()
+				local effectiveType = getEffectiveType()
+				return effectiveType == "SPELL" or effectiveType == "CDM_AURA" or effectiveType == "ITEM"
+			end,
+			disabled = function()
+				local _, currentEntry = getEntry()
+				return not (currentEntry and currentEntry.stackStyleUseGlobal == false)
+			end,
+			get = function()
+				local color = getResolvedStackColor()
+				return { r = color[1], g = color[2], b = color[3], a = color[4] }
+			end,
+			set = function(_, value) setEntryField("stackColor", Helper.NormalizeColor(value, Helper.PANEL_LAYOUT_DEFAULTS.stackColor or { 1, 1, 1, 1 })) end,
+		},
+		{
+			name = L["FontSize"] or "Font size",
+			kind = SettingType.Slider,
+			parentId = "cooldownPanelStandaloneStacks",
+			minValue = 6,
+			maxValue = 64,
+			valueStep = 1,
+			allowInput = true,
+			isShown = function()
+				local effectiveType = getEffectiveType()
+				return effectiveType == "SPELL" or effectiveType == "CDM_AURA" or effectiveType == "ITEM"
+			end,
+			disabled = function()
+				local _, currentEntry = getEntry()
+				return not (currentEntry and currentEntry.stackStyleUseGlobal == false)
+			end,
+			get = function()
+				local _, size = CooldownPanels:ResolveEntryStackTextStyle(getLayout(), select(2, getEntry()), defaultCountFontPath, defaultCountFontSize, defaultCountFontStyle)
+				return size
+			end,
+			set = function(_, value) setEntryField("stackFontSize", Helper.ClampInt(value, 6, 64, defaultCountFontSize or 12)) end,
+			formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
+		},
+		{
+			name = L["CooldownPanelChargesHeader"] or "Charges",
+			kind = SettingType.Collapsible,
+			id = "cooldownPanelStandaloneCharges",
+			defaultCollapsed = true,
+			isShown = function()
+				local effectiveType = getEffectiveType()
+				return effectiveType == "SPELL" or effectiveType == "ITEM"
+			end,
+		},
+		{
+			name = L["CooldownPanelOverwriteGlobalDefault"] or "Overwrite global default",
+			kind = SettingType.Checkbox,
+			parentId = "cooldownPanelStandaloneCharges",
+			isShown = function()
+				local effectiveType = getEffectiveType()
+				return effectiveType == "SPELL" or effectiveType == "ITEM"
+			end,
+			get = function()
+				local _, currentEntry = getEntry()
+				return currentEntry and currentEntry.chargesStyleUseGlobal == false or false
+			end,
+			set = function(_, value) setChargesStyleOverrideEnabled(value) end,
+		},
+		{
+			name = L["CooldownPanelChargesAnchor"] or "Charges anchor",
+			kind = SettingType.Dropdown,
+			parentId = "cooldownPanelStandaloneCharges",
+			height = 160,
+			isShown = function()
+				local effectiveType = getEffectiveType()
+				return effectiveType == "SPELL" or effectiveType == "ITEM"
+			end,
+			disabled = function()
+				local _, currentEntry = getEntry()
+				return not (currentEntry and currentEntry.chargesStyleUseGlobal == false)
+			end,
+			get = function()
+				local _, _, _, _, anchor = CooldownPanels:ResolveEntryChargesTextStyle(getLayout(), select(2, getEntry()), defaultChargesFontPath, defaultChargesFontSize, defaultChargesFontStyle)
+				return anchor
+			end,
+			set = function(_, value) setEntryField("chargesAnchor", Helper.NormalizeAnchor(value, Helper.PANEL_LAYOUT_DEFAULTS.chargesAnchor or "TOP")) end,
+			generator = function(_, root)
+				for _, option in ipairs(Helper.AnchorOptions) do
+					root:CreateRadio(option.label, function()
+						local _, _, _, _, anchor =
+							CooldownPanels:ResolveEntryChargesTextStyle(getLayout(), select(2, getEntry()), defaultChargesFontPath, defaultChargesFontSize, defaultChargesFontStyle)
+						return anchor == option.value
+					end, function() setEntryField("chargesAnchor", option.value) end)
+				end
+			end,
+		},
+		{
+			name = L["CooldownPanelChargesOffsetX"] or "Charges X",
+			kind = SettingType.Slider,
+			parentId = "cooldownPanelStandaloneCharges",
+			minValue = -Helper.OFFSET_RANGE,
+			maxValue = Helper.OFFSET_RANGE,
+			valueStep = 1,
+			allowInput = true,
+			isShown = function()
+				local effectiveType = getEffectiveType()
+				return effectiveType == "SPELL" or effectiveType == "ITEM"
+			end,
+			disabled = function()
+				local _, currentEntry = getEntry()
+				return not (currentEntry and currentEntry.chargesStyleUseGlobal == false)
+			end,
+			get = function()
+				local _, _, _, _, _, x = CooldownPanels:ResolveEntryChargesTextStyle(getLayout(), select(2, getEntry()), defaultChargesFontPath, defaultChargesFontSize, defaultChargesFontStyle)
+				return x
+			end,
+			set = function(_, value) setEntryField("chargesX", Helper.ClampInt(value, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0)) end,
+			formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
+		},
+		{
+			name = L["CooldownPanelChargesOffsetY"] or "Charges Y",
+			kind = SettingType.Slider,
+			parentId = "cooldownPanelStandaloneCharges",
+			minValue = -Helper.OFFSET_RANGE,
+			maxValue = Helper.OFFSET_RANGE,
+			valueStep = 1,
+			allowInput = true,
+			isShown = function()
+				local effectiveType = getEffectiveType()
+				return effectiveType == "SPELL" or effectiveType == "ITEM"
+			end,
+			disabled = function()
+				local _, currentEntry = getEntry()
+				return not (currentEntry and currentEntry.chargesStyleUseGlobal == false)
+			end,
+			get = function()
+				local _, _, _, _, _, _, y = CooldownPanels:ResolveEntryChargesTextStyle(getLayout(), select(2, getEntry()), defaultChargesFontPath, defaultChargesFontSize, defaultChargesFontStyle)
+				return y
+			end,
+			set = function(_, value) setEntryField("chargesY", Helper.ClampInt(value, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0)) end,
+			formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
+		},
+		{
+			name = L["Font"] or "Font",
+			kind = SettingType.Dropdown,
+			parentId = "cooldownPanelStandaloneCharges",
+			height = 220,
+			isShown = function()
+				local effectiveType = getEffectiveType()
+				return effectiveType == "SPELL" or effectiveType == "ITEM"
+			end,
+			disabled = function()
+				local _, currentEntry = getEntry()
+				return not (currentEntry and currentEntry.chargesStyleUseGlobal == false)
+			end,
+			get = function() return getChargesFontSelection() end,
+			set = function(_, value) setEntryField("chargesFont", value) end,
+			generator = function(_, root)
+				for _, option in ipairs(Helper.GetFontOptions(defaultChargesFontPath)) do
+					root:CreateRadio(option.label, function() return getChargesFontSelection() == option.value end, function() setEntryField("chargesFont", option.value) end)
+				end
+			end,
+		},
+		{
+			name = L["CooldownPanelFontStyle"] or "Font style",
+			kind = SettingType.Dropdown,
+			parentId = "cooldownPanelStandaloneCharges",
+			height = 120,
+			isShown = function()
+				local effectiveType = getEffectiveType()
+				return effectiveType == "SPELL" or effectiveType == "ITEM"
+			end,
+			disabled = function()
+				local _, currentEntry = getEntry()
+				return not (currentEntry and currentEntry.chargesStyleUseGlobal == false)
+			end,
+			get = function() return getResolvedChargesStyleChoice() end,
+			set = function(_, value) setEntryField("chargesFontStyle", Helper.NormalizeFontStyleChoice(value, Helper.PANEL_LAYOUT_DEFAULTS.chargesFontStyle or "OUTLINE")) end,
+			generator = function(_, root)
+				for _, option in ipairs(Helper.FontStyleOptions) do
+					root:CreateRadio(option.label, function() return getResolvedChargesStyleChoice() == option.value end, function() setEntryField("chargesFontStyle", option.value) end)
+				end
+			end,
+		},
+		{
+			name = _G.COLOR or "Color",
+			kind = SettingType.Color,
+			parentId = "cooldownPanelStandaloneCharges",
+			hasOpacity = true,
+			isShown = function()
+				local effectiveType = getEffectiveType()
+				return effectiveType == "SPELL" or effectiveType == "ITEM"
+			end,
+			disabled = function()
+				local _, currentEntry = getEntry()
+				return not (currentEntry and currentEntry.chargesStyleUseGlobal == false)
+			end,
+			get = function()
+				local color = getResolvedChargesColor()
+				return { r = color[1], g = color[2], b = color[3], a = color[4] }
+			end,
+			set = function(_, value) setEntryField("chargesColor", Helper.NormalizeColor(value, Helper.PANEL_LAYOUT_DEFAULTS.chargesColor or { 1, 1, 1, 1 })) end,
+		},
+		{
+			name = L["FontSize"] or "Font size",
+			kind = SettingType.Slider,
+			parentId = "cooldownPanelStandaloneCharges",
+			minValue = 6,
+			maxValue = 64,
+			valueStep = 1,
+			allowInput = true,
+			isShown = function()
+				local effectiveType = getEffectiveType()
+				return effectiveType == "SPELL" or effectiveType == "ITEM"
+			end,
+			disabled = function()
+				local _, currentEntry = getEntry()
+				return not (currentEntry and currentEntry.chargesStyleUseGlobal == false)
+			end,
+			get = function()
+				local _, size = CooldownPanels:ResolveEntryChargesTextStyle(getLayout(), select(2, getEntry()), defaultChargesFontPath, defaultChargesFontSize, defaultChargesFontStyle)
+				return size
+			end,
+			set = function(_, value) setEntryField("chargesFontSize", Helper.ClampInt(value, 6, 64, defaultChargesFontSize or 12)) end,
 			formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
 		},
 		{
@@ -5614,6 +6099,12 @@ function CooldownPanels:OpenLayoutPanelStandaloneMenu(panelId, anchorFrame)
 		return Helper.NormalizeFontStyleChoice(layout and layout.stackFontStyle, defaultCountFontStyle)
 	end
 
+	local function getResolvedPanelStackColor()
+		local layout = getLayout()
+		local _, _, _, color = CooldownPanels:ResolveEntryStackTextStyle(layout, nil, defaultCountFontPath, defaultCountFontSize, defaultCountFontStyle)
+		return color
+	end
+
 	local function getPanelChargesFontSelection()
 		local layout = getLayout()
 		return CooldownPanels:GetFontDropdownValue(layout and layout.chargesFont)
@@ -5622,6 +6113,12 @@ function CooldownPanels:OpenLayoutPanelStandaloneMenu(panelId, anchorFrame)
 	local function getResolvedPanelChargesStyleChoice()
 		local layout = getLayout()
 		return Helper.NormalizeFontStyleChoice(layout and layout.chargesFontStyle, defaultChargesFontStyle)
+	end
+
+	local function getResolvedPanelChargesColor()
+		local layout = getLayout()
+		local _, _, _, color = CooldownPanels:ResolveEntryChargesTextStyle(layout, nil, defaultChargesFontPath, defaultChargesFontSize, defaultChargesFontStyle)
+		return color
 	end
 
 	local function getPanelKeybindFontSelection()
@@ -5947,6 +6444,17 @@ function CooldownPanels:OpenLayoutPanelStandaloneMenu(panelId, anchorFrame)
 			end,
 		},
 		{
+			name = _G.COLOR or "Color",
+			kind = SettingType.Color,
+			parentId = "cooldownPanelStandalonePanelStacks",
+			hasOpacity = true,
+			get = function()
+				local color = getResolvedPanelStackColor()
+				return { r = color[1], g = color[2], b = color[3], a = color[4] }
+			end,
+			set = function(_, value) setPanelLayout("stackColor", value) end,
+		},
+		{
 			name = L["FontSize"] or "Font size",
 			kind = SettingType.Slider,
 			parentId = "cooldownPanelStandalonePanelStacks",
@@ -6041,6 +6549,17 @@ function CooldownPanels:OpenLayoutPanelStandaloneMenu(panelId, anchorFrame)
 					root:CreateRadio(option.label, function() return getResolvedPanelChargesStyleChoice() == option.value end, function() setPanelLayout("chargesFontStyle", option.value) end)
 				end
 			end,
+		},
+		{
+			name = _G.COLOR or "Color",
+			kind = SettingType.Color,
+			parentId = "cooldownPanelStandalonePanelCharges",
+			hasOpacity = true,
+			get = function()
+				local color = getResolvedPanelChargesColor()
+				return { r = color[1], g = color[2], b = color[3], a = color[4] }
+			end,
+			set = function(_, value) setPanelLayout("chargesColor", value) end,
 		},
 		{
 			name = L["FontSize"] or "Font size",
@@ -6650,12 +7169,14 @@ function CooldownPanels:SyncEditModeDataFromPanel(panelId, editModeId)
 	data.stackFont = layout.stackFont or data.stackFont
 	data.stackFontSize = layout.stackFontSize or data.stackFontSize
 	data.stackFontStyle = Helper.NormalizeFontStyleChoice(layout.stackFontStyle, data.stackFontStyle)
+	data.stackColor = Helper.NormalizeColor(layout.stackColor, Helper.PANEL_LAYOUT_DEFAULTS.stackColor or { 1, 1, 1, 1 })
 	data.chargesAnchor = Helper.NormalizeAnchor(layout.chargesAnchor, Helper.PANEL_LAYOUT_DEFAULTS.chargesAnchor)
 	data.chargesX = layout.chargesX or Helper.PANEL_LAYOUT_DEFAULTS.chargesX
 	data.chargesY = layout.chargesY or Helper.PANEL_LAYOUT_DEFAULTS.chargesY
 	data.chargesFont = layout.chargesFont or data.chargesFont
 	data.chargesFontSize = layout.chargesFontSize or data.chargesFontSize
 	data.chargesFontStyle = Helper.NormalizeFontStyleChoice(layout.chargesFontStyle, data.chargesFontStyle)
+	data.chargesColor = Helper.NormalizeColor(layout.chargesColor, Helper.PANEL_LAYOUT_DEFAULTS.chargesColor or { 1, 1, 1, 1 })
 	data.keybindsEnabled = layout.keybindsEnabled == true
 	data.keybindsIgnoreItems = layout.keybindsIgnoreItems == true
 	data.keybindAnchor = Helper.NormalizeAnchor(layout.keybindAnchor, Helper.PANEL_LAYOUT_DEFAULTS.keybindAnchor)
@@ -8001,6 +8522,8 @@ local function refreshPreview(editor, panel)
 	canvas:SetPoint("CENTER", preview, "CENTER")
 	local showKeybinds = layout.keybindsEnabled == true
 	local staticFontPath, staticFontSize, staticFontStyle = Helper.GetCountFontDefaults(canvas)
+	local defaultCountFontPath, defaultCountFontSize, defaultCountFontStyle = staticFontPath, staticFontSize, staticFontStyle
+	local defaultChargesFontPath, defaultChargesFontSize, defaultChargesFontStyle = Helper.GetChargesFontDefaults(canvas)
 
 	preview.entryByIndex = preview.entryByIndex or {}
 	for i = 1, count do
@@ -8067,6 +8590,8 @@ local function refreshPreview(editor, panel)
 			preview.entryByIndex[i] = nil
 		else
 			CooldownPanels:ApplyEntryCooldownTextStyle(icon, layout, entry)
+			CooldownPanels:ApplyEntryStackTextStyle(icon, layout, entry, defaultCountFontPath, defaultCountFontSize, defaultCountFontStyle)
+			CooldownPanels:ApplyEntryChargesTextStyle(icon, layout, entry, defaultChargesFontPath, defaultChargesFontSize, defaultChargesFontStyle)
 			applyStaticText(icon, layout, entry, staticFontPath, staticFontSize, staticFontStyle, staticCooldown)
 			icon.texture:SetShown(showEntryIconTexture or showGhostIcon)
 			if showGhostIcon then CooldownPanels:ApplyEditorGhostIcon(icon) end
@@ -8776,6 +9301,8 @@ function CooldownPanels:UpdatePreviewIcons(panelId, countOverride)
 	local showKeybinds = layout.keybindsEnabled == true
 	local showIconTexture = layout.showIconTexture ~= false
 	local staticFontPath, staticFontSize, staticFontStyle = Helper.GetCountFontDefaults(frame)
+	local defaultCountFontPath, defaultCountFontSize, defaultCountFontStyle = staticFontPath, staticFontSize, staticFontStyle
+	local defaultChargesFontPath, defaultChargesFontSize, defaultChargesFontStyle = Helper.GetChargesFontDefaults(frame)
 	local previewEntryIds
 	local count = countOverride
 	local previewGridColumns
@@ -8828,6 +9355,8 @@ function CooldownPanels:UpdatePreviewIcons(panelId, countOverride)
 		if icon.cooldown.SetUseAuraDisplayTime then icon.cooldown:SetUseAuraDisplayTime(resolvedType == "CDM_AURA") end
 		icon.cooldown:SetHideCountdownNumbers(not showCooldownText)
 		CooldownPanels:ApplyEntryCooldownTextStyle(icon, layout, entry)
+		CooldownPanels:ApplyEntryStackTextStyle(icon, layout, entry, defaultCountFontPath, defaultCountFontSize, defaultCountFontStyle)
+		CooldownPanels:ApplyEntryChargesTextStyle(icon, layout, entry, defaultChargesFontPath, defaultChargesFontSize, defaultChargesFontStyle)
 		icon.cooldown:Clear()
 		if icon.cooldown.SetScript then icon.cooldown:SetScript("OnCooldownDone", nil) end
 		icon.count:Hide()
@@ -8981,6 +9510,8 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 	local staticFontPath = resolvedLayout and resolvedLayout.staticFontPath
 	local staticFontSize = resolvedLayout and resolvedLayout.staticFontSize
 	local staticFontStyle = resolvedLayout and resolvedLayout.staticFontStyle
+	local defaultCountFontPath, defaultCountFontSize, defaultCountFontStyle = Helper.GetCountFontDefaults(frame)
+	local defaultChargesFontPath, defaultChargesFontSize, defaultChargesFontStyle = Helper.GetChargesFontDefaults(frame)
 	local powerTintR = resolvedLayout and resolvedLayout.powerTintR
 	local powerTintG = resolvedLayout and resolvedLayout.powerTintG
 	local powerTintB = resolvedLayout and resolvedLayout.powerTintB
@@ -9491,6 +10022,8 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			CooldownPanels.ApplyIconTooltip(icon, data.entry, showTooltips)
 			icon.cooldown:SetHideCountdownNumbers(not data.showCooldownText)
 			CooldownPanels:ApplyEntryCooldownTextStyle(icon, layout, data.entry)
+			CooldownPanels:ApplyEntryStackTextStyle(icon, layout, data.entry, defaultCountFontPath, defaultCountFontSize, defaultCountFontStyle)
+			CooldownPanels:ApplyEntryChargesTextStyle(icon, layout, data.entry, defaultChargesFontPath, defaultChargesFontSize, defaultChargesFontStyle)
 			if icon.cooldown.SetReverse then icon.cooldown:SetReverse(data.resolvedType == "CDM_AURA") end
 			if icon.cooldown.SetUseAuraDisplayTime then icon.cooldown:SetUseAuraDisplayTime(data.resolvedType == "CDM_AURA") end
 
@@ -9574,6 +10107,15 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 					icon.charges:Show()
 				else
 					icon.charges:Hide()
+				end
+			end
+			if layoutEditActive and not (icon.charges and icon.charges.IsShown and icon.charges:IsShown()) then
+				if data.resolvedType == "SPELL" and data.showCharges then
+					icon.charges:SetText("2")
+					icon.charges:Show()
+				elseif data.resolvedType == "ITEM" and data.showItemUses then
+					icon.charges:SetText("2")
+					icon.charges:Show()
 				end
 			end
 
@@ -9750,6 +10292,15 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				icon.count:Show()
 			else
 				icon.count:Hide()
+			end
+			if layoutEditActive and not (icon.count and icon.count.IsShown and icon.count:IsShown()) then
+				if data.resolvedType == "ITEM" and data.showItemCount then
+					icon.count:SetText("20")
+					icon.count:Show()
+				elseif data.showStacks then
+					icon.count:SetText(data.resolvedType == "CDM_AURA" and "2" or "3")
+					icon.count:Show()
+				end
 			end
 			if icon.keybind then
 				if data.showKeybinds and data.keybindText then
@@ -10215,6 +10766,8 @@ applyEditLayout = function(panelId, field, value, skipRefresh)
 		layout.stackFontSize = Helper.ClampInt(value, 6, 64, layout.stackFontSize or Helper.PANEL_LAYOUT_DEFAULTS.stackFontSize)
 	elseif field == "stackFontStyle" then
 		layout.stackFontStyle = Helper.NormalizeFontStyleChoice(value, layout.stackFontStyle or Helper.PANEL_LAYOUT_DEFAULTS.stackFontStyle)
+	elseif field == "stackColor" then
+		layout.stackColor = Helper.NormalizeColor(value, Helper.PANEL_LAYOUT_DEFAULTS.stackColor or { 1, 1, 1, 1 })
 	elseif field == "chargesAnchor" then
 		layout.chargesAnchor = Helper.NormalizeAnchor(value, layout.chargesAnchor or Helper.PANEL_LAYOUT_DEFAULTS.chargesAnchor)
 	elseif field == "chargesX" then
@@ -10227,6 +10780,8 @@ applyEditLayout = function(panelId, field, value, skipRefresh)
 		layout.chargesFontSize = Helper.ClampInt(value, 6, 64, layout.chargesFontSize or Helper.PANEL_LAYOUT_DEFAULTS.chargesFontSize)
 	elseif field == "chargesFontStyle" then
 		layout.chargesFontStyle = Helper.NormalizeFontStyleChoice(value, layout.chargesFontStyle or Helper.PANEL_LAYOUT_DEFAULTS.chargesFontStyle)
+	elseif field == "chargesColor" then
+		layout.chargesColor = Helper.NormalizeColor(value, Helper.PANEL_LAYOUT_DEFAULTS.chargesColor or { 1, 1, 1, 1 })
 	elseif field == "keybindsEnabled" then
 		layout.keybindsEnabled = value == true
 		Keybinds.MarkPanelsDirty()
@@ -10398,12 +10953,14 @@ function CooldownPanels:ApplyEditMode(panelId, data)
 	applyEditLayout(panelId, "stackFont", data.stackFont, true)
 	applyEditLayout(panelId, "stackFontSize", data.stackFontSize, true)
 	applyEditLayout(panelId, "stackFontStyle", data.stackFontStyle, true)
+	applyEditLayout(panelId, "stackColor", data.stackColor, true)
 	applyEditLayout(panelId, "chargesAnchor", data.chargesAnchor, true)
 	applyEditLayout(panelId, "chargesX", data.chargesX, true)
 	applyEditLayout(panelId, "chargesY", data.chargesY, true)
 	applyEditLayout(panelId, "chargesFont", data.chargesFont, true)
 	applyEditLayout(panelId, "chargesFontSize", data.chargesFontSize, true)
 	applyEditLayout(panelId, "chargesFontStyle", data.chargesFontStyle, true)
+	applyEditLayout(panelId, "chargesColor", data.chargesColor, true)
 	applyEditLayout(panelId, "keybindsEnabled", data.keybindsEnabled, true)
 	applyEditLayout(panelId, "keybindsIgnoreItems", data.keybindsIgnoreItems, true)
 	applyEditLayout(panelId, "keybindAnchor", data.keybindAnchor, true)

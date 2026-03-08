@@ -144,11 +144,13 @@ Helper.PANEL_LAYOUT_DEFAULTS = {
 	stackY = 1,
 	stackFontSize = 12,
 	stackFontStyle = "OUTLINE",
+	stackColor = { 1, 1, 1, 1 },
 	chargesAnchor = "TOP",
 	chargesX = 0,
 	chargesY = -1,
 	chargesFontSize = 12,
 	chargesFontStyle = "OUTLINE",
+	chargesColor = { 1, 1, 1, 1 },
 	keybindsEnabled = false,
 	keybindsIgnoreItems = false,
 	keybindAnchor = "TOPLEFT",
@@ -185,6 +187,22 @@ Helper.ENTRY_DEFAULTS = {
 	showCooldownText = true,
 	showCharges = false,
 	showStacks = false,
+	stackStyleUseGlobal = true,
+	stackAnchor = "BOTTOMRIGHT",
+	stackX = -1,
+	stackY = 1,
+	stackFont = "",
+	stackFontSize = 12,
+	stackFontStyle = "OUTLINE",
+	stackColor = { 1, 1, 1, 1 },
+	chargesStyleUseGlobal = true,
+	chargesAnchor = "TOP",
+	chargesX = 0,
+	chargesY = -1,
+	chargesFont = "",
+	chargesFontSize = 12,
+	chargesFontStyle = "OUTLINE",
+	chargesColor = { 1, 1, 1, 1 },
 	showItemUses = false,
 	showWhenEmpty = false,
 	useHighestRank = false,
@@ -946,6 +964,8 @@ function Helper.NormalizePanel(panel, defaults)
 	panel.layout.readyGlowColor = Helper.NormalizeColor(panel.layout.readyGlowColor, layoutDefaults.readyGlowColor or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor)
 	panel.layout.readyGlowDuration = Helper.ClampInt(panel.layout.readyGlowDuration, 0, 30, layoutDefaults.readyGlowDuration or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowDuration or 0)
 	panel.layout.noDesaturation = panel.layout.noDesaturation == true
+	panel.layout.stackColor = Helper.NormalizeColor(panel.layout.stackColor, layoutDefaults.stackColor or Helper.PANEL_LAYOUT_DEFAULTS.stackColor or { 1, 1, 1, 1 })
+	panel.layout.chargesColor = Helper.NormalizeColor(panel.layout.chargesColor, layoutDefaults.chargesColor or Helper.PANEL_LAYOUT_DEFAULTS.chargesColor or { 1, 1, 1, 1 })
 	panel.layout.cooldownTextColor = Helper.NormalizeColor(panel.layout.cooldownTextColor, layoutDefaults.cooldownTextColor or Helper.PANEL_LAYOUT_DEFAULTS.cooldownTextColor)
 	if panel.layout.cooldownTextFont ~= nil and type(panel.layout.cooldownTextFont) ~= "string" then panel.layout.cooldownTextFont = nil end
 	if panel.layout.cooldownTextSize ~= nil then panel.layout.cooldownTextSize = Helper.ClampInt(panel.layout.cooldownTextSize, 6, 64, 12) end
@@ -1028,6 +1048,22 @@ function Helper.NormalizeEntry(entry, defaults)
 	entry.iconOffsetX = Helper.ClampInt(entry.iconOffsetX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.ENTRY_DEFAULTS.iconOffsetX or 0)
 	entry.iconOffsetY = Helper.ClampInt(entry.iconOffsetY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.ENTRY_DEFAULTS.iconOffsetY or 0)
 	if type(entry.showIconTextureUseGlobal) ~= "boolean" then entry.showIconTextureUseGlobal = true end
+	if type(entry.stackStyleUseGlobal) ~= "boolean" then entry.stackStyleUseGlobal = true end
+	entry.stackAnchor = Helper.NormalizeAnchor(entry.stackAnchor, Helper.ENTRY_DEFAULTS.stackAnchor or Helper.PANEL_LAYOUT_DEFAULTS.stackAnchor or "BOTTOMRIGHT")
+	entry.stackX = Helper.ClampInt(entry.stackX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.ENTRY_DEFAULTS.stackX or 0)
+	entry.stackY = Helper.ClampInt(entry.stackY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.ENTRY_DEFAULTS.stackY or 0)
+	if type(entry.stackFont) ~= "string" then entry.stackFont = Helper.ENTRY_DEFAULTS.stackFont or "" end
+	entry.stackFontSize = Helper.ClampInt(entry.stackFontSize, 6, 64, Helper.ENTRY_DEFAULTS.stackFontSize or Helper.PANEL_LAYOUT_DEFAULTS.stackFontSize or 12)
+	entry.stackFontStyle = Helper.NormalizeFontStyleChoice(entry.stackFontStyle, Helper.ENTRY_DEFAULTS.stackFontStyle or Helper.PANEL_LAYOUT_DEFAULTS.stackFontStyle or "OUTLINE")
+	entry.stackColor = Helper.NormalizeColor(entry.stackColor, Helper.ENTRY_DEFAULTS.stackColor or Helper.PANEL_LAYOUT_DEFAULTS.stackColor or { 1, 1, 1, 1 })
+	if type(entry.chargesStyleUseGlobal) ~= "boolean" then entry.chargesStyleUseGlobal = true end
+	entry.chargesAnchor = Helper.NormalizeAnchor(entry.chargesAnchor, Helper.ENTRY_DEFAULTS.chargesAnchor or Helper.PANEL_LAYOUT_DEFAULTS.chargesAnchor or "TOP")
+	entry.chargesX = Helper.ClampInt(entry.chargesX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.ENTRY_DEFAULTS.chargesX or 0)
+	entry.chargesY = Helper.ClampInt(entry.chargesY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.ENTRY_DEFAULTS.chargesY or 0)
+	if type(entry.chargesFont) ~= "string" then entry.chargesFont = Helper.ENTRY_DEFAULTS.chargesFont or "" end
+	entry.chargesFontSize = Helper.ClampInt(entry.chargesFontSize, 6, 64, Helper.ENTRY_DEFAULTS.chargesFontSize or Helper.PANEL_LAYOUT_DEFAULTS.chargesFontSize or 12)
+	entry.chargesFontStyle = Helper.NormalizeFontStyleChoice(entry.chargesFontStyle, Helper.ENTRY_DEFAULTS.chargesFontStyle or Helper.PANEL_LAYOUT_DEFAULTS.chargesFontStyle or "OUTLINE")
+	entry.chargesColor = Helper.NormalizeColor(entry.chargesColor, Helper.ENTRY_DEFAULTS.chargesColor or Helper.PANEL_LAYOUT_DEFAULTS.chargesColor or { 1, 1, 1, 1 })
 	if type(entry.cooldownVisualsUseGlobal) ~= "boolean" then entry.cooldownVisualsUseGlobal = true end
 	if type(entry.showChargesCooldown) ~= "boolean" then entry.showChargesCooldown = Helper.ENTRY_DEFAULTS.showChargesCooldown end
 	if type(entry.cooldownDrawEdge) ~= "boolean" then entry.cooldownDrawEdge = Helper.ENTRY_DEFAULTS.cooldownDrawEdge end
@@ -1048,8 +1084,7 @@ function Helper.NormalizeEntry(entry, defaults)
 		local defaultStaticColor = Helper.ENTRY_DEFAULTS.staticTextColor or { 1, 1, 1, 1 }
 		local currentStaticColor = Helper.NormalizeColor(entry.staticTextColor, defaultStaticColor)
 		local normalizedDefaultStaticColor = Helper.NormalizeColor(defaultStaticColor, defaultStaticColor)
-		local usesDefaultStaticStyle =
-			(type(entry.staticTextFont) ~= "string" or entry.staticTextFont == "")
+		local usesDefaultStaticStyle = (type(entry.staticTextFont) ~= "string" or entry.staticTextFont == "")
 			and Helper.ClampInt(entry.staticTextSize, 6, 64, Helper.ENTRY_DEFAULTS.staticTextSize or 12) == (Helper.ENTRY_DEFAULTS.staticTextSize or 12)
 			and Helper.NormalizeFontStyleChoice(entry.staticTextStyle, Helper.ENTRY_DEFAULTS.staticTextStyle or "OUTLINE") == (Helper.ENTRY_DEFAULTS.staticTextStyle or "OUTLINE")
 			and currentStaticColor[1] == normalizedDefaultStaticColor[1]

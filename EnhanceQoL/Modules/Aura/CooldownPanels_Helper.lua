@@ -191,6 +191,14 @@ Helper.ENTRY_DEFAULTS = {
 	showWhenNoCooldown = false,
 	showWhenMissing = false,
 	showIconTextureUseGlobal = true,
+	cooldownVisualsUseGlobal = true,
+	showChargesCooldown = false,
+	cooldownDrawEdge = true,
+	cooldownDrawBling = true,
+	cooldownDrawSwipe = true,
+	cooldownGcdDrawEdge = false,
+	cooldownGcdDrawBling = false,
+	cooldownGcdDrawSwipe = false,
 	cooldownTextUseGlobal = true,
 	noDesaturationUseGlobal = true,
 	noDesaturation = false,
@@ -1020,6 +1028,14 @@ function Helper.NormalizeEntry(entry, defaults)
 	entry.iconOffsetX = Helper.ClampInt(entry.iconOffsetX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.ENTRY_DEFAULTS.iconOffsetX or 0)
 	entry.iconOffsetY = Helper.ClampInt(entry.iconOffsetY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.ENTRY_DEFAULTS.iconOffsetY or 0)
 	if type(entry.showIconTextureUseGlobal) ~= "boolean" then entry.showIconTextureUseGlobal = true end
+	if type(entry.cooldownVisualsUseGlobal) ~= "boolean" then entry.cooldownVisualsUseGlobal = true end
+	if type(entry.showChargesCooldown) ~= "boolean" then entry.showChargesCooldown = Helper.ENTRY_DEFAULTS.showChargesCooldown end
+	if type(entry.cooldownDrawEdge) ~= "boolean" then entry.cooldownDrawEdge = Helper.ENTRY_DEFAULTS.cooldownDrawEdge end
+	if type(entry.cooldownDrawBling) ~= "boolean" then entry.cooldownDrawBling = Helper.ENTRY_DEFAULTS.cooldownDrawBling end
+	if type(entry.cooldownDrawSwipe) ~= "boolean" then entry.cooldownDrawSwipe = Helper.ENTRY_DEFAULTS.cooldownDrawSwipe end
+	if type(entry.cooldownGcdDrawEdge) ~= "boolean" then entry.cooldownGcdDrawEdge = Helper.ENTRY_DEFAULTS.cooldownGcdDrawEdge end
+	if type(entry.cooldownGcdDrawBling) ~= "boolean" then entry.cooldownGcdDrawBling = Helper.ENTRY_DEFAULTS.cooldownGcdDrawBling end
+	if type(entry.cooldownGcdDrawSwipe) ~= "boolean" then entry.cooldownGcdDrawSwipe = Helper.ENTRY_DEFAULTS.cooldownGcdDrawSwipe end
 	if type(entry.cooldownTextUseGlobal) ~= "boolean" then entry.cooldownTextUseGlobal = true end
 	if type(entry.noDesaturationUseGlobal) ~= "boolean" then entry.noDesaturationUseGlobal = true end
 	if type(entry.noDesaturation) ~= "boolean" then entry.noDesaturation = Helper.ENTRY_DEFAULTS.noDesaturation end

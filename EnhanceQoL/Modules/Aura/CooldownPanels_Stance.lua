@@ -227,6 +227,22 @@ local function normalizeStanceKey(value)
 	return nil
 end
 
+local function getFallbackClassTag(value)
+	if type(value) == "table" then
+		local stanceClass = value.stanceClass or value.classTag
+		if type(stanceClass) == "string" and stanceClass ~= "" then return string.upper(stanceClass) end
+		local stanceID = value.stanceID or value.stanceId
+		if type(stanceID) == "string" and stanceID ~= "" then value = stanceID end
+	end
+	if type(value) ~= "string" or value == "" then return nil end
+	if strtrim then value = strtrim(value) end
+	if value == "" then return nil end
+	value = string.upper(value)
+	local classTag = value:match("^([A-Z]+)_")
+	if type(classTag) == "string" and classTag ~= "" then return classTag end
+	return nil
+end
+
 local function setTrackedState(stanceID, active)
 	if type(stanceID) ~= "string" or stanceID == "" then return end
 	local tracker = getTrackerRuntime()
@@ -394,9 +410,10 @@ end
 
 function Stance:IsEntryActive(entry)
 	local def = self:GetDefinition(entry)
-	if not def then return false end
 	local playerClass = getPlayerClassTag()
-	if playerClass ~= def.classTag then return false end
+	local entryClass = (def and def.classTag) or getFallbackClassTag(entry)
+	if entryClass and playerClass ~= entryClass then return false end
+	if not def then return false end
 
 	local condition = type(def.condition) == "string" and def.condition or nil
 	if not condition or condition == "" then return false end
@@ -414,9 +431,10 @@ end
 
 function Stance:IsEntryRelevant(entry)
 	local def = self:GetDefinition(entry)
-	if not def then return false end
 	local playerClass = getPlayerClassTag()
-	return playerClass == def.classTag
+	local entryClass = (def and def.classTag) or getFallbackClassTag(entry)
+	if entryClass then return playerClass == entryClass end
+	return def ~= nil and playerClass == def.classTag
 end
 
 function CooldownPanels:GetStanceMenuEntries() return Stance:GetMenuEntries() end

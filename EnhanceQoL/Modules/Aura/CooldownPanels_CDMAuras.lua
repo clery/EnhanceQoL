@@ -58,6 +58,7 @@ local function getRuntime()
 		unitPanels = createTrackedUnitBuckets(),
 		frameEntries = {},
 		hookedFrames = {},
+		targetEpoch = 0,
 	}
 	CooldownPanels.runtime.cdmAuras = runtime
 	return runtime
@@ -509,6 +510,7 @@ local function clearAuraMapping(runtime, key, state, clearTrackedAura)
 	if clearTrackedAura and state then
 		state.trackedAuraInstanceID = nil
 		state.trackedAuraUnit = nil
+		if auraUnit == "target" or normalizeTrackedUnit(state.trackUnit) == "target" then state.targetAuraEpoch = nil end
 	end
 end
 
@@ -563,6 +565,7 @@ local function clearEntryState(key, state, clearTrackedAura)
 	end
 	state.boundSource = nil
 	state.lastActive = nil
+	state.targetAuraEpoch = nil
 end
 
 function CDMAuras:SweepInvalidStates()
@@ -612,19 +615,78 @@ local function registerTrackedPanel(runtime, unit, panelId)
 	runtime.unitPanels[unit][panelId] = true
 end
 
+local function clearRuntimeTrackingState()
+	local runtime = getRuntime()
+	for _, state in pairs(runtime.entryStates) do
+		clearEntryState(getEntryKey(state.panelId, state.entryId), state, true)
+		state.trackUnit = nil
+	end
+	clearTrackedPanelIndex(runtime)
+	wipe(runtime.auraEntries.player)
+	wipe(runtime.auraEntries.target)
+end
+
+function CDMAuras:HasActiveTrackedPanels()
+	local root = CooldownPanels.GetRoot and CooldownPanels:GetRoot() or nil
+	if not (root and root.panels) then return false end
+
+	local enabledPanels = CooldownPanels.runtime and CooldownPanels.runtime.enabledPanels or nil
+	local useEnabledFilter = enabledPanels ~= nil
+
+	for panelId, panel in pairs(root.panels) do
+		local panelEnabled = useEnabledFilter and enabledPanels[panelId] == true or (panel and panel.enabled ~= false)
+		if panelEnabled and panel and panel.entries then
+			for _, entry in pairs(panel.entries) do
+				if entry and entry.type == ENTRY_TYPE then return true end
+			end
+		end
+	end
+
+	return false
+end
+
+function CDMAuras:UpdateEventRegistration()
+	local shouldRegister = self:HasActiveTrackedPanels()
+	local frame = self.eventFrame
+
+	if not shouldRegister then
+		if frame and self.eventsRegistered then
+			frame:UnregisterAllEvents()
+			self.eventsRegistered = nil
+		end
+		clearRuntimeTrackingState()
+		return false
+	end
+
+	self:EnsureEventFrame()
+	frame = self.eventFrame
+	if not self.eventsRegistered then
+		frame:RegisterEvent("PLAYER_LOGIN")
+		frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+		frame:RegisterEvent("PLAYER_TARGET_CHANGED")
+		frame:RegisterEvent("PLAYER_TOTEM_UPDATE")
+		frame:RegisterUnitEvent("UNIT_AURA", "player", "target")
+		frame:RegisterUnitEvent("PLAYER_SPECIALIZATION_CHANGED", "player")
+		self.eventsRegistered = true
+	end
+
+	return true
+end
+
 function CDMAuras:RebuildTrackedPanelIndex()
 	local runtime = getRuntime()
 	clearTrackedPanelIndex(runtime)
+	if not self:HasActiveTrackedPanels() then return end
 
 	local root = CooldownPanels.GetRoot and CooldownPanels:GetRoot() or nil
 	if not (root and root.panels) then return end
 
 	local enabledPanels = CooldownPanels.runtime and CooldownPanels.runtime.enabledPanels or nil
-	local useEnabledFilter = enabledPanels and next(enabledPanels) ~= nil
+	local useEnabledFilter = enabledPanels ~= nil
 	local _, byCooldownID, bySpellID = self:ScanTrackedBuffs(false)
 
 	for panelId, panel in pairs(root.panels) do
-		local panelEnabled = useEnabledFilter and enabledPanels[panelId] or (panel and panel.enabled ~= false)
+		local panelEnabled = useEnabledFilter and enabledPanels[panelId] == true or (panel and panel.enabled ~= false)
 		if panelEnabled and panel and panel.entries then
 			for entryId, entry in pairs(panel.entries) do
 				if entry and entry.type == ENTRY_TYPE then
@@ -641,39 +703,38 @@ function CDMAuras:RebuildTrackedPanelIndex()
 	end
 end
 
-local function isFrameShowingTrackedSpell(frame, entry)
+local function isFrameShowingTrackedSpell(frame, entry, trackedUnit)
 	if not (frame and entry and entry.spellID) then return true end
 	local trackedSpellID = entry.spellID
+	local strictMatch = normalizeTrackedUnit(trackedUnit) == "target"
 	if type(frame.SpellIDMatchesAnyAssociatedSpellIDs) == "function" then
 		local ok, matches = pcall(frame.SpellIDMatchesAnyAssociatedSpellIDs, frame, trackedSpellID)
 		if ok then return matches == true end
 	end
-	local hadSecretComparison = false
 	local sawAssociatedSpellID = false
-	local sawLinkedSpellList = false
+	local sawSecretLinkedSpellID = false
 
-	local function matchesSpellID(candidateSpellID)
+	local function matchesSpellID(candidateSpellID, source)
 		if not candidateSpellID then return false end
 		sawAssociatedSpellID = true
 		local ok, matches = pcall(function() return candidateSpellID == trackedSpellID end)
 		if ok then return matches end
-		hadSecretComparison = true
+		if source == "linkedSpellID" then sawSecretLinkedSpellID = true end
 		return false
 	end
 
-	if matchesSpellID(frame.auraSpellID) then return true end
+	if matchesSpellID(frame.auraSpellID, "auraSpellID") then return true end
 
 	local function checkCooldownInfo(info)
 		if not info then return false end
-		if matchesSpellID(info.linkedSpellID) then return true end
-		if matchesSpellID(info.overrideTooltipSpellID) then return true end
-		if matchesSpellID(info.overrideSpellID) then return true end
-		if matchesSpellID(info.spellID) then return true end
+		if matchesSpellID(info.linkedSpellID, "linkedSpellID") then return true end
+		if matchesSpellID(info.overrideTooltipSpellID, "overrideTooltipSpellID") then return true end
+		if matchesSpellID(info.overrideSpellID, "overrideSpellID") then return true end
+		if matchesSpellID(info.spellID, "spellID") then return true end
 		local linkedSpellIDs = info.linkedSpellIDs
 		if type(linkedSpellIDs) == "table" then
-			sawLinkedSpellList = true
 			for i = 1, #linkedSpellIDs do
-				if matchesSpellID(linkedSpellIDs[i]) then return true end
+				if matchesSpellID(linkedSpellIDs[i], "linkedSpellIDs") then return true end
 			end
 		end
 		return false
@@ -681,9 +742,9 @@ local function isFrameShowingTrackedSpell(frame, entry)
 
 	if checkCooldownInfo(frame.cooldownInfo) then return true end
 	if checkCooldownInfo(getCooldownViewerInfo(entry.cooldownID)) then return true end
-	if not sawAssociatedSpellID then return true end
-	if hadSecretComparison and not sawLinkedSpellList then return true end
-	return false
+	if sawSecretLinkedSpellID then return true end
+	if strictMatch then return false end
+	return not sawAssociatedSpellID
 end
 
 local function getFrameAuraUnit(frame)
@@ -725,10 +786,12 @@ function CDMAuras:HandleFrameAuraMutation(frame, wasCleared)
 				clearAuraMapping(runtime, key, state, false)
 				state.trackedAuraInstanceID = nil
 				state.trackedAuraUnit = nil
-			elseif newAuraID and isFrameShowingTrackedSpell(frame, entry) then
+				state.targetAuraEpoch = nil
+			elseif newAuraID and isFrameShowingTrackedSpell(frame, entry, state.trackUnit or auraUnit) then
 				state.trackUnit = normalizeTrackedUnit(auraUnit) or state.trackUnit
 				state.trackedAuraInstanceID = newAuraID
 				state.trackedAuraUnit = auraUnit or state.trackedAuraUnit
+				if normalizeTrackedUnit(auraUnit) == "target" then state.targetAuraEpoch = runtime.targetEpoch or 0 end
 				registerAuraMapping(runtime, key, state, newAuraID, auraUnit)
 			end
 			refreshedPanels[state.panelId] = true
@@ -1038,6 +1101,7 @@ end
 
 function CDMAuras:HandleRootRefresh()
 	self:SweepInvalidStates()
+	if not self:UpdateEventRegistration() then return end
 	self:RebuildTrackedPanelIndex()
 end
 
@@ -1058,6 +1122,7 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry)
 			mappedAuraUnit = nil,
 			trackedAuraInstanceID = nil,
 			trackedAuraUnit = nil,
+			targetAuraEpoch = nil,
 			trackUnit = nil,
 			lastActive = nil,
 		}
@@ -1117,8 +1182,10 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry)
 	local auraData
 	local auraUnit
 	local auraInstanceID
+	local targetEpoch = runtime.targetEpoch or 0
+	local canUseTargetAuraCache = normalizeTrackedUnit(state.trackUnit) ~= "target" or state.targetAuraEpoch == targetEpoch
 
-	if chosenFrame and isFrameShowingTrackedSpell(chosenFrame, entry) then
+	if chosenFrame and canUseTargetAuraCache and isFrameShowingTrackedSpell(chosenFrame, entry, state.trackUnit) then
 		local currentAuraData, currentAuraUnit, currentAuraID = getFrameAuraData(chosenFrame)
 		if currentAuraData then
 			auraData = currentAuraData
@@ -1128,11 +1195,12 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry)
 				state.trackUnit = normalizeTrackedUnit(auraUnit) or state.trackUnit
 				state.trackedAuraInstanceID = auraInstanceID
 				state.trackedAuraUnit = auraUnit
+				if normalizeTrackedUnit(auraUnit) == "target" then state.targetAuraEpoch = targetEpoch end
 			end
 		end
 	end
 
-	if not auraData and hasAuraInstanceID(state.trackedAuraInstanceID) and state.trackedAuraUnit then
+	if not auraData and canUseTargetAuraCache and hasAuraInstanceID(state.trackedAuraInstanceID) and state.trackedAuraUnit then
 		local cachedAuraData = C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID and C_UnitAuras.GetAuraDataByAuraInstanceID(state.trackedAuraUnit, state.trackedAuraInstanceID)
 		if cachedAuraData then
 			auraData = cachedAuraData
@@ -1142,6 +1210,7 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry)
 		else
 			state.trackedAuraInstanceID = nil
 			state.trackedAuraUnit = nil
+			state.targetAuraEpoch = nil
 		end
 	end
 
@@ -1298,6 +1367,7 @@ function CDMAuras:HandleUnitAura(_, unit, updateInfo)
 						if state.trackedAuraInstanceID == auraID and normalizeTrackedUnit(state.trackedAuraUnit) == unit then
 							state.trackedAuraInstanceID = nil
 							state.trackedAuraUnit = nil
+							if unit == "target" then state.targetAuraEpoch = nil end
 						end
 						state.mappedAuraInstanceID = nil
 						state.mappedAuraUnit = nil
@@ -1315,6 +1385,9 @@ function CDMAuras:HandleUnitAura(_, unit, updateInfo)
 end
 
 function CDMAuras:HandleTargetChanged()
+	local runtime = getRuntime()
+	runtime.targetEpoch = (runtime.targetEpoch or 0) + 1
+	self:InvalidateScan()
 	clearTrackedUnitAuras("target")
 	refreshAllTrackedPanels("target")
 end
@@ -1342,12 +1415,6 @@ end
 function CDMAuras:EnsureEventFrame()
 	if self.eventFrame then return end
 	local frame = CreateFrame("Frame")
-	frame:RegisterEvent("PLAYER_LOGIN")
-	frame:RegisterEvent("PLAYER_ENTERING_WORLD")
-	frame:RegisterEvent("PLAYER_TARGET_CHANGED")
-	frame:RegisterEvent("PLAYER_TOTEM_UPDATE")
-	frame:RegisterUnitEvent("UNIT_AURA", "player", "target")
-	frame:RegisterUnitEvent("PLAYER_SPECIALIZATION_CHANGED", "player")
 	frame:SetScript("OnEvent", function(_, event, ...)
 		if event == "UNIT_AURA" then
 			CDMAuras:HandleUnitAura(event, ...)
@@ -1361,5 +1428,3 @@ function CDMAuras:EnsureEventFrame()
 	end)
 	self.eventFrame = frame
 end
-
-CDMAuras:EnsureEventFrame()

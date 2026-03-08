@@ -2054,9 +2054,9 @@ function CooldownPanels:RemoveEntry(panelId, entryId)
 	local runtime = CooldownPanels.runtime
 	if runtime and runtime.actionDisplayCounts then runtime.actionDisplayCounts[Helper.GetEntryKey(panelId, entryId)] = nil end
 	Helper.SyncOrder(panel.order, panel.entries)
+	self:RebuildSpellIndex()
 	local cdmAuras = CooldownPanels.CDMAuras
 	if cdmAuras and cdmAuras.HandleRootRefresh then cdmAuras:HandleRootRefresh() end
-	self:RebuildSpellIndex()
 	self:RefreshPanel(panelId)
 end
 
@@ -2108,6 +2108,8 @@ function CooldownPanels:RebuildSpellIndex()
 	if updateRangeCheckSpells then updateRangeCheckSpells(rangeCheckSpells) end
 	self:RebuildPowerIndex()
 	self:RebuildChargesIndex()
+	local cdmAuras = self.CDMAuras
+	if cdmAuras and cdmAuras.UpdateEventRegistration then cdmAuras:UpdateEventRegistration() end
 	if self.UpdateEventRegistration then self:UpdateEventRegistration() end
 	return index
 end
@@ -2246,9 +2248,9 @@ function CooldownPanels:NormalizeAll()
 			end
 		end
 	end
+	self:RebuildSpellIndex()
 	local cdmAuras = CooldownPanels.CDMAuras
 	if cdmAuras and cdmAuras.HandleRootRefresh then cdmAuras:HandleRootRefresh() end
-	self:RebuildSpellIndex()
 end
 
 function CooldownPanels:AddEntrySafe(panelId, entryType, idValue, overrides)
@@ -13270,12 +13272,7 @@ local function setRangeOverlayForSpell(spellIdentifier, isInRange, checksRange)
 	return true
 end
 
-local function runRebuild()
-	local rt = CooldownPanels.runtime
-	if not rt then return end
-	rt.specRebuildPending = nil
-	local cause = rt.specRebuildCause
-	rt.specRebuildCause = nil
+local function performSpecAwareRebuild(cause)
 	CooldownPanels:RebuildSpellIndex()
 	Keybinds.InvalidateCache()
 	CooldownPanels:RequestUpdate({
@@ -13284,17 +13281,32 @@ local function runRebuild()
 	})
 end
 
-local function scheduleSpecAwareRebuild(event)
+local function runDelayedSpecAwareRebuild()
+	local rt = CooldownPanels.runtime
+	if not rt then return end
+	rt.specRebuildPending = nil
+	rt.specRebuildImmediateDone = nil
+	local cause = rt.specRebuildCause
+	rt.specRebuildCause = nil
+	performSpecAwareRebuild(cause)
+end
+
+local function scheduleSpecAwareRebuild(event, immediate)
 	CooldownPanels.runtime = CooldownPanels.runtime or {}
 	local runtime = CooldownPanels.runtime
 	runtime.specRebuildCause = "Event:" .. tostring(event or "Unknown")
+
+	if immediate == true and runtime.specRebuildImmediateDone ~= true then
+		runtime.specRebuildImmediateDone = true
+		performSpecAwareRebuild(runtime.specRebuildCause .. ":Immediate")
+	end
+
 	if runtime.specRebuildPending then return end
 	runtime.specRebuildPending = true
-
-	C_Timer.After(1, runRebuild)
+	C_Timer.After(1, runDelayedSpecAwareRebuild)
 end
 
-local UPDATE_FRAME_EVENTS = {
+CooldownPanels.UPDATE_FRAME_EVENTS = {
 	"PLAYER_ENTERING_WORLD",
 	"PLAYER_LOGIN",
 	"ADDON_LOADED",
@@ -13423,7 +13435,7 @@ local function setUpdateFrameEnabled(frame, enabled)
 	if not frame then return end
 	if enabled then
 		if frame._eqolEventsRegistered then return end
-		for _, event in ipairs(UPDATE_FRAME_EVENTS) do
+		for _, event in ipairs(CooldownPanels.UPDATE_FRAME_EVENTS or {}) do
 			frame:RegisterEvent(event)
 		end
 		frame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
@@ -13641,17 +13653,17 @@ local function ensureUpdateFrame()
 			return
 		end
 		if event == "SPELLS_CHANGED" then
-			scheduleSpecAwareRebuild(event)
+			scheduleSpecAwareRebuild(event, false)
 			return
 		end
 		if event == "PLAYER_SPECIALIZATION_CHANGED" then
 			local unit = ...
 			if unit and unit ~= "player" then return end
-			scheduleSpecAwareRebuild(event)
+			scheduleSpecAwareRebuild(event, true)
 			return
 		end
 		if event == "ACTIVE_PLAYER_SPECIALIZATION_CHANGED" or event == "PLAYER_TALENT_UPDATE" or event == "ACTIVE_TALENT_GROUP_CHANGED" then
-			scheduleSpecAwareRebuild(event)
+			scheduleSpecAwareRebuild(event, true)
 			return
 		end
 		if event == "UNIT_SPELLCAST_SUCCEEDED" then

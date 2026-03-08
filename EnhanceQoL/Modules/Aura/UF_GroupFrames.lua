@@ -1156,12 +1156,25 @@ local function applyGroupIndicatorAnchor(fs, anchor, offset, scale, parent)
 	if justify and fs.SetJustifyH then fs:SetJustifyH(justify) end
 end
 
-local function stopDispelGlow(frame)
+local function stopDispelGlow(frame, effect)
 	if not (LCG and frame) then return end
-	if LCG.PixelGlow_Stop then LCG.PixelGlow_Stop(frame, DISPEL_GLOW_KEY) end
-	if LCG.AutoCastGlow_Stop then LCG.AutoCastGlow_Stop(frame, DISPEL_GLOW_KEY) end
-	if LCG.ProcGlow_Stop then LCG.ProcGlow_Stop(frame, DISPEL_GLOW_KEY) end
-	if LCG.ButtonGlow_Stop then LCG.ButtonGlow_Stop(frame) end
+	if effect == "SHINE" then
+		if LCG.AutoCastGlow_Stop then LCG.AutoCastGlow_Stop(frame, DISPEL_GLOW_KEY) end
+	elseif effect == "PROC" then
+		if LCG.ProcGlow_Stop then LCG.ProcGlow_Stop(frame, DISPEL_GLOW_KEY) end
+	elseif effect == "BLIZZARD" then
+		if LCG.ButtonGlow_Stop then LCG.ButtonGlow_Stop(frame) end
+	else
+		if LCG.PixelGlow_Stop then LCG.PixelGlow_Stop(frame, DISPEL_GLOW_KEY) end
+	end
+end
+
+local function stopTrackedDispelGlow(st, frame)
+	if not (st and st._dispelGlowActive) then return end
+	local effect = st._dispelGlowEffect
+	st._dispelGlowActive = nil
+	st._dispelGlowEffect = nil
+	stopDispelGlow(frame, effect)
 end
 
 local function resolveDispelIndicatorEnabled(cfg, kind)
@@ -3276,7 +3289,7 @@ function GF:BuildButton(self)
 		self:HookScript("OnHide", function(btn)
 			local s = getState(btn)
 			hideDispelTint(s)
-			stopDispelGlow((s and s.barGroup) or btn)
+			stopTrackedDispelGlow(s, (s and s.barGroup) or btn)
 		end)
 	end
 
@@ -5821,7 +5834,7 @@ function GF:UpdateDispelTint(self, cache, dispelFilter, allowSample, requiredFla
 	if glowEnabled == nil then glowEnabled = defDispel.glowEnabled == true end
 	if not overlayEnabled and not glowEnabled then
 		hideDispelTint(st)
-		stopDispelGlow(st.barGroup or self)
+		stopTrackedDispelGlow(st, st.barGroup or self)
 		return
 	end
 	if allowSample then
@@ -5829,7 +5842,7 @@ function GF:UpdateDispelTint(self, cache, dispelFilter, allowSample, requiredFla
 		if showSample == nil then showSample = defDispel.showSample == true end
 		if not showSample then
 			hideDispelTint(st)
-			stopDispelGlow(st.barGroup or self)
+			stopTrackedDispelGlow(st, st.barGroup or self)
 			return
 		end
 	end
@@ -5919,7 +5932,7 @@ function GF:UpdateDispelTint(self, cache, dispelFilter, allowSample, requiredFla
 	if glowEnabled then
 		GF:UpdateDispelGlow(self, r, g, b)
 	else
-		stopDispelGlow(st.barGroup or self)
+		stopTrackedDispelGlow(st, st.barGroup or self)
 	end
 end
 
@@ -5935,11 +5948,11 @@ function GF:UpdateDispelGlow(self, r, g, b)
 	local glowEnabled = dcfg.glowEnabled
 	if glowEnabled == nil then glowEnabled = defDispel.glowEnabled == true end
 	if not glowEnabled then
-		stopDispelGlow(st.barGroup or self)
+		stopTrackedDispelGlow(st, st.barGroup or self)
 		return
 	end
 	if not (r and g and b) then
-		stopDispelGlow(st.barGroup or self)
+		stopTrackedDispelGlow(st, st.barGroup or self)
 		return
 	end
 
@@ -5964,15 +5977,23 @@ function GF:UpdateDispelGlow(self, r, g, b)
 	end
 
 	local target = st.barGroup or self
-	stopDispelGlow(target)
+	local appliedEffect = effect
+	if appliedEffect == "SHINE" and not LCG.AutoCastGlow_Start then
+		appliedEffect = "PIXEL"
+	elseif appliedEffect == "BLIZZARD" and not LCG.ButtonGlow_Start then
+		appliedEffect = "PIXEL"
+	end
+	if st._dispelGlowActive and st._dispelGlowEffect ~= appliedEffect then stopTrackedDispelGlow(st, target) end
 	local glowColor = { cr, cg, cb, 1 }
-	if effect == "SHINE" and LCG.AutoCastGlow_Start then
+	if appliedEffect == "SHINE" and LCG.AutoCastGlow_Start then
 		LCG.AutoCastGlow_Start(target, glowColor, lines, freq, scale, xoff, yoff, DISPEL_GLOW_KEY)
-	elseif effect == "BLIZZARD" and LCG.ButtonGlow_Start then
+	elseif appliedEffect == "BLIZZARD" and LCG.ButtonGlow_Start then
 		LCG.ButtonGlow_Start(target, glowColor, freq)
 	else
 		LCG.PixelGlow_Start(target, glowColor, lines, freq, nil, thickness, xoff, yoff, nil, DISPEL_GLOW_KEY)
 	end
+	st._dispelGlowActive = true
+	st._dispelGlowEffect = appliedEffect
 end
 
 function GF:UpdateRange(self, inRange)
@@ -6728,7 +6749,7 @@ function GF:UnitButton_ClearUnit(self)
 	if st then
 		GFH.CancelReadyCheckIconTimer(st)
 		hideDispelTint(st)
-		stopDispelGlow(st.barGroup or self)
+		stopTrackedDispelGlow(st, st.barGroup or self)
 		st._guid = nil
 		st._unitToken = nil
 		st._class = nil

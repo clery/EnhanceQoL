@@ -6,11 +6,13 @@ addon.variables.NewVersionTableEQOL = {
 	["EQOL_GAMEPLAY"] = true,
 	["EQOL_PROFILES"] = true,
 	["EQOL_UI"] = true,
+	["EQOL_ECONOMY"] = true,
 
 	-- Expandable section id in Settings/ClassBuffReminder.lua
 	["EQOL_ProfilesAddOn"] = true,
 	["EQOL_DungeonsMythicPlus"] = true,
 	["EQOL_MapNavigation"] = true,
+	["EQOL_EconomyCraftingOrders"] = true,
 
 	-- Feature setting keys
 	["EQOL_globalFontFace"] = true,
@@ -18,4 +20,5 @@ addon.variables.NewVersionTableEQOL = {
 	["EQOL_Teleports"] = true,
 	["EQOL_mythicPlusBloodlustTrackerEnabled"] = true,
 	["EQOL_squareMinimapStatsTrackingButton"] = true,
+	["EQOL_alwaysUserCurExpCraftingOrders"] = true,
 }

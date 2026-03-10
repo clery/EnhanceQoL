@@ -3833,6 +3833,7 @@ local function initUI()
 	addon.functions.InitDBValue("squareMinimapStatsTimeOffsetY", 17)
 	addon.functions.InitDBValue("squareMinimapStatsTimeFontSize", 18)
 	addon.functions.InitDBValue("squareMinimapStatsTimeColor", { r = 1, g = 1, b = 1, a = 1 })
+	addon.functions.InitDBValue("squareMinimapStatsTimeUseClassColor", false)
 	addon.functions.InitDBValue("squareMinimapStatsTimeDisplayMode", "server")
 	addon.functions.InitDBValue("squareMinimapStatsTimeUse24Hour", true)
 	addon.functions.InitDBValue("squareMinimapStatsTimeShowSeconds", false)
@@ -3842,6 +3843,7 @@ local function initUI()
 	addon.functions.InitDBValue("squareMinimapStatsFPSOffsetY", 3)
 	addon.functions.InitDBValue("squareMinimapStatsFPSFontSize", 12)
 	addon.functions.InitDBValue("squareMinimapStatsFPSColor", { r = 1, g = 1, b = 1, a = 1 })
+	addon.functions.InitDBValue("squareMinimapStatsFPSUseClassColor", false)
 	addon.functions.InitDBValue("squareMinimapStatsFPSThresholdMedium", 30)
 	addon.functions.InitDBValue("squareMinimapStatsFPSThresholdHigh", 60)
 	addon.functions.InitDBValue("squareMinimapStatsFPSColorLow", { r = 1, g = 0, b = 0, a = 1 })
@@ -3854,6 +3856,7 @@ local function initUI()
 	addon.functions.InitDBValue("squareMinimapStatsLatencyOffsetY", 3)
 	addon.functions.InitDBValue("squareMinimapStatsLatencyFontSize", 12)
 	addon.functions.InitDBValue("squareMinimapStatsLatencyColor", { r = 1, g = 1, b = 1, a = 1 })
+	addon.functions.InitDBValue("squareMinimapStatsLatencyUseClassColor", false)
 	addon.functions.InitDBValue("squareMinimapStatsLatencyMode", "max")
 	addon.functions.InitDBValue("squareMinimapStatsLatencyThresholdLow", 50)
 	addon.functions.InitDBValue("squareMinimapStatsLatencyThresholdMid", 150)
@@ -3867,6 +3870,7 @@ local function initUI()
 	addon.functions.InitDBValue("squareMinimapStatsLocationOffsetY", -3)
 	addon.functions.InitDBValue("squareMinimapStatsLocationFontSize", 12)
 	addon.functions.InitDBValue("squareMinimapStatsLocationColor", { r = 1, g = 1, b = 1, a = 1 })
+	addon.functions.InitDBValue("squareMinimapStatsLocationUseClassColor", false)
 	addon.functions.InitDBValue("squareMinimapStatsLocationShowSubzone", false)
 	addon.functions.InitDBValue("squareMinimapStatsLocationSubzoneBelowZone", false)
 	addon.functions.InitDBValue("squareMinimapStatsLocationUseZoneColor", true)
@@ -3876,12 +3880,14 @@ local function initUI()
 	addon.functions.InitDBValue("squareMinimapStatsCoordinatesOffsetY", -17)
 	addon.functions.InitDBValue("squareMinimapStatsCoordinatesFontSize", 12)
 	addon.functions.InitDBValue("squareMinimapStatsCoordinatesColor", { r = 1, g = 1, b = 1, a = 1 })
+	addon.functions.InitDBValue("squareMinimapStatsCoordinatesUseClassColor", false)
 	addon.functions.InitDBValue("squareMinimapStatsCoordinatesHideInInstance", true)
 	addon.functions.InitDBValue("squareMinimapStatsCoordinatesUpdateInterval", 0.2)
 	addon.functions.InitDBValue("squareMinimapStatsTrackingButton", false)
 	addon.functions.InitDBValue("squareMinimapStatsTrackingButtonAnchor", "TOPLEFT")
 	addon.functions.InitDBValue("squareMinimapStatsTrackingButtonOffsetX", 3)
 	addon.functions.InitDBValue("squareMinimapStatsTrackingButtonOffsetY", -3)
+	addon.functions.InitDBValue("squareMinimapStatsTrackingButtonShowBackground", true)
 	addon.functions.InitDBValue("squareMinimapStatsTrackingButtonScale", 1.0)
 	addon.functions.InitDBValue("minimapButtonsMouseover", false)
 	addon.functions.InitDBValue("unclampMinimapCluster", false)
@@ -3894,6 +3900,7 @@ local function initUI()
 	addon.functions.InitDBValue("hiddenMinimapElements", addon.db["hiddenMinimapElements"] or {})
 	addon.functions.InitDBValue("persistAuctionHouseFilter", false)
 	addon.functions.InitDBValue("alwaysUserCurExpAuctionHouse", false)
+	addon.functions.InitDBValue("alwaysUserCurExpCraftingOrders", false)
 	addon.functions.InitDBValue("enableExtendedMerchant", false)
 	addon.functions.InitDBValue("showInstanceDifficulty", false)
 	-- anchor no longer used; position controlled by offsets from CENTER
@@ -5869,6 +5876,26 @@ local function loadSubAddon(name)
 	end
 end
 
+local function applyCurrentExpansionCraftingOrdersFilter(remainingRetries)
+	if not addon.db["alwaysUserCurExpCraftingOrders"] then return end
+	if not (Enum and Enum.AuctionHouseFilter and Enum.AuctionHouseFilter.CurrentExpansionOnly) then return end
+
+	C_Timer.After(0, function()
+		local frame = _G["ProfessionsCustomerOrdersFrame"]
+		local browseOrders = frame and frame.BrowseOrders
+		local searchBar = browseOrders and browseOrders.SearchBar
+		local filterDropdown = searchBar and searchBar.FilterDropdown
+
+		if not filterDropdown or type(filterDropdown.filters) ~= "table" then
+			if (remainingRetries or 0) > 0 then applyCurrentExpansionCraftingOrdersFilter((remainingRetries or 0) - 1) end
+			return
+		end
+
+		filterDropdown.filters[Enum.AuctionHouseFilter.CurrentExpansionOnly] = true
+		if filterDropdown.ValidateResetState then filterDropdown:ValidateResetState() end
+	end)
+end
+
 local eventHandlers = {
 	["ACTIVE_PLAYER_SPECIALIZATION_CHANGED"] = function(arg1)
 		addon.variables.unitSpec = C_SpecializationInfo.GetSpecialization()
@@ -6360,6 +6387,9 @@ local eventHandlers = {
 		else
 			addon.variables.safedAuctionFilters = nil
 		end
+	end,
+	["CRAFTINGORDERS_SHOW_CUSTOMER"] = function()
+		applyCurrentExpansionCraftingOrdersFilter(3)
 	end,
 	["CINEMATIC_START"] = function()
 		if addon.db["autoCancelCinematic"] and not addon.db["quickSkipCinematic"] then

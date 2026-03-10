@@ -1181,6 +1181,7 @@ L["squareMinimapStatsAnchorBottom"] = "Bottom"
 L["squareMinimapStatsAnchorBottomRight"] = "Bottom Right"
 L["squareMinimapStatsFontSize"] = "Font size"
 L["squareMinimapStatsColor"] = "Text color"
+L["squareMinimapStatsUseClassColor"] = "Use class color"
 L["squareMinimapStatsFont"] = "Font (all stats)"
 L["squareMinimapStatsOutline"] = "Outline (all stats)"
 L["squareMinimapStatsUpdateInterval"] = "Update interval (s)"
@@ -1207,6 +1208,7 @@ L["squareMinimapStatsLocationShowZone"] = "Show zone"
 L["squareMinimapStatsLocationShowSubzone"] = "Show subzone"
 L["squareMinimapStatsLocationSubzoneBelowZone"] = "Show subzone below zone"
 L["squareMinimapStatsLocationUseZoneColor"] = "Use zone color"
+L["squareMinimapStatsTrackingButtonShowBackground"] = "Show border/background"
 L["squareMinimapStatsCoordinatesHideInInstance"] = "Hide in instances"
 L["squareMinimapStatsCoordinatesDecimals"] = "Precision (decimals)"
 L["minimapButtonsMouseover"] = "Hide addon buttons until mouseover"
@@ -1298,6 +1300,7 @@ L["wayErrorPlacePing"] = "You can't place a waypoint here"
 
 L["persistAuctionHouseFilter"] = "Remember Auction House filters for this session"
 L["alwaysUserCurExpAuctionHouse"] = 'Always set the filter for "%s"'
+L["alwaysUserCurExpCraftingOrders"] = 'Always set the filter for "%s" on Crafting Orders'
 
 L["Excluded NPCs"] = "Excluded NPCs"
 L["Presence"] = "Presence"

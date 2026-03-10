@@ -10238,6 +10238,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			local cooldownActive = data.showCooldown and (durationActive or (cooldownEnabledOk and isCooldownActive(cooldownStart, cooldownDuration)))
 			local usingCooldown = false
 			local desaturate = false
+			local dimAlpha = false
 			local hidden = false
 			local entryNoDesaturation = data.noDesaturation == true
 			local entryDrawEdge = data.cooldownDrawEdge ~= false
@@ -10265,6 +10266,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 					end
 				end
 				if usingCooldown then
+					dimAlpha = true
 					if isSafeNumber(data.chargesInfo.currentCharges) then
 						desaturate = data.chargesInfo.currentCharges == 0
 						if hideOnCooldown or showOnCooldown then hidden = desaturate end
@@ -10302,7 +10304,10 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				end
 			end
 
-			if data.emptyItem then desaturate = true end
+			if data.emptyItem then
+				desaturate = true
+				dimAlpha = true
+			end
 
 			if not isSafeNumber(cooldownRate) then cooldownRate = 1 end
 			setIconDesaturated(icon.texture, desaturate, entryNoDesaturation)
@@ -10341,6 +10346,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 					-- only when you have zero charges SCD will be true CCD is always true when one charge is missing
 					if cooldownDurationObject then
 						if data.cooldownGCD then
+							dimAlpha = false
 							if data.showChargesCooldown then
 								local entrySpellId = data.entry and data.entry.spellID
 								local effectiveId = entrySpellId and getEffectiveSpellId(entrySpellId) or entrySpellId
@@ -10354,6 +10360,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 							if icon.cooldown.SetScript then icon.cooldown:SetScript("OnCooldownDone", onCooldownDone) end
 							setCooldownDrawState(icon.cooldown, entryDrawEdge, entryDrawBling, entryDrawSwipe)
 							setIconDesaturation(icon.texture, cooldownDurationObject:EvaluateRemainingDuration(curveDesat), entryNoDesaturation)
+							dimAlpha = true
 							if hideOnCooldown then
 								icon:SetAlpha(cooldownDurationObject:EvaluateRemainingDuration(curveAlpha))
 							elseif showOnCooldown then
@@ -10379,6 +10386,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 							icon:SetAlpha(0)
 						end
 						desaturate = false
+						dimAlpha = false
 						hidden = false
 						setCooldownDrawState(icon.cooldown, entryGcdDrawEdge, entryGcdDrawBling, entryGcdDrawSwipe)
 					else
@@ -10386,6 +10394,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 
 						local desat = cooldownDurationObject:EvaluateRemainingDuration(curveDesat)
 						setIconDesaturation(icon.texture, desat, entryNoDesaturation)
+						dimAlpha = true
 						if hideOnCooldown then
 							icon:SetAlpha(cooldownDurationObject:EvaluateRemainingDuration(curveAlpha))
 						elseif showOnCooldown then
@@ -10422,6 +10431,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				elseif cooldownActive then
 					icon.cooldown:SetCooldown(cooldownStart, cooldownDuration, cooldownRate)
 					desaturate = true
+					dimAlpha = true
 					setIconDesaturated(icon.texture, desaturate, entryNoDesaturation)
 					if hideOnCooldown then
 						icon:SetAlpha(0)
@@ -10458,7 +10468,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				setExampleCooldown(icon.cooldown)
 				icon:SetAlpha(1)
 			end
-			if not hidden then icon.texture:SetAlphaFromBoolean((not entryNoDesaturation) and desaturate, 0.5, 1) end
+			if not hidden then icon.texture:SetAlphaFromBoolean((not entryNoDesaturation) and dimAlpha, 0.5, 1) end
 			if data.spellUnusable then
 				icon.texture:SetVertexColor(unusableTintR or 0.6, unusableTintG or 0.6, unusableTintB or 0.6)
 			elseif data.powerInsufficient then

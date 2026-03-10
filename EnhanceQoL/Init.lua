@@ -620,8 +620,6 @@ addon.variables.shouldSocketed = {
 	[2] = 2,
 	[6] = 1,
 	[9] = 1,
-	[11] = 2,
-	[12] = 2,
 }
 addon.variables.shouldSocketedChecks = {
 	-- Helm - can be bought for PvP with Honor (farmable)
@@ -651,20 +649,6 @@ addon.variables.shouldSocketedChecks = {
 			if not cSeason then return false end
 			if isPvP then return true end
 			return false
-		end,
-	},
-	[11] = {
-		func = function(cSeason, isPvP)
-			if not cSeason then return false end
-			-- item for PvE and PvP is purchaseble
-			return true
-		end,
-	},
-	[12] = {
-		func = function(cSeason, isPvP)
-			if not cSeason then return false end
-			-- item for PvE and PvP is purchaseble
-			return true
 		end,
 	},
 }

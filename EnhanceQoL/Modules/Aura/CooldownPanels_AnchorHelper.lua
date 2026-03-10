@@ -286,3 +286,17 @@ AnchorHelper:RegisterProvider("elvui", {
 	end,
 	resolveFrame = function(relativeName) return _G[relativeName] end,
 })
+
+AnchorHelper:RegisterProvider("dragonrider", {
+	addonName = "DragonRider",
+	anchors = {
+		{ key = "DragonRider_Vigor", label = "DragonRider: Vigor Bar" },
+		{ key = "DragonRider_Speedometer", label = "DragonRider: Speedometer" },
+	},
+	framesAvailable = function()
+		local g = _G
+		if not g then return false end
+		return (g.DragonRider_Vigor or g.DragonRider_Speedometer) and true or false
+	end,
+	resolveFrame = function(relativeName) return _G[relativeName] end,
+})

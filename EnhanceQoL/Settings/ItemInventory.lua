@@ -534,7 +534,7 @@ local function onInspect(arg1)
 									if (statName:find("EMPTY_SOCKET") or statName:find("empty_socket")) and addon.variables.allowedSockets[statName] then socketCount = socketCount + statValue end
 								end
 								local neededSockets = addon.variables.shouldSocketed[key] or 0
-								if neededSockets then
+								if neededSockets > 0 then
 									local cSeason, isPvP = getTooltipInfo(itemLink)
 									if addon.variables.shouldSocketedChecks[key] then
 										if not addon.variables.shouldSocketedChecks[key].func(cSeason, isPvP) then neededSockets = 0 end
@@ -757,7 +757,7 @@ local function setIlvlText(element, slot)
 						if (statName:find("EMPTY_SOCKET") or statName:find("empty_socket")) and addon.variables.allowedSockets[statName] then socketCount = socketCount + statValue end
 					end
 					local neededSockets = addon.variables.shouldSocketed[slot] or 0
-					if neededSockets then
+					if neededSockets > 0 then
 						local cSeason, isPvP = getTooltipInfo(link)
 						if addon.variables.shouldSocketedChecks[slot] then
 							if not addon.variables.shouldSocketedChecks[slot].func(cSeason, isPvP) then neededSockets = 0 end

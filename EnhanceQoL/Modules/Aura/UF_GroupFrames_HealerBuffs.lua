@@ -173,14 +173,15 @@ HB.GROWTH_OPTIONS = GFH and GFH.auraGrowthOptions
 
 local FAMILY_DATA = {
 	-- Shared class buffs
-	{ id = "druid_mark_of_the_wild", classToken = "DRUID", spellIds = { 1126 }, fallbackName = "Mark of the Wild", ignoreForNpcUnits = true },
-	{ id = "mage_arcane_intellect", classToken = "MAGE", spellIds = { 1459 }, fallbackName = "Arcane Intellect", ignoreForNpcUnits = true },
-	{ id = "priest_power_word_fortitude", classToken = "PRIEST", spellIds = { 21562 }, fallbackName = "Power Word: Fortitude", ignoreForNpcUnits = true },
-	{ id = "warrior_battle_shout", classToken = "WARRIOR", spellIds = { 6673 }, fallbackName = "Battle Shout", ignoreForNpcUnits = true },
+	{ id = "druid_mark_of_the_wild", classToken = "DRUID", spellIds = { 1126 }, fallbackName = "Mark of the Wild", ignoreForNpcUnits = true, scanAllCasters = true },
+	{ id = "mage_arcane_intellect", classToken = "MAGE", spellIds = { 1459 }, fallbackName = "Arcane Intellect", ignoreForNpcUnits = true, scanAllCasters = true },
+	{ id = "priest_power_word_fortitude", classToken = "PRIEST", spellIds = { 21562 }, fallbackName = "Power Word: Fortitude", ignoreForNpcUnits = true, scanAllCasters = true },
+	{ id = "warrior_battle_shout", classToken = "WARRIOR", spellIds = { 6673 }, fallbackName = "Battle Shout", ignoreForNpcUnits = true, scanAllCasters = true },
 	{
 		id = "evoker_blessing_of_the_bronze",
 		classToken = "EVOKER",
 		ignoreForNpcUnits = true,
+		scanAllCasters = true,
 		spellIds = {
 			381732,
 			381741,
@@ -198,7 +199,7 @@ local FAMILY_DATA = {
 		},
 		fallbackName = "Blessing of the Bronze",
 	},
-	{ id = "shaman_skyfury", classToken = "SHAMAN", spellIds = { 462854 }, fallbackName = "Skyfury", ignoreForNpcUnits = true },
+	{ id = "shaman_skyfury", classToken = "SHAMAN", spellIds = { 462854 }, fallbackName = "Skyfury", ignoreForNpcUnits = true, scanAllCasters = true },
 
 	-- Preservation Evoker
 	{ id = "evoker_pres_dream_breath", classToken = "EVOKER", spec = "Preservation", spellIds = { 355941 }, fallbackName = "Dream Breath" },
@@ -623,6 +624,13 @@ function HB.GetFamilyFromSpell(spellId)
 	return SPELL_TO_FAMILY[tonumber(spellId)]
 end
 
+local function getFamilyDefaultScanAllCasters(familyId)
+	local family = familyId and FAMILY_BY_ID[tostring(familyId)] or nil
+	return family and family.scanAllCasters == true or false
+end
+
+function HB.GetFamilyScanAllCasters(familyId, source) return getFamilyDefaultScanAllCasters(familyId) end
+
 function HB.MarkPlacementDirty(cfgOrPlacement)
 	if type(cfgOrPlacement) ~= "table" then return end
 	local placement = cfgOrPlacement.healerBuffPlacement
@@ -825,6 +833,7 @@ function HB.EnsureConfig(cfg)
 	end
 	placement.groupsById = normalizedGroups
 	placement.groupOrder = normalizeOrder(placement.groupOrder, normalizedGroups)
+	placement.familyScanAllCasters = nil
 
 	local normalizedRules = {}
 	for key, rule in pairs(placement.rulesById) do
@@ -920,6 +929,8 @@ local function compile(kind, cfg)
 		groupToRuleIds = {},
 		groupToEnabledRuleIds = {},
 		familyToRuleIds = {},
+		enabledFamilies = {},
+		familyScanAllCastersById = {},
 		suppressedFamilies = {},
 		groupOrderByStyle = {
 			[STYLE_ICON] = {},
@@ -965,6 +976,11 @@ local function compile(kind, cfg)
 				end
 				byGroup[#byGroup + 1] = ruleId
 				if rule.enabled ~= false then
+					compiled.enabledFamilies[familyId] = true
+					if HB.GetFamilyScanAllCasters(familyId) then
+						compiled.familyScanAllCastersById[familyId] = true
+						compiled.needsWideHelpfulScan = true
+					end
 					local byGroupEnabled = compiled.groupToEnabledRuleIds[groupId]
 					if not byGroupEnabled then
 						byGroupEnabled = {}
@@ -1368,21 +1384,17 @@ local function isAuraFilteredByInstanceFilter(unit, aura, filter)
 	return not C_UnitAuras.IsAuraFilteredOutByInstanceID(unit, aura.auraInstanceID, filter)
 end
 
-local function isAuraFromPlayer(unit, aura, familyId)
+local function isAuraFromPlayer(unit, aura, familyId, compiled)
 	if aura == nil then return false end
-
-	local family = familyId and FAMILY_BY_ID[tostring(familyId)] or nil
-	if family and family.classToken ~= nil then
-		if not canPlayerProvideFamilyCached(familyId) then return false end
-		local isHarmful = aura.isHarmful
-		if issecretvalue and issecretvalue(isHarmful) then return false end
-		if not C_UnitAuras or not C_UnitAuras.IsAuraFilteredOutByInstanceID then return false end
-		return isAuraFilteredByInstanceFilter(unit, aura, isHarmful and HARMFUL_FILTER or HELPFUL_FILTER)
-	end
-
 	if not C_UnitAuras or not C_UnitAuras.IsAuraFilteredOutByInstanceID then return false end
+	local familyKey = familyId and tostring(familyId) or nil
+	local family = familyKey and FAMILY_BY_ID[familyKey] or nil
+	if family and family.classToken ~= nil and not canPlayerProvideFamilyCached(familyKey) then return false end
 	local isHarmful = aura.isHarmful
 	if issecretvalue and issecretvalue(isHarmful) then return false end
+	if familyKey and compiled and compiled.familyScanAllCastersById and compiled.familyScanAllCastersById[familyKey] == true then
+		return isAuraFilteredByInstanceFilter(unit, aura, isHarmful and HARMFUL_FILTER or HELPFUL_FILTER)
+	end
 	return isAuraFilteredByInstanceFilter(unit, aura, isHarmful and PLAYER_HARMFUL_FILTER or PLAYER_HELPFUL_FILTER)
 end
 
@@ -1393,8 +1405,9 @@ local function getFamilyForAura(compiled, aura, unit)
 	if issecretvalue and issecretvalue(spellId) then return nil end
 	local familyId = compiled.spellToFamily[tonumber(spellId)]
 	if familyId == nil then return nil end
+	if compiled.enabledFamilies and compiled.enabledFamilies[familyId] ~= true then return nil end
 	if shouldIgnoreFamilyForUnit(familyId, unit) then return nil end
-	if not isAuraFromPlayer(unit, aura, familyId) then return nil end
+	if not isAuraFromPlayer(unit, aura, familyId, compiled) then return nil end
 	return familyId
 end
 
@@ -2440,3 +2453,5 @@ function HB.GetCompiled(kind, cfg)
 	if not cfg then return nil end
 	return compile(kind, cfg)
 end
+
+function HB.CompiledNeedsWideHelpfulScan(compiled) return compiled and compiled.needsWideHelpfulScan == true or false end

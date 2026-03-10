@@ -317,6 +317,19 @@ local function getSchematic(recipeID, isRecraft)
 	return s
 end
 
+local function GetTrackedReagentItemID(slot)
+	if not slot or not slot.reagents then return nil end
+
+	local preferredReagent = slot.reagents[RANK_TO_USE]
+	if preferredReagent and preferredReagent.itemID and preferredReagent.itemID ~= 0 then return preferredReagent.itemID end
+
+	for _, reagent in ipairs(slot.reagents) do
+		if reagent.itemID and reagent.itemID ~= 0 then return reagent.itemID end
+	end
+
+	return nil
+end
+
 function BuildShoppingList()
 	local need = {} -- [itemID] = fehlende Menge
 	local multipliers = addon.Vendor.CraftShopper.multipliers or {}
@@ -328,23 +341,15 @@ function BuildShoppingList()
 			local mult = multipliers[recipeID] or 1
 			if schem and schem.reagentSlotSchematics then
 				for _, slot in ipairs(schem.reagentSlotSchematics) do
-					-- Nur Pflicht-Reagenzien, optional/finishing überspringen:
-					if slot.reagentType == Enum.CraftingReagentType.Basic then
+					-- Nur Pflicht-Reagenzien mit echter ItemID erfassen.
+					if slot.reagentType == Enum.CraftingReagentType.Basic and slot.required then
 						local reqQty = slot.quantityRequired * mult
-						-- gewünschte Qualitäts-ID holen:
-						local reagent = slot.reagents[RANK_TO_USE]
-						local id
-						if reagent and reagent.itemID ~= 0 then
-							id = reagent.itemID
+						local id = GetTrackedReagentItemID(slot)
+						if id then
 							need[id] = need[id] or {}
 							need[id].qty = (need[id].qty or 0) + reqQty
-						else
-							-- Fallback: Basis-ItemID (Qualität egal)
-							id = slot.reagents[1].itemID
-							need[id] = need[id] or {}
-							need[id].qty = (need[id].qty or 0) + reqQty
+							need[id].canAHBuy = isAHBuyable(id)
 						end
-						need[id].canAHBuy = isAHBuyable(id)
 					end
 				end
 			end

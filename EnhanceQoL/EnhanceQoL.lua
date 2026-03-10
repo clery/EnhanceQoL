@@ -4238,16 +4238,43 @@ local function initUI()
 	end
 	addon.functions.toggleQuickJoinToastButton(addon.db["hideQuickJoinToast"])
 
+	local function getAvailablePrimaryProfessionSlots()
+		if not GetProfessions then return 2 end
+		local profession1, profession2 = GetProfessions()
+		local remainingSlots = 2
+		if profession1 then remainingSlots = remainingSlots - 1 end
+		if profession2 then remainingSlots = remainingSlots - 1 end
+		return remainingSlots
+	end
+
+	local function canTrainAllService(index, remainingMoney, remainingProfessionSlots)
+		if not GetTrainerServiceInfo or not GetTrainerServiceCost then return false, 0, false end
+		local _, serviceType = GetTrainerServiceInfo(index)
+		if serviceType ~= "available" then return false, 0, false end
+
+		local price, isProfession = GetTrainerServiceCost(index)
+		price = price or 0
+
+		if isProfession and remainingProfessionSlots and remainingProfessionSlots <= 0 then return false, price, isProfession end
+
+		if remainingMoney and price > remainingMoney then return false, price, isProfession end
+
+		return true, price, isProfession
+	end
+
 	local function getTrainAllSummary()
-		if not GetNumTrainerServices or not GetTrainerServiceInfo then return 0, 0 end
+		if not GetNumTrainerServices then return 0, 0 end
 		local count, cost = 0, 0
 		local numServices = GetNumTrainerServices() or 0
+		local remainingMoney = GetMoney and GetMoney() or 0
+		local remainingProfessionSlots = getAvailablePrimaryProfessionSlots()
 		for i = 1, numServices do
-			local _, serviceType = GetTrainerServiceInfo(i)
-			if serviceType == "available" then
+			local canTrain, price, isProfession = canTrainAllService(i, remainingMoney, remainingProfessionSlots)
+			if canTrain then
 				count = count + 1
-				local price = GetTrainerServiceCost(i)
-				if price then cost = cost + price end
+				cost = cost + price
+				remainingMoney = remainingMoney - price
+				if isProfession then remainingProfessionSlots = remainingProfessionSlots - 1 end
 			end
 		end
 		return count, cost
@@ -4288,9 +4315,15 @@ local function initUI()
 				button:SetText((L and L["trainAllButtonLabel"]) or "Train All")
 				button:SetHeight(ClassTrainerTrainButton:GetHeight() or 22)
 				button:SetScript("OnClick", function()
+					local remainingMoney = GetMoney and GetMoney() or 0
+					local remainingProfessionSlots = getAvailablePrimaryProfessionSlots()
 					for i = 1, GetNumTrainerServices() do
-						local _, serviceType = GetTrainerServiceInfo(i)
-						if serviceType == "available" then BuyTrainerService(i) end
+						local canTrain, price, isProfession = canTrainAllService(i, remainingMoney, remainingProfessionSlots)
+						if canTrain then
+							BuyTrainerService(i)
+							remainingMoney = remainingMoney - price
+							if isProfession then remainingProfessionSlots = remainingProfessionSlots - 1 end
+						end
 					end
 				end)
 				button:SetScript("OnEnter", function(self)

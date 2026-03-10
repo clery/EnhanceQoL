@@ -4889,6 +4889,7 @@ local function fullScanGroupAuras(
 	wantExternals,
 	wantsDispel,
 	wantsHealerBuffPlacement,
+	healerBuffNeedsWideScan,
 	queryMax,
 	contextKind
 )
@@ -4898,7 +4899,13 @@ local function fullScanGroupAuras(
 	local flagsById = st._auraKindById
 	local seen = {}
 	local helpfulScanFilter = helpfulFilter
-	if wantsHealerBuffPlacement then helpfulScanFilter = "HELPFUL|INCLUDE_NAME_PLATE_ONLY" end
+	if wantsHealerBuffPlacement then
+		if healerBuffNeedsWideScan then
+			helpfulScanFilter = "HELPFUL|INCLUDE_NAME_PLATE_ONLY"
+		else
+			helpfulScanFilter = "HELPFUL|INCLUDE_NAME_PLATE_ONLY|PLAYER"
+		end
+	end
 
 	local function storeAura(aura)
 		local auraId = aura and aura.auraInstanceID
@@ -5109,8 +5116,10 @@ function GF:UpdateAuras(self, updateInfo)
 	end
 	auraQueryMax.external = wantExternals and externalMax or nil
 	local healerBuffCompiled = nil
+	local healerBuffNeedsWideScan = false
 	if wantsHealerBuffPlacement and UF.GroupFramesHealerBuffs and UF.GroupFramesHealerBuffs.GetCompiled then
 		healerBuffCompiled = UF.GroupFramesHealerBuffs.GetCompiled(self._eqolGroupKind or "party", cfg)
+		if healerBuffCompiled and UF.GroupFramesHealerBuffs.CompiledNeedsWideHelpfulScan then healerBuffNeedsWideScan = UF.GroupFramesHealerBuffs.CompiledNeedsWideHelpfulScan(healerBuffCompiled) end
 	end
 	local allCache = getAuraCache(st, "all")
 	st._auraKindById = st._auraKindById or {}
@@ -5128,6 +5137,7 @@ function GF:UpdateAuras(self, updateInfo)
 			wantExternals,
 			wantsDispelTint,
 			wantsHealerBuffPlacement,
+			healerBuffNeedsWideScan,
 			auraQueryMax,
 			auraContextKind
 		)

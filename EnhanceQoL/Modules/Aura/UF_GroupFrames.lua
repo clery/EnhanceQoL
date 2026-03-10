@@ -6862,6 +6862,7 @@ end
 
 local function dispatchUnitHealth(btn, unit)
 	local st = getState(btn)
+	if st and st._wantsAbsorb then GF:UpdateAbsorbCache(btn, nil, unit, st) end
 	GF:UpdateHealthValue(btn, unit, st)
 	GF:UpdateStatusText(btn, unit, st)
 end

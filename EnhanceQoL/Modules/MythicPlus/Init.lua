@@ -1263,7 +1263,7 @@ addon.MythicPlus.variables.collapseFrames = {
 	{ frame = WorldQuestObjectiveTracker, name = "WorldQuestObjectiveTracker" },
 }
 
-addon.MythicPlus.variables.challengeMapID = {
+local challengeMapIDDefaults = {
 	[560] = "MC",
 	[559] = "NPX",
 	[558] = "MT",
@@ -1336,3 +1336,5 @@ addon.MythicPlus.variables.challengeMapID = {
 	[456] = "TOTT",
 	[438] = "VP",
 }
+
+addon.MythicPlus.variables.challengeMapID = addon.functions and addon.functions.BuildChallengeMapLabelTable and addon.functions.BuildChallengeMapLabelTable(challengeMapIDDefaults) or challengeMapIDDefaults

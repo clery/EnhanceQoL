@@ -53,6 +53,7 @@ Core\Cleanup.lua
 EnhanceQoL.lua
 Core\DataHub.lua
 Core\DataPanel.lua
+Core\ChallengeMapLabels.lua
 Core\MovementSpeedStat.lua
 Core\CharacterStatsFormatting.lua
 Core\Streams\Streams.xml

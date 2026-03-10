@@ -114,7 +114,7 @@ addon.Tooltip.variables.kindsByID = {
 	[26] = "", -- Debug
 }
 
-addon.Tooltip.variables.challengeMapID = {
+local challengeMapIDDefaults = {
 	[542] = "ED",
 	[501] = "SV",
 	[502] = "COT",
@@ -187,3 +187,5 @@ addon.Tooltip.variables.challengeMapID = {
 	[559] = "NPX",
 	[560] = "MAIS",
 }
+
+addon.Tooltip.variables.challengeMapID = addon.functions and addon.functions.BuildChallengeMapLabelTable and addon.functions.BuildChallengeMapLabelTable(challengeMapIDDefaults) or challengeMapIDDefaults

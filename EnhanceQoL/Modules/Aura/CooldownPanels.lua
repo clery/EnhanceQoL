@@ -17,7 +17,7 @@ local EditMode = addon.EditMode
 local SettingType = EditMode and EditMode.lib and EditMode.lib.SettingType
 local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_Aura")
 local LSM = LibStub("LibSharedMedia-3.0", true)
-local LBG = LibStub("LibButtonGlow-1.0")
+local Glow = addon.Glow
 local GetVisibilityRuleMetadata = addon.functions and addon.functions.GetVisibilityRuleMetadata
 local Masque
 
@@ -2735,10 +2735,12 @@ end
 function CooldownPanels:ResolveEntryGlowStyle(layout, entry)
 	local panelDuration = Helper.ClampInt(layout and layout.readyGlowDuration, 0, 30, Helper.PANEL_LAYOUT_DEFAULTS.readyGlowDuration or 0)
 	local panelColor = Helper.NormalizeColor(layout and layout.readyGlowColor, Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor)
-	if not entry or entry.glowUseGlobal ~= false then return panelDuration, panelColor end
+	local panelStyle = Helper.NormalizeGlowStyle(layout and layout.readyGlowStyle, Helper.PANEL_LAYOUT_DEFAULTS.readyGlowStyle)
+	if not entry or entry.glowUseGlobal ~= false then return panelDuration, panelColor, panelStyle end
 	local duration = Helper.ClampInt(entry.glowDuration, 0, 30, panelDuration)
 	local color = Helper.NormalizeColor(entry.glowColor, panelColor)
-	return duration, color
+	local style = Helper.NormalizeGlowStyle(entry.glowStyle, panelStyle)
+	return duration, color, style
 end
 
 function CooldownPanels:ResolveEntryPandemicGlowColor(layout, entry)
@@ -2746,6 +2748,12 @@ function CooldownPanels:ResolveEntryPandemicGlowColor(layout, entry)
 	local panelPandemicColor = Helper.NormalizeColor(layout and layout.pandemicGlowColor, panelReadyColor)
 	if not entry or entry.glowUseGlobal ~= false then return panelPandemicColor end
 	return Helper.NormalizeColor(entry.pandemicGlowColor, panelPandemicColor)
+end
+
+function CooldownPanels:ResolveEntryProcGlowEnabled(layout, entry)
+	local panelValue = not (layout and layout.procGlowEnabled == false)
+	if not entry or entry.procGlowUseGlobal ~= false then return panelValue end
+	return entry.procGlowEnabled ~= false
 end
 
 function CooldownPanels:ResolveEntryNoDesaturation(layout, entry)
@@ -3117,54 +3125,70 @@ local function setAssistedHighlight(frame, enabled)
 	if highlight.Anim and highlight.Anim.IsPlaying and not highlight.Anim:IsPlaying() then highlight.Anim:Play() end
 end
 
-local function setGlow(frame, enabled, glowColor)
+local function setGlow(frame, enabled, glowColor, glowKey, glowCondition, glowAlphaOn, glowAlphaOff, glowStyle)
 	if not frame then return end
+	glowKey = glowKey or "EQOL_SIMPLE"
 	local fallbackColor = (Helper and Helper.PANEL_LAYOUT_DEFAULTS and Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor) or { 1, 0.82, 0.2, 1 }
 	local normalizedGlowColor = enabled and Helper.NormalizeColor(glowColor, fallbackColor) or nil
-	local wasEnabled = frame._glow == true
+	local normalizedGlowStyle = Helper.NormalizeGlowStyle(glowStyle, "BLIZZARD")
+	frame._eqolGlowState = frame._eqolGlowState or {}
+	local state = frame._eqolGlowState[glowKey]
+	if not state then
+		state = {}
+		frame._eqolGlowState[glowKey] = state
+	end
+	local wasEnabled = state.enabled == true
 	local colorChanged = false
+	local styleChanged = state.style ~= normalizedGlowStyle
 	if enabled and normalizedGlowColor then
-		local currentGlowColor = frame._glowColor
+		local currentGlowColor = state.color
 		colorChanged = not currentGlowColor
 			or currentGlowColor[1] ~= normalizedGlowColor[1]
 			or currentGlowColor[2] ~= normalizedGlowColor[2]
 			or currentGlowColor[3] ~= normalizedGlowColor[3]
 			or currentGlowColor[4] ~= normalizedGlowColor[4]
 	end
-	if frame._glow == enabled and (not enabled or not colorChanged) then return end
-	frame._glow = enabled
-	if enabled then
-		frame._glowColor = normalizedGlowColor
-	else
-		frame._glowColor = nil
-	end
-
-	if LBG then
-		if enabled then
-			if not wasEnabled or not frame.__LBGoverlay then LBG.ShowOverlayGlow(frame) end
-			local overlay = frame.__LBGoverlay
-			if overlay and normalizedGlowColor then
-				local r, g, b, a = normalizedGlowColor[1], normalizedGlowColor[2], normalizedGlowColor[3], normalizedGlowColor[4]
-				if overlay.spark then overlay.spark:SetVertexColor(r, g, b, a) end
-				if overlay.innerGlow then overlay.innerGlow:SetVertexColor(r, g, b, a) end
-				if overlay.innerGlowOver then overlay.innerGlowOver:SetVertexColor(r, g, b, a) end
-				if overlay.outerGlow then overlay.outerGlow:SetVertexColor(r, g, b, a) end
-				if overlay.outerGlowOver then overlay.outerGlowOver:SetVertexColor(r, g, b, a) end
-				if overlay.ants then overlay.ants:SetVertexColor(r, g, b, a) end
-			end
-		elseif wasEnabled then
-			LBG.HideOverlayGlow(frame)
-		end
+	if not enabled then
+		state.enabled = false
+		state.color = nil
+		state.style = nil
+		if Glow then Glow.Stop(frame, glowKey) end
 		return
 	end
-
-	local alertManager = _G.ActionButtonSpellAlertManager
-	if not alertManager then return end
-	if enabled then
-		alertManager:ShowAlert(frame)
+	if Glow and (not wasEnabled or colorChanged or styleChanged) then Glow.Start(frame, glowKey, normalizedGlowStyle, { color = normalizedGlowColor, cooldown = frame.cooldown }) end
+	state.enabled = true
+	state.style = normalizedGlowStyle
+	if normalizedGlowColor then
+		state.color = state.color or {}
+		state.color[1] = normalizedGlowColor[1]
+		state.color[2] = normalizedGlowColor[2]
+		state.color[3] = normalizedGlowColor[3]
+		state.color[4] = normalizedGlowColor[4]
 	else
-		alertManager:HideAlert(frame)
+		state.color = nil
 	end
+	if Glow then
+		if glowCondition ~= nil then
+			Glow.SetAlphaFromBoolean(frame, glowKey, glowCondition, glowAlphaOn == nil and 1 or glowAlphaOn, glowAlphaOff == nil and 0 or glowAlphaOff)
+		else
+			Glow.SetAlpha(frame, glowKey, glowAlphaOn == nil and 1 or glowAlphaOn)
+		end
+	end
+end
+
+function CooldownPanels.StopAllIconGlows(frame)
+	if not frame then return end
+	frame._eqolGlowState = nil
+	if Glow then Glow.StopAll(frame) end
+end
+
+function CooldownPanels.GetReadyGlowPrimedState(runtime)
+	if type(runtime) ~= "table" then return nil end
+	local primed = runtime.readyGlowPrimed or runtime.itemReadyPrimed
+	if type(primed) ~= "table" then primed = {} end
+	runtime.readyGlowPrimed = primed
+	runtime.itemReadyPrimed = primed
+	return primed
 end
 
 function CooldownPanels.ClearReadyGlowEntryState(panelId, entryId, clearPrimed)
@@ -3177,8 +3201,8 @@ function CooldownPanels.ClearReadyGlowEntryState(panelId, entryId, clearPrimed)
 	if timer and timer.Cancel then timer:Cancel() end
 	runtime.glowTimers[entryId] = nil
 	if clearPrimed then
-		runtime.itemReadyPrimed = runtime.itemReadyPrimed or {}
-		runtime.itemReadyPrimed[entryId] = nil
+		local primed = CooldownPanels.GetReadyGlowPrimedState(runtime)
+		if primed then primed[entryId] = nil end
 	end
 end
 
@@ -4526,7 +4550,16 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 		CooldownPanels:RefreshPanel(panelId)
 		if CooldownPanels.IsEditorOpen and CooldownPanels:IsEditorOpen() then CooldownPanels:RefreshEditor() end
 		local state = CooldownPanels:GetLayoutEntryStandaloneMenuState(false)
-		if state and normalizeId(state.panelId) == panelId and normalizeId(state.entryId) == entryId then CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId) end
+		local activeDialog = state and state.dialog
+		if state and normalizeId(state.panelId) == panelId and normalizeId(state.entryId) == entryId and activeDialog then
+			local _, currentEntry = getEntry()
+			local title = currentEntry and CooldownPanels:GetEntryStandaloneTitle(currentEntry) or nil
+			if activeDialog.context then activeDialog.context.title = title end
+			if activeDialog.Title and title then activeDialog.Title:SetText(title) end
+			if activeDialog.UpdateSettings then activeDialog:UpdateSettings() end
+			if activeDialog.UpdateButtons then activeDialog:UpdateButtons() end
+			if activeDialog.Layout then activeDialog:Layout() end
+		end
 	end
 
 	local function setEntryField(field, value)
@@ -4543,14 +4576,6 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 		local normalized = value == true
 		if (currentEntry[field] == true) == normalized then return end
 		currentEntry[field] = normalized and true or false
-		if currentEntry.type == "CDM_AURA" and normalized then
-			if field == "glowReady" then
-				currentEntry.pandemicGlow = false
-			elseif field == "pandemicGlow" then
-				currentEntry.glowReady = false
-				CooldownPanels.ClearReadyGlowEntryState(panelId, entryId, true)
-			end
-		end
 		if field == "glowReady" then CooldownPanels.ClearReadyGlowEntryState(panelId, entryId, true) end
 		if field == "showCharges" then CooldownPanels:RebuildChargesIndex() end
 		refreshEntryViews()
@@ -4575,12 +4600,12 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 		local runtimeState = getRuntime(panelId)
 		local hadReady = runtimeState and runtimeState.readyAt and runtimeState.readyAt[entryId] ~= nil
 		CooldownPanels.ClearReadyGlowEntryState(panelId, entryId, false)
-		runtimeState.itemReadyPrimed = runtimeState.itemReadyPrimed or {}
-		runtimeState.itemReadyPrimed[entryId] = nil
+		local primed = CooldownPanels.GetReadyGlowPrimedState(runtimeState)
+		if primed then primed[entryId] = nil end
 		if currentEntry.glowReady and hadReady then
 			local resolvedDuration = CooldownPanels:ResolveEntryGlowStyle(getLayout(), currentEntry)
 			triggerReadyGlow(panelId, entryId, resolvedDuration)
-			runtimeState.itemReadyPrimed[entryId] = true
+			if primed then primed[entryId] = true end
 		end
 	end
 
@@ -4591,6 +4616,24 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 		if currentEntry.glowUseGlobal == useGlobal then return end
 		currentEntry.glowUseGlobal = useGlobal
 		refreshReadyGlowState(currentEntry)
+		refreshEntryViews()
+	end
+
+	local function setProcGlowOverrideEnabled(value)
+		local _, currentEntry = getEntry()
+		if not currentEntry then return end
+		local useGlobal = value ~= true
+		if currentEntry.procGlowUseGlobal == useGlobal then return end
+		currentEntry.procGlowUseGlobal = useGlobal
+		refreshEntryViews()
+	end
+
+	local function setProcGlowEnabled(_, value)
+		local _, currentEntry = getEntry()
+		if not currentEntry then return end
+		local normalized = value == true
+		if currentEntry.procGlowEnabled == normalized then return end
+		currentEntry.procGlowEnabled = normalized
 		refreshEntryViews()
 	end
 
@@ -4795,6 +4838,12 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 		local layout = getLayout()
 		local _, currentEntry = getEntry()
 		return CooldownPanels:ResolveEntryPandemicGlowColor(layout, currentEntry)
+	end
+
+	local function getResolvedProcGlowEnabled()
+		local layout = getLayout()
+		local _, currentEntry = getEntry()
+		return CooldownPanels:ResolveEntryProcGlowEnabled(layout, currentEntry)
 	end
 
 	local function entryUsesConfiguredGlow(currentEntry)
@@ -5896,6 +5945,29 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 			set = function(_, value) setGlowOverrideEnabled(value) end,
 		},
 		{
+			name = L["CooldownPanelOverwritePanelProcGlow"] or "Overwrite panel proc glow",
+			kind = SettingType.Checkbox,
+			parentId = "cooldownPanelStandaloneGlow",
+			isShown = function() return getEffectiveType() == "SPELL" end,
+			get = function()
+				local _, currentEntry = getEntry()
+				return currentEntry and currentEntry.procGlowUseGlobal == false or false
+			end,
+			set = function(_, value) setProcGlowOverrideEnabled(value) end,
+		},
+		{
+			name = L["CooldownPanelProcGlow"] or "Proc glow",
+			kind = SettingType.Checkbox,
+			parentId = "cooldownPanelStandaloneGlow",
+			isShown = function() return getEffectiveType() == "SPELL" end,
+			disabled = function()
+				local _, currentEntry = getEntry()
+				return not (currentEntry and currentEntry.procGlowUseGlobal == false)
+			end,
+			get = function() return getResolvedProcGlowEnabled() == true end,
+			set = setProcGlowEnabled,
+		},
+		{
 			name = L["CooldownPanelGlowDuration"] or "Glow duration",
 			kind = SettingType.Slider,
 			parentId = "cooldownPanelStandaloneGlow",
@@ -5939,7 +6011,7 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 			isShown = function() return getEffectiveType() == "CDM_AURA" end,
 			disabled = function()
 				local _, currentEntry = getEntry()
-				return not (currentEntry and currentEntry.pandemicGlow == true)
+				return not (currentEntry and currentEntry.pandemicGlow == true and currentEntry.glowUseGlobal == false)
 			end,
 			get = function()
 				local color = getResolvedPandemicGlowColor()
@@ -6043,6 +6115,7 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 		state.panelId = panelId
 		state.entryId = entryId
 		state.hostFrame = hostFrame
+		state.dialog = dialog
 	end
 end
 
@@ -6134,13 +6207,13 @@ function CooldownPanels:OpenLayoutPanelStandaloneMenu(panelId, anchorFrame)
 		if not currentPanel or type(currentPanel.entries) ~= "table" then return end
 		local runtimeState = getRuntime(panelId)
 		if not (runtimeState and runtimeState.readyAt) then return end
-		runtimeState.itemReadyPrimed = runtimeState.itemReadyPrimed or {}
+		local primed = CooldownPanels.GetReadyGlowPrimedState(runtimeState)
 		local layout = getLayout()
 		for currentEntryId, currentEntry in pairs(currentPanel.entries) do
 			if currentEntry and currentEntry.glowReady == true and currentEntry.glowUseGlobal ~= false and runtimeState.readyAt[currentEntryId] then
 				local resolvedDuration = CooldownPanels:ResolveEntryGlowStyle(layout, currentEntry)
 				triggerReadyGlow(panelId, currentEntryId, resolvedDuration)
-				runtimeState.itemReadyPrimed[currentEntryId] = true
+				if primed then primed[currentEntryId] = true end
 			end
 		end
 	end
@@ -6191,6 +6264,12 @@ function CooldownPanels:OpenLayoutPanelStandaloneMenu(panelId, anchorFrame)
 		local layout = getLayout()
 		local _, color = CooldownPanels:ResolveEntryGlowStyle(layout, nil)
 		return color
+	end
+
+	local function getResolvedPanelGlowStyle()
+		local layout = getLayout()
+		local _, _, style = CooldownPanels:ResolveEntryGlowStyle(layout, nil)
+		return style
 	end
 
 	local function getResolvedPanelPandemicGlowColor()
@@ -7107,6 +7186,30 @@ function CooldownPanels:OpenLayoutPanelStandaloneMenu(panelId, anchorFrame)
 			defaultCollapsed = true,
 		},
 		{
+			name = L["CooldownPanelProcGlow"] or "Proc glow",
+			kind = SettingType.Checkbox,
+			parentId = "cooldownPanelStandalonePanelGlow",
+			get = function()
+				local layout = getLayout()
+				return not (layout and layout.procGlowEnabled == false)
+			end,
+			set = function(_, value) setPanelLayout("procGlowEnabled", value) end,
+		},
+		{
+			name = L["CooldownPanelGlowStyle"] or "Ready glow style",
+			kind = SettingType.Dropdown,
+			parentId = "cooldownPanelStandalonePanelGlow",
+			height = 180,
+			get = function() return getResolvedPanelGlowStyle() end,
+			set = function(_, value) setPanelLayout("readyGlowStyle", value) end,
+			generator = function(_, root)
+				for _, option in ipairs(Helper.GLOW_STYLE_OPTIONS or {}) do
+					local label = L[option.labelKey] or option.fallback
+					root:CreateRadio(label, function() return getResolvedPanelGlowStyle() == option.value end, function() setPanelLayout("readyGlowStyle", option.value) end)
+				end
+			end,
+		},
+		{
 			name = L["CooldownPanelGlowDuration"] or "Glow duration",
 			kind = SettingType.Slider,
 			parentId = "cooldownPanelStandalonePanelGlow",
@@ -7971,14 +8074,6 @@ local function ensureEditor()
 			local entry = panel and panel.entries and panel.entries[entryId]
 			if not entry then return end
 			entry[field] = self:GetChecked() and true or false
-			if entry.type == "CDM_AURA" and entry[field] == true then
-				if field == "glowReady" then
-					entry.pandemicGlow = false
-				elseif field == "pandemicGlow" then
-					entry.glowReady = false
-					CooldownPanels.ClearReadyGlowEntryState(panelId, entryId, true)
-				end
-			end
 			if field == "glowReady" then CooldownPanels.ClearReadyGlowEntryState(panelId, entryId, true) end
 			if field == "showCharges" then CooldownPanels:RebuildChargesIndex() end
 			CooldownPanels:RefreshPanel(panelId)
@@ -8004,11 +8099,11 @@ local function ensureEditor()
 				local runtime = getRuntime(panelId)
 				local hadReady = runtime.readyAt and runtime.readyAt[entryId] ~= nil
 				CooldownPanels.ClearReadyGlowEntryState(panelId, entryId, false)
-				runtime.itemReadyPrimed = runtime.itemReadyPrimed or {}
-				runtime.itemReadyPrimed[entryId] = nil
+				local primed = CooldownPanels.GetReadyGlowPrimedState(runtime)
+				if primed then primed[entryId] = nil end
 				if entry.glowReady and hadReady then
 					triggerReadyGlow(panelId, entryId, clamped)
-					runtime.itemReadyPrimed[entryId] = true
+					if primed then primed[entryId] = true end
 				end
 			end
 
@@ -8780,7 +8875,7 @@ local function refreshPreview(editor, panel)
 				icon.keybind:Hide()
 			end
 			if entry.type ~= "MACRO" and (entry.glowReady or entry.pandemicGlow) and icon.previewGlowBorder then
-				local previewEntryGlowColor = (entry.type == "CDM_AURA" and entry.pandemicGlow == true and CooldownPanels:ResolveEntryPandemicGlowColor(baseLayout, entry))
+				local previewEntryGlowColor = (entry.type == "CDM_AURA" and entry.pandemicGlow == true and entry.glowReady ~= true and CooldownPanels:ResolveEntryPandemicGlowColor(baseLayout, entry))
 					or select(2, CooldownPanels:ResolveEntryGlowStyle(baseLayout, entry))
 				CooldownPanels.ShowPreviewGlowBorder(icon, previewEntryGlowColor)
 			end
@@ -9532,7 +9627,7 @@ function CooldownPanels:UpdatePreviewIcons(panelId, countOverride)
 		if icon.keybind then icon.keybind:Hide() end
 		CooldownPanels.HidePreviewGlowBorder(icon)
 		if icon.previewBling then icon.previewBling:Hide() end
-		setGlow(icon, false)
+		CooldownPanels.StopAllIconGlows(icon)
 		setAssistedHighlight(icon, false)
 		if not entry then
 			if icon.staticText then icon.staticText:Hide() end
@@ -9767,8 +9862,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 	self:UpdateLayoutEditGrid(panelId, layoutEditActive and fixedLayout and fixedSlotCount or 0)
 	runtime.readyAt = runtime.readyAt or {}
 	runtime.glowTimers = runtime.glowTimers or {}
-	runtime.itemReadyPrimed = runtime.itemReadyPrimed or {}
-	local itemReadyPrimed = runtime.itemReadyPrimed
+	local readyGlowPrimed = CooldownPanels.GetReadyGlowPrimedState(runtime)
 	local overlayGlowSpells = shared and shared.overlayGlowSpells
 	local powerInsufficientSpells = shared and shared.powerInsufficient
 	local spellUnusableSpells = shared and shared.spellUnusable
@@ -9836,7 +9930,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			local cdmAuraActiveGlow = entry.type == "CDM_AURA" and entry.glowReady == true
 			local cdmAuraPandemicGlow = entry.type == "CDM_AURA" and entry.pandemicGlow == true
 			local glowReady = entry.type ~= "MACRO" and entry.type ~= "CDM_AURA" and entry.glowReady ~= false
-			local glowDuration, glowColor = CooldownPanels:ResolveEntryGlowStyle(layout, entry)
+			local glowDuration, glowColor, glowStyle = CooldownPanels:ResolveEntryGlowStyle(layout, entry)
 			local pandemicGlowColor = resolvedType == "CDM_AURA" and CooldownPanels:ResolveEntryPandemicGlowColor(layout, entry) or glowColor
 			local soundReady = false
 			local soundName = normalizeSoundName(nil)
@@ -9862,7 +9956,8 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			-- 	return false
 			-- end
 
-			local overlayGlow = resolvedType == "SPELL" and isSpellFlagged(overlayGlowSpells, baseSpellId, effectiveSpellId)
+			local procGlowEnabled = resolvedType == "SPELL" and CooldownPanels:ResolveEntryProcGlowEnabled(layout, entry)
+			local overlayGlow = resolvedType == "SPELL" and procGlowEnabled and isSpellFlagged(overlayGlowSpells, baseSpellId, effectiveSpellId)
 			local powerInsufficient = checkPower and resolvedType == "SPELL" and isSpellFlagged(powerInsufficientSpells, baseSpellId, effectiveSpellId)
 			local spellUnusable = checkPower and resolvedType == "SPELL" and isSpellFlagged(spellUnusableSpells, baseSpellId, effectiveSpellId)
 			local rangeOverlay = rangeOverlayEnabled and resolvedType == "SPELL" and isSpellFlagged(rangeOverlaySpells, baseSpellId, effectiveSpellId)
@@ -9887,6 +9982,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			local cooldownEnabledOk = true
 			local emptyItem = false
 			local canTriggerReadyGlow = false
+			local spellReadyCondition
 
 			if resolvedType == "SPELL" and baseSpellId then
 				local spellId = effectiveSpellId or baseSpellId
@@ -9895,6 +9991,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				elseif Api.IsSpellKnown and not Api.IsSpellKnown(spellId) then
 					show = false
 				else
+					canTriggerReadyGlow = true
 					if showCharges then chargesInfo = getCachedSpellChargesInfo(spellId) end
 					if trackCooldown then
 						cooldownDurationObject = getCachedSpellCooldownDurationObject(spellId)
@@ -9908,6 +10005,14 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 						cooldownStart, cooldownDuration, cooldownEnabled, cooldownRate, cooldownGCD = getCachedSpellCooldownInfo(spellId)
 					elseif cooldownDurationObject then
 						_, _, _, _, cooldownGCD = getCachedSpellCooldownInfo(spellId)
+					end
+					if glowReady and showCooldown then
+						local readyDurationObject = cooldownDurationObject or getCachedSpellCooldownDurationObject(spellId)
+						if cooldownGCD then
+							spellReadyCondition = true
+						elseif readyDurationObject and readyDurationObject.IsZero then
+							spellReadyCondition = readyDurationObject:IsZero()
+						end
 					end
 					if showStacks then
 						local cache = shared and shared.actionDisplayCounts
@@ -10078,6 +10183,8 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				data.glowReady = glowReady
 				data.glowDuration = glowDuration
 				data.readyGlowColor = glowColor
+				data.readyGlowStyle = glowStyle
+				data.spellReadyCondition = spellReadyCondition
 				data.canTriggerReadyGlow = canTriggerReadyGlow
 				data.soundReady = soundReady
 				data.soundName = soundName
@@ -10173,7 +10280,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			icon.texture:SetAlpha(1)
 			CooldownPanels.ApplyIconTooltip(icon, nil, false)
 			setAssistedHighlight(icon, false)
-			setGlow(icon, false)
+			CooldownPanels.StopAllIconGlows(icon)
 			if layoutEditActive and fixedLayout then
 				icon:Show()
 				icon:SetAlpha(1)
@@ -10508,20 +10615,26 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			end
 			setAssistedHighlight(icon, data.assistedSuggested == true)
 
-			local itemCooldownRunning
-			if data.resolvedType == "ITEM" or data.resolvedType == "SLOT" then
-				itemCooldownRunning = durationActive or (cooldownEnabledOk and isCooldownActive(cooldownStart, cooldownDuration))
-				if itemCooldownRunning then
+			local readyGlowCooldownRunning
+			local useSecretReadyGlow = data.resolvedType == "SPELL" and data.spellReadyCondition ~= nil and data.glowReady and data.showCooldown and data.canTriggerReadyGlow
+			if useSecretReadyGlow then
+				if data.readyAt or (readyGlowPrimed and readyGlowPrimed[data.entryId]) then
+					CooldownPanels.ClearReadyGlowEntryState(panelId, data.entryId, true)
+					data.readyAt = nil
+				end
+			elseif data.canTriggerReadyGlow then
+				readyGlowCooldownRunning = durationActive or usingCooldown or (cooldownEnabledOk and isCooldownActive(cooldownStart, cooldownDuration))
+				if readyGlowCooldownRunning then
 					CooldownPanels.ClearReadyGlowEntryState(panelId, data.entryId, true)
 					data.readyAt = nil
 				end
 			end
-			if (data.resolvedType == "ITEM" or data.resolvedType == "SLOT") and data.glowReady and data.showCooldown and data.canTriggerReadyGlow then
+			if not useSecretReadyGlow and data.glowReady and data.showCooldown and data.canTriggerReadyGlow then
 				if data.readyAt then
-					itemReadyPrimed[data.entryId] = true
-				elseif not itemCooldownRunning and not itemReadyPrimed[data.entryId] then
+					if readyGlowPrimed then readyGlowPrimed[data.entryId] = true end
+				elseif not readyGlowCooldownRunning and not data.cooldownGCD and readyGlowPrimed and not readyGlowPrimed[data.entryId] then
 					triggerReadyGlow(panelId, data.entryId, data.glowDuration)
-					itemReadyPrimed[data.entryId] = true
+					readyGlowPrimed[data.entryId] = true
 					data.readyAt = runtime.readyAt[data.entryId]
 				end
 			end
@@ -10530,7 +10643,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			local overlayGlowColor = overlayGlow and data.overlayGlowColor or nil
 			local simpleGlowEnabled = overlayGlow
 			local simpleGlowColor = overlayGlowColor
-			if data.glowReady then
+			if data.glowReady and not useSecretReadyGlow then
 				local ready = false
 				local duration = tonumber(data.glowDuration) or 0
 
@@ -10547,12 +10660,12 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			end
 			if layoutEditActive and data.entry and data.entry.type ~= "MACRO" and (data.entry.glowReady == true or data.entry.pandemicGlow == true) then
 				simpleGlowEnabled = true
-				simpleGlowColor = (data.entry.type == "CDM_AURA" and data.entry.pandemicGlow == true and CooldownPanels:ResolveEntryPandemicGlowColor(layout, data.entry))
+				simpleGlowColor = (data.entry.type == "CDM_AURA" and data.entry.pandemicGlow == true and data.entry.glowReady ~= true and CooldownPanels:ResolveEntryPandemicGlowColor(layout, data.entry))
 					or data.readyGlowColor
 					or overlayGlowColor
 			end
 			if layoutEditActive then
-				setGlow(icon, false)
+				CooldownPanels.StopAllIconGlows(icon)
 				if simpleGlowEnabled then
 					CooldownPanels.ShowPreviewGlowBorder(icon, simpleGlowColor)
 				else
@@ -10560,7 +10673,15 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				end
 			else
 				CooldownPanels.HidePreviewGlowBorder(icon)
-				setGlow(icon, simpleGlowEnabled, simpleGlowColor)
+				if useSecretReadyGlow then
+					setGlow(icon, false, nil, "EQOL_SIMPLE")
+					setGlow(icon, overlayGlow, overlayGlowColor, "EQOL_OVERLAY", data.spellReadyCondition, 0, 1, data.readyGlowStyle)
+					setGlow(icon, true, data.readyGlowColor, "EQOL_READY", data.spellReadyCondition, 1, 0, data.readyGlowStyle)
+				else
+					setGlow(icon, false, nil, "EQOL_OVERLAY")
+					setGlow(icon, false, nil, "EQOL_READY")
+					setGlow(icon, simpleGlowEnabled, simpleGlowColor, "EQOL_SIMPLE", nil, nil, nil, data.readyGlowStyle)
+				end
 			end
 			if showGhostIcon then
 				icon:SetAlpha(1)
@@ -10592,7 +10713,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			icon.texture:SetDesaturated(false)
 			icon.texture:SetAlpha(1)
 			setAssistedHighlight(icon, false)
-			setGlow(icon, false)
+			CooldownPanels.StopAllIconGlows(icon)
 		end
 	end
 
@@ -10925,6 +11046,10 @@ applyEditLayout = function(panelId, field, value, skipRefresh)
 		if updateRangeCheckSpells then updateRangeCheckSpells() end
 	elseif field == "rangeOverlayColor" then
 		layout.rangeOverlayColor = Helper.NormalizeColor(value, Helper.PANEL_LAYOUT_DEFAULTS.rangeOverlayColor)
+	elseif field == "procGlowEnabled" then
+		layout.procGlowEnabled = value ~= false
+	elseif field == "readyGlowStyle" then
+		layout.readyGlowStyle = Helper.NormalizeGlowStyle(value, layout.readyGlowStyle or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowStyle)
 	elseif field == "readyGlowColor" then
 		layout.readyGlowColor = Helper.NormalizeColor(value, Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor)
 	elseif field == "pandemicGlowColor" then
@@ -12426,6 +12551,33 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 				hasOpacity = true,
 			},
 			{
+				name = L["CooldownPanelProcGlow"] or "Proc glow",
+				kind = SettingType.Checkbox,
+				parentId = "cooldownPanelOverlays",
+				default = layout.procGlowEnabled ~= false,
+				get = function() return layout.procGlowEnabled ~= false end,
+				set = function(_, value) applyEditLayout(panelId, "procGlowEnabled", value) end,
+			},
+			{
+				name = L["CooldownPanelGlowStyle"] or "Ready glow style",
+				kind = SettingType.Dropdown,
+				parentId = "cooldownPanelOverlays",
+				height = 180,
+				default = Helper.NormalizeGlowStyle(layout.readyGlowStyle, Helper.PANEL_LAYOUT_DEFAULTS.readyGlowStyle),
+				get = function() return Helper.NormalizeGlowStyle(layout.readyGlowStyle, Helper.PANEL_LAYOUT_DEFAULTS.readyGlowStyle) end,
+				set = function(_, value) applyEditLayout(panelId, "readyGlowStyle", value) end,
+				generator = function(_, root)
+					for _, option in ipairs(Helper.GLOW_STYLE_OPTIONS or {}) do
+						local label = L[option.labelKey] or option.fallback
+						root:CreateRadio(
+							label,
+							function() return Helper.NormalizeGlowStyle(layout.readyGlowStyle, Helper.PANEL_LAYOUT_DEFAULTS.readyGlowStyle) == option.value end,
+							function() applyEditLayout(panelId, "readyGlowStyle", option.value) end
+						)
+					end
+				end,
+			},
+			{
 				name = L["CooldownPanelGlowColor"] or "Ready glow color",
 				kind = SettingType.Color,
 				parentId = "cooldownPanelOverlays",
@@ -12959,7 +13111,7 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 		allowDrag = function() return anchorUsesUIParent(ensureAnchorTable()) end,
 		settings = settings,
 		showOutsideEditMode = true,
-		settingsMaxHeight = 900,
+		settingsMaxHeight = 620,
 	})
 
 	runtime.editModeRegistered = true

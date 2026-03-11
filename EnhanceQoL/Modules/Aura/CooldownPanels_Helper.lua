@@ -120,6 +120,8 @@ Helper.PANEL_LAYOUT_DEFAULTS = {
 	strata = "MEDIUM",
 	rangeOverlayEnabled = false,
 	rangeOverlayColor = { 1, 0.1, 0.1, 0.35 },
+	procGlowEnabled = true,
+	readyGlowStyle = "MARCHING_ANTS",
 	readyGlowColor = { 1, 0.82, 0.2, 1 },
 	pandemicGlowColor = { 1, 0.82, 0.2, 1 },
 	readyGlowDuration = 0,
@@ -224,6 +226,8 @@ Helper.ENTRY_DEFAULTS = {
 	glowReady = false,
 	pandemicGlow = false,
 	pandemicGlowColor = nil,
+	procGlowEnabled = true,
+	procGlowUseGlobal = true,
 	glowUseGlobal = true,
 	glowDuration = 0,
 	soundReady = false,
@@ -249,12 +253,25 @@ Helper.OFFSET_RANGE = 200
 Helper.RADIAL_RADIUS_RANGE = 600
 Helper.RADIAL_ROTATION_RANGE = 360
 Helper.EXAMPLE_COOLDOWN_PERCENT = 0.55
+Helper.GLOW_STYLE_OPTIONS = {
+	{ value = "MARCHING_ANTS", labelKey = "CooldownPanelGlowStyleMarchingAnts", fallback = "Marching ants" },
+	{ value = "FLASH", labelKey = "CooldownPanelGlowStyleFlash", fallback = "Flash" },
+	{ value = "BLIZZARD", labelKey = "CooldownPanelGlowStyleBlizzard", fallback = "Blizzard" },
+}
 Helper.VALID_DIRECTIONS = {
 	RIGHT = true,
 	LEFT = true,
 	UP = true,
 	DOWN = true,
 }
+
+function Helper.NormalizeGlowStyle(style, fallback)
+	local normalized = type(style) == "string" and strupper(style) or nil
+	if normalized == "MARCHING_ANTS" or normalized == "MARCHINGANTS" or normalized == "ANTS" then return "MARCHING_ANTS" end
+	if normalized == "FLASH" then return "FLASH" end
+	if normalized == "BLIZZARD" then return "BLIZZARD" end
+	return fallback or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowStyle or "MARCHING_ANTS"
+end
 Helper.VALID_LAYOUT_MODES = {
 	GRID = true,
 	FIXED = true,
@@ -946,6 +963,8 @@ function Helper.NormalizeRoot(root)
 	root.defaults.entry.showStacks = Helper.ENTRY_DEFAULTS.showStacks
 	root.defaults.entry.glowReady = Helper.ENTRY_DEFAULTS.glowReady
 	root.defaults.entry.pandemicGlow = Helper.ENTRY_DEFAULTS.pandemicGlow
+	root.defaults.entry.procGlowEnabled = Helper.ENTRY_DEFAULTS.procGlowEnabled
+	root.defaults.entry.procGlowUseGlobal = Helper.ENTRY_DEFAULTS.procGlowUseGlobal
 	root.defaults.entry.glowDuration = Helper.ENTRY_DEFAULTS.glowDuration
 	root.defaults.entry.soundReady = Helper.ENTRY_DEFAULTS.soundReady
 	root.defaults.entry.soundReadyFile = Helper.ENTRY_DEFAULTS.soundReadyFile
@@ -965,6 +984,8 @@ function Helper.NormalizePanel(panel, defaults)
 	panel.layout.fixedSlotCount = Helper.NormalizeFixedSlotCount(panel.layout.fixedSlotCount, layoutDefaults.fixedSlotCount or Helper.PANEL_LAYOUT_DEFAULTS.fixedSlotCount or 0)
 	panel.layout.fixedGridColumns = Helper.NormalizeFixedGridSize(panel.layout.fixedGridColumns, layoutDefaults.fixedGridColumns or Helper.PANEL_LAYOUT_DEFAULTS.fixedGridColumns or 0)
 	panel.layout.fixedGridRows = Helper.NormalizeFixedGridSize(panel.layout.fixedGridRows, layoutDefaults.fixedGridRows or Helper.PANEL_LAYOUT_DEFAULTS.fixedGridRows or 0)
+	panel.layout.procGlowEnabled = panel.layout.procGlowEnabled ~= false
+	panel.layout.readyGlowStyle = Helper.NormalizeGlowStyle(panel.layout.readyGlowStyle, layoutDefaults.readyGlowStyle or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowStyle)
 	panel.layout.readyGlowColor = Helper.NormalizeColor(panel.layout.readyGlowColor, layoutDefaults.readyGlowColor or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor)
 	panel.layout.pandemicGlowColor = Helper.NormalizeColor(
 		panel.layout.pandemicGlowColor,
@@ -1050,6 +1071,7 @@ function Helper.NormalizeEntry(entry, defaults)
 	if duration < 0 then duration = 0 end
 	if duration > 30 then duration = 30 end
 	entry.glowDuration = math.floor(duration + 0.5)
+	if entry.glowStyle ~= nil then entry.glowStyle = Helper.NormalizeGlowStyle(entry.glowStyle, nil) end
 	if type(entry.pandemicGlow) ~= "boolean" then entry.pandemicGlow = Helper.ENTRY_DEFAULTS.pandemicGlow end
 	if type(entry.hideIcon) ~= "boolean" then entry.hideIcon = Helper.ENTRY_DEFAULTS.hideIcon end
 	if type(entry.iconSizeUseGlobal) ~= "boolean" then entry.iconSizeUseGlobal = true end
@@ -1084,6 +1106,8 @@ function Helper.NormalizeEntry(entry, defaults)
 	if type(entry.cooldownTextUseGlobal) ~= "boolean" then entry.cooldownTextUseGlobal = true end
 	if type(entry.noDesaturationUseGlobal) ~= "boolean" then entry.noDesaturationUseGlobal = true end
 	if type(entry.noDesaturation) ~= "boolean" then entry.noDesaturation = Helper.ENTRY_DEFAULTS.noDesaturation end
+	if type(entry.procGlowEnabled) ~= "boolean" then entry.procGlowEnabled = Helper.ENTRY_DEFAULTS.procGlowEnabled end
+	if type(entry.procGlowUseGlobal) ~= "boolean" then entry.procGlowUseGlobal = Helper.ENTRY_DEFAULTS.procGlowUseGlobal end
 	if type(entry.glowUseGlobal) ~= "boolean" then entry.glowUseGlobal = entry.glowDuration == (Helper.ENTRY_DEFAULTS.glowDuration or 0) and entry.glowColor == nil end
 	if type(entry.soundReady) ~= "boolean" then entry.soundReady = Helper.ENTRY_DEFAULTS.soundReady end
 	if type(entry.soundReadyFile) ~= "string" or entry.soundReadyFile == "" then entry.soundReadyFile = Helper.ENTRY_DEFAULTS.soundReadyFile end

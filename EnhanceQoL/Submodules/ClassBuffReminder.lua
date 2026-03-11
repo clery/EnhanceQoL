@@ -12,8 +12,8 @@ local Reminder = addon.ClassBuffReminder
 
 local L = LibStub("AceLocale-3.0"):GetLocale(parentAddonName)
 local EditMode = addon.EditMode
+local Glow = addon.Glow
 local SettingType = EditMode and EditMode.lib and EditMode.lib.SettingType
-local LBG = LibStub("LibButtonGlow-1.0", true)
 local issecretvalue = _G.issecretvalue
 local UnitInPartyIsAI = _G.UnitInPartyIsAI
 local GetTimePreciseSec = _G.GetTimePreciseSec
@@ -35,6 +35,7 @@ local SAMPLE_ICON_COUNT = 5
 local AURA_FILTER_HELPFUL = "HELPFUL"
 local AURA_SLOT_BATCH_SIZE = 32
 local AURA_SLOT_SCAN_GUARD = 16
+local REMINDER_GLOW_KEY = "CLASS_BUFF_REMINDER"
 
 local DB_ENABLED = "classBuffReminderEnabled"
 local DB_SHOW_PARTY = "classBuffReminderShowParty"
@@ -2251,12 +2252,12 @@ function Reminder:GetGlowTargets()
 end
 
 function Reminder:SetGlowShown(show)
-	if not LBG then return end
+	if not Glow then return end
 
 	self.glowTargets = self.glowTargets or {}
 	if show ~= true then
 		for target in pairs(self.glowTargets) do
-			LBG.HideOverlayGlow(target)
+			Glow.Stop(target, REMINDER_GLOW_KEY)
 			self.glowTargets[target] = nil
 		end
 		self.glowShown = false
@@ -2272,14 +2273,14 @@ function Reminder:SetGlowShown(show)
 
 	for target in pairs(self.glowTargets) do
 		if not nextTargets[target] then
-			LBG.HideOverlayGlow(target)
+			Glow.Stop(target, REMINDER_GLOW_KEY)
 			self.glowTargets[target] = nil
 		end
 	end
 
 	for target in pairs(nextTargets) do
 		if not self.glowTargets[target] then
-			LBG.ShowOverlayGlow(target)
+			Glow.Start(target, REMINDER_GLOW_KEY, Glow.STYLE.BLIZZARD)
 			self.glowTargets[target] = true
 		end
 	end

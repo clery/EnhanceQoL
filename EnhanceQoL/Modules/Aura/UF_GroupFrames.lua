@@ -77,6 +77,13 @@ local FONT_DROPDOWN_SCROLL_HEIGHT = 220
 
 GFH.COLOR_INCOMING_HEAL_DEFAULT = GFH.COLOR_INCOMING_HEAL_DEFAULT or { 0.2, 0.85, 0.35, 0.45 }
 
+local function formatSliderDecimal(value)
+	local text = string.format("%.2f", tonumber(value) or 0)
+	text = text:gsub("(%..-)0+$", "%1")
+	text = text:gsub("%.$", "")
+	return text
+end
+
 function GF.NormalizeBuffHelpfulFilterMode(value)
 	value = tostring(value or ""):upper()
 	if value == "RAID" then return "RAID" end
@@ -14936,6 +14943,7 @@ local function buildEditModeSettings(kind, editModeId)
 			minValue = 0,
 			maxValue = 1,
 			valueStep = 0.01,
+			formatter = formatSliderDecimal,
 			get = function()
 				local cfg = getCfg(kind)
 				local sc = cfg and cfg.status or {}
@@ -14974,6 +14982,7 @@ local function buildEditModeSettings(kind, editModeId)
 			minValue = 0,
 			maxValue = 1,
 			valueStep = 0.01,
+			formatter = formatSliderDecimal,
 			get = function()
 				local cfg = getCfg(kind)
 				local sc = cfg and cfg.status or {}

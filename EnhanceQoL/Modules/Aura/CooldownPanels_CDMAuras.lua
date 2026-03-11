@@ -874,7 +874,6 @@ function CDMAuras:NormalizeEntry(entry)
 	entry.useHighestRank = false
 	entry.glowReady = entry.glowReady == true
 	entry.pandemicGlow = entry.pandemicGlow == true
-	if entry.glowReady and entry.pandemicGlow then entry.glowReady = false end
 	entry.soundReady = false
 end
 

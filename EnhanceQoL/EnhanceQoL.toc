@@ -26,7 +26,6 @@
 
 libs\LibStub\LibStub.lua
 libs\AceLocale-3.0\AceLocale-3.0.xml
-libs\LibButtonGlow-1.0\LibButtonGlow-1.0.lua
 libs\LibCustomGlow-1.0\LibCustomGlow-1.0.lua
 locales\[TextLocale].lua
 Modules\MythicPlus\Locales\[TextLocale].lua
@@ -46,6 +45,7 @@ libs\LibEQOL\LibEQOL.xml
 Bindings\Slider.xml
 Sounds\sounds.lua
 General\functions.lua
+General\Glow.lua
 Core\EditModeLib.lua
 Core\EditMode.lua
 Modules\ActionBarLabels.lua

@@ -446,12 +446,14 @@ end
 Reminder.GLOW_INSET_RANGE = Reminder.GLOW_INSET_RANGE or 100
 Reminder.GLOW_STYLE_OPTIONS = Reminder.GLOW_STYLE_OPTIONS
 	or {
+		{ value = "BLIZZARD", labelKey = "ClassBuffReminderGlowStyleBlizzard", fallback = "Blizzard" },
 		{ value = "MARCHING_ANTS", labelKey = "ClassBuffReminderGlowStyleMarchingAnts", fallback = "Marching ants" },
 		{ value = "FLASH", labelKey = "ClassBuffReminderGlowStyleFlash", fallback = "Flash" },
 	}
 
 local function normalizeGlowStyle(value)
 	local normalized = type(value) == "string" and string.upper(value) or nil
+	if normalized == "BLIZZARD" or normalized == "CLASSIC" or normalized == "BUTTON_GLOW" then return "BLIZZARD" end
 	if normalized == "MARCHING_ANTS" or normalized == "MARCHINGANTS" or normalized == "ANTS" then return "MARCHING_ANTS" end
 	if normalized == "FLASH" then return "FLASH" end
 	return "MARCHING_ANTS"

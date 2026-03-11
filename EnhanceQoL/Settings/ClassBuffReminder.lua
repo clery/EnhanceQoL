@@ -64,14 +64,16 @@ local function refreshReminder()
 end
 
 local glowStyleValues = {
+	BLIZZARD = L["ClassBuffReminderGlowStyleBlizzard"] or "Blizzard",
 	MARCHING_ANTS = L["ClassBuffReminderGlowStyleMarchingAnts"] or "Marching ants",
 	FLASH = L["ClassBuffReminderGlowStyleFlash"] or "Flash",
 }
-local glowStyleOrder = { "MARCHING_ANTS", "FLASH" }
+local glowStyleOrder = { "BLIZZARD", "MARCHING_ANTS", "FLASH" }
 
 local function normalizeGlowStyle(value)
 	if Reminder and Reminder.NormalizeGlowStyle then return Reminder.NormalizeGlowStyle(value) end
 	local normalized = type(value) == "string" and string.upper(value) or nil
+	if normalized == "BLIZZARD" or normalized == "CLASSIC" or normalized == "BUTTON_GLOW" then return "BLIZZARD" end
 	if normalized == "MARCHING_ANTS" or normalized == "MARCHINGANTS" or normalized == "ANTS" then return "MARCHING_ANTS" end
 	if normalized == "FLASH" then return "FLASH" end
 	return "MARCHING_ANTS"

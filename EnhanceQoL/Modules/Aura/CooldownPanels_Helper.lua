@@ -262,6 +262,7 @@ Helper.EXAMPLE_COOLDOWN_PERCENT = 0.55
 Helper.GLOW_STYLE_OPTIONS = {
 	{ value = "MARCHING_ANTS", labelKey = "CooldownPanelGlowStyleMarchingAnts", fallback = "Marching ants" },
 	{ value = "FLASH", labelKey = "CooldownPanelGlowStyleFlash", fallback = "Flash" },
+	{ value = "BLIZZARD", labelKey = "CooldownPanelGlowStyleBlizzard", fallback = "Blizzard" },
 }
 Helper.VALID_DIRECTIONS = {
 	RIGHT = true,
@@ -272,9 +273,11 @@ Helper.VALID_DIRECTIONS = {
 
 function Helper.NormalizeGlowStyle(style, fallback)
 	local normalized = type(style) == "string" and strupper(style) or nil
+	if normalized == "BLIZZARD" or normalized == "CLASSIC" or normalized == "BUTTON_GLOW" then return "BLIZZARD" end
 	if normalized == "MARCHING_ANTS" or normalized == "MARCHINGANTS" or normalized == "ANTS" then return "MARCHING_ANTS" end
 	if normalized == "FLASH" then return "FLASH" end
 	local normalizedFallback = type(fallback) == "string" and strupper(fallback) or nil
+	if normalizedFallback == "BLIZZARD" or normalizedFallback == "CLASSIC" or normalizedFallback == "BUTTON_GLOW" then return "BLIZZARD" end
 	if normalizedFallback == "FLASH" then return "FLASH" end
 	if normalizedFallback == "MARCHING_ANTS" or normalizedFallback == "MARCHINGANTS" or normalizedFallback == "ANTS" then return "MARCHING_ANTS" end
 	return Helper.PANEL_LAYOUT_DEFAULTS.readyGlowStyle or "MARCHING_ANTS"

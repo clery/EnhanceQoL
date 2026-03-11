@@ -3022,11 +3022,12 @@ function CooldownPanels.UpdatePreviewGlowBorderLayout(icon, rowSize)
 		border._eqolEdgeSize = edgeSize
 	end
 
-	if border._eqolOffset ~= offset then
+	if border._eqolOffset ~= offset or border._eqolSize ~= size then
 		border:ClearAllPoints()
 		border:SetPoint("TOPLEFT", icon, "TOPLEFT", -offset, offset)
 		border:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", offset, -offset)
 		border._eqolOffset = offset
+		border._eqolSize = size
 	end
 end
 
@@ -3036,6 +3037,7 @@ function CooldownPanels.ShowPreviewGlowBorder(icon, glowColor)
 
 	local fallbackColor = (Helper and Helper.PANEL_LAYOUT_DEFAULTS and Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor) or { 1, 0.82, 0.2, 1 }
 	local color = Helper.NormalizeColor(glowColor, fallbackColor)
+	CooldownPanels.UpdatePreviewGlowBorderLayout(icon, icon:GetWidth())
 	border:SetBackdropBorderColor(color[1] or 1, color[2] or 0.82, color[3] or 0.2, color[4] or 1)
 	border:Show()
 end
@@ -10607,6 +10609,10 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			icon.entryId = data.entryId
 			icon._eqolPreviewCellColumn = slotColumn
 			icon._eqolPreviewCellRow = slotRow
+			if layoutEditActive then
+				CooldownPanels.HidePreviewGlowBorder(icon)
+				CooldownPanels.StopAllIconGlows(icon)
+			end
 			local showGhostIcon = layoutEditActive and data.showGhostIcon == true
 			CooldownPanels:ApplyEntryIconVisualLayout(icon, data.entry)
 			if showOnCooldown then

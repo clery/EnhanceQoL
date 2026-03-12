@@ -10218,6 +10218,8 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			local showWhenNoCooldown = resolvedType == "SLOT" and entry.showWhenNoCooldown == true
 			local showWhenMissing = resolvedType == "STANCE" and entry.showWhenMissing == true
 			local alwaysShow = entry.alwaysShow ~= false
+			local entryHideOnCooldown = hideOnCooldown and resolvedType ~= "CDM_AURA"
+			local entryShowOnCooldown = showOnCooldown and resolvedType ~= "CDM_AURA"
 			local showEntryIconTexture = self:ResolveEntryShowIconTexture(layout, entry)
 			local showGhostIcon = self:ShouldShowEditorGhostIcon(entry, showEntryIconTexture, layoutEditActive)
 			local entryNoDesaturation = self:ResolveEntryNoDesaturation(layout, entry)
@@ -10456,6 +10458,8 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				data.keybindText = showKeybinds and Keybinds.GetEntryKeybindText(entry, layout) or nil
 				data.entry = entry
 				data.entryId = entryId
+				data.hideOnCooldown = entryHideOnCooldown == true
+				data.showOnCooldown = entryShowOnCooldown == true
 				data.resolvedType = resolvedType
 				data.overlayGlow = overlayGlow
 				data.overlayGlowColor = nil
@@ -10614,6 +10618,8 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				CooldownPanels.StopAllIconGlows(icon)
 			end
 			local showGhostIcon = layoutEditActive and data.showGhostIcon == true
+			local hideOnCooldown = data.hideOnCooldown == true
+			local showOnCooldown = data.showOnCooldown == true
 			CooldownPanels:ApplyEntryIconVisualLayout(icon, data.entry)
 			if showOnCooldown then
 				icon:SetAlpha(0)

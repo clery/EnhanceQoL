@@ -1048,6 +1048,7 @@ local function ensureCrosshairFrame()
 		frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
 		frame:SetFrameStrata("MEDIUM")
 		frame:EnableMouse(false)
+		if frame.SetClampedToScreen then frame:SetClampedToScreen(true) end
 	end
 
 	if not frame.outerVertical then

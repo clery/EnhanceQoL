@@ -2178,9 +2178,9 @@ function CooldownPanels:RebuildPowerIndex()
 							powerCheckActive = true
 							local effectiveId = getEffectiveSpellId(baseId) or baseId
 							if not isSpellPassiveSafe(baseId, effectiveId) then
+								powerCheckSpells[effectiveId] = true
 								local costs = Api.GetSpellPowerCost and Api.GetSpellPowerCost(effectiveId)
 								if type(costs) == "table" then
-									powerCheckSpells[effectiveId] = true
 									local names = getSpellPowerCostNamesFromCosts(costs)
 									if names then
 										powerCostNames[baseId] = names
@@ -2717,43 +2717,45 @@ function CooldownPanels:ApplyEntryCooldownTextStyle(icon, layout, entry)
 	if not fontString then return end
 	if not icon.cooldown._eqolCooldownTextDefaults then
 		local fontPath, fontSize, fontStyle = fontString:GetFont()
-		local point, _, relPoint, x, y = fontString:GetPoint()
 		icon.cooldown._eqolCooldownTextDefaults = {
 			font = fontPath,
 			size = fontSize,
 			style = fontStyle,
-			point = point,
-			relPoint = relPoint,
-			x = x,
-			y = y,
 		}
 	end
 	local defaults = icon.cooldown._eqolCooldownTextDefaults
 	local fontPath, fontSize, fontStyle, fontColor, fontX, fontY =
 		self:ResolveEntryCooldownTextStyle(layout, entry, defaults and defaults.font, defaults and defaults.size, defaults and defaults.style)
-	if fontString._eqolCooldownTextFont ~= fontPath or fontString._eqolCooldownTextSize ~= fontSize or fontString._eqolCooldownTextStyle ~= fontStyle then
-		fontString:SetFont(fontPath, fontSize, fontStyle)
-		fontString._eqolCooldownTextFont = fontPath
-		fontString._eqolCooldownTextSize = fontSize
-		fontString._eqolCooldownTextStyle = fontStyle
+	local issecretvalue = Api.issecretvalue
+	local currentFontPath, currentFontSize, currentFontStyle = fontString:GetFont()
+	local fontNeedsApply = true
+	if not (issecretvalue and (issecretvalue(currentFontPath) or issecretvalue(currentFontSize) or issecretvalue(currentFontStyle))) then
+		fontNeedsApply = currentFontPath ~= fontPath or currentFontSize ~= fontSize or currentFontStyle ~= fontStyle
 	end
-	if fontString._eqolCooldownTextX ~= fontX or fontString._eqolCooldownTextY ~= fontY then
+	if fontNeedsApply then fontString:SetFont(fontPath, fontSize, fontStyle) end
+	local point, _, relPoint, currentX, currentY = fontString:GetPoint()
+	local pointNeedsApply = true
+	if
+		point
+		and relPoint
+		and not (issecretvalue and (issecretvalue(point) or issecretvalue(relPoint) or issecretvalue(currentX) or issecretvalue(currentY)))
+	then
+		pointNeedsApply = point ~= "CENTER" or relPoint ~= "CENTER" or currentX ~= fontX or currentY ~= fontY
+	end
+	if pointNeedsApply then
 		fontString:ClearAllPoints()
 		fontString:SetPoint("CENTER", icon.cooldown, "CENTER", fontX, fontY)
-		fontString._eqolCooldownTextX = fontX
-		fontString._eqolCooldownTextY = fontY
 	end
 	local r = fontColor[1] or 1
 	local g = fontColor[2] or 1
 	local b = fontColor[3] or 1
 	local a = fontColor[4] or 1
-	if fontString._eqolCooldownTextColorR ~= r or fontString._eqolCooldownTextColorG ~= g or fontString._eqolCooldownTextColorB ~= b or fontString._eqolCooldownTextColorA ~= a then
-		fontString:SetTextColor(r, g, b, a)
-		fontString._eqolCooldownTextColorR = r
-		fontString._eqolCooldownTextColorG = g
-		fontString._eqolCooldownTextColorB = b
-		fontString._eqolCooldownTextColorA = a
+	local currentR, currentG, currentB, currentA = fontString:GetTextColor()
+	local colorNeedsApply = true
+	if not (issecretvalue and (issecretvalue(currentR) or issecretvalue(currentG) or issecretvalue(currentB) or issecretvalue(currentA))) then
+		colorNeedsApply = currentR ~= r or currentG ~= g or currentB ~= b or currentA ~= a
 	end
+	if colorNeedsApply then fontString:SetTextColor(r, g, b, a) end
 end
 
 function CooldownPanels:ResolveEntryStackTextStyle(layout, entry, fallbackFontPath, fallbackFontSize, fallbackFontStyle)
@@ -3107,6 +3109,96 @@ function CooldownPanels:ResolveEntryProcGlowEnabled(layout, entry)
 	return entry.procGlowEnabled ~= false
 end
 
+function CooldownPanels:ClearEntryStateTexture(entry)
+	if type(entry) ~= "table" then return end
+	entry.stateTextureInput = ""
+	entry.stateTextureType = nil
+	entry.stateTextureAtlas = nil
+	entry.stateTextureFileID = nil
+end
+
+function CooldownPanels:ApplyEntryStateTextureInput(entry, value)
+	if type(entry) ~= "table" then return false, nil end
+	local input = Helper.NormalizeTextureInput(value)
+	if input == "" then
+		self:ClearEntryStateTexture(entry)
+		return true, nil
+	end
+
+	local resolvedType, resolvedValue = Helper.ResolveTextureInput(input)
+	if not resolvedType then return false, string.format(L["CooldownPanelStateTextureInvalid"] or "Texture '%s' was not found. Use a valid atlas name or FileDataID.", input) end
+
+	entry.stateTextureInput = input
+	entry.stateTextureType = resolvedType
+	if resolvedType == "ATLAS" then
+		entry.stateTextureAtlas = resolvedValue
+		entry.stateTextureFileID = nil
+	else
+		entry.stateTextureFileID = resolvedValue
+		entry.stateTextureAtlas = nil
+	end
+	return true, nil
+end
+
+function CooldownPanels:ResolveEntryStateTexture(entry)
+	if type(entry) ~= "table" then return nil end
+	local input = Helper.NormalizeTextureInput(entry.stateTextureInput)
+	if input == "" then return nil end
+
+	local textureType = type(entry.stateTextureType) == "string" and strupper(entry.stateTextureType) or nil
+	local textureValue
+	if textureType == "ATLAS" and type(entry.stateTextureAtlas) == "string" and entry.stateTextureAtlas ~= "" then
+		textureValue = entry.stateTextureAtlas
+	elseif textureType == "FILEID" then
+		local fileID = tonumber(entry.stateTextureFileID)
+		if fileID and fileID > 0 then textureValue = fileID end
+	end
+
+	if not textureValue then
+		local resolvedType, resolvedValue = Helper.ResolveTextureInput(input)
+		if not resolvedType then
+			self:ClearEntryStateTexture(entry)
+			return nil
+		end
+		textureType = resolvedType
+		textureValue = resolvedValue
+		entry.stateTextureInput = input
+		entry.stateTextureType = resolvedType
+		if resolvedType == "ATLAS" then
+			entry.stateTextureAtlas = resolvedValue
+			entry.stateTextureFileID = nil
+		else
+			entry.stateTextureFileID = resolvedValue
+			entry.stateTextureAtlas = nil
+		end
+	end
+
+	local scale = Helper.ClampNumber(entry.stateTextureScale, 0.1, 8, 1)
+	local width = Helper.ClampNumber(entry.stateTextureWidth, 0.1, 8, 1)
+	local height = Helper.ClampNumber(entry.stateTextureHeight, 0.1, 8, 1)
+	local angle = Helper.ClampNumber(entry.stateTextureAngle, 0, 360, 0)
+	local doubleTexture = entry.stateTextureDouble == true
+	local mirror = entry.stateTextureMirror == true
+	local mirrorSecond = entry.stateTextureMirrorSecond == true
+	local spacingX = Helper.ClampInt(entry.stateTextureSpacingX, 0, Helper.STATE_TEXTURE_SPACING_RANGE or 2000, 0)
+	local spacingY = Helper.ClampInt(entry.stateTextureSpacingY, 0, Helper.STATE_TEXTURE_SPACING_RANGE or 2000, 0)
+	return textureType, textureValue, width, height, scale, angle, doubleTexture, mirror, mirrorSecond, spacingX, spacingY
+end
+
+function CooldownPanels:HasConfiguredStateTexture(entry)
+	if type(entry) ~= "table" then return false end
+	local input = Helper.NormalizeTextureInput(entry.stateTextureInput)
+	if input == "" then return false end
+	local textureType = type(entry.stateTextureType) == "string" and strupper(entry.stateTextureType) or nil
+	if textureType == "ATLAS" then return type(entry.stateTextureAtlas) == "string" and entry.stateTextureAtlas ~= "" end
+	if textureType == "FILEID" then
+		local fileID = tonumber(entry.stateTextureFileID)
+		return fileID ~= nil and fileID > 0
+	end
+	local resolvedType = self:ResolveEntryStateTexture(entry)
+	return resolvedType ~= nil
+end
+
 function CooldownPanels:ResolveEntryNoDesaturation(layout, entry)
 	local panelValue = layout and layout.noDesaturation == true
 	if not entry or entry.noDesaturationUseGlobal ~= false then return panelValue end
@@ -3122,6 +3214,7 @@ end
 function CooldownPanels:ResolveEntryShowIconTexture(layout, entry)
 	local panelValue = not (layout and layout.showIconTexture == false)
 	if not entry then return panelValue end
+	if self:HasConfiguredStateTexture(entry) then return false end
 	if entry.hideIcon == true then return false end
 	if entry.showIconTextureUseGlobal == false then return true end
 	return panelValue
@@ -3241,6 +3334,84 @@ local function applyStaticText(icon, layout, entry, defaultFontPath, defaultFont
 	icon.staticText:Show()
 end
 
+local function applyStateTexture(icon, data)
+	local texture = icon and icon.stateTexture or nil
+	local textureSecond = icon and icon.stateTextureSecond or nil
+	if not texture then return end
+	if not (data and data.stateTextureShown == true and data.stateTextureType and data.stateTextureValue) then
+		texture:Hide()
+		if textureSecond then textureSecond:Hide() end
+		return
+	end
+
+	local scale = Helper.ClampNumber(data.stateTextureScale, 0.1, 8, 1)
+	local widthScale = Helper.ClampNumber(data.stateTextureWidth, 0.1, 8, 1)
+	local heightScale = Helper.ClampNumber(data.stateTextureHeight, 0.1, 8, 1)
+	local angle = Helper.ClampNumber(data.stateTextureAngle, 0, 360, 0)
+	local doubleTexture = data.stateTextureDouble == true
+	local mirror = data.stateTextureMirror == true
+	local mirrorSecond = data.stateTextureMirrorSecond == true
+	local spacingX = Helper.ClampInt(data.stateTextureSpacingX, 0, Helper.STATE_TEXTURE_SPACING_RANGE or 2000, 0)
+	local spacingY = Helper.ClampInt(data.stateTextureSpacingY, 0, Helper.STATE_TEXTURE_SPACING_RANGE or 2000, 0)
+	local atlasInfo = data.stateTextureType == "ATLAS" and Api.GetAtlasInfo and Api.GetAtlasInfo(data.stateTextureValue) or nil
+	local baseWidth, baseHeight
+	if atlasInfo and atlasInfo.width and atlasInfo.height then
+		baseWidth = atlasInfo.width
+		baseHeight = atlasInfo.height
+	else
+		baseWidth, baseHeight = icon:GetSize()
+		baseWidth = baseWidth or 36
+		baseHeight = baseHeight or 36
+	end
+	local width = baseWidth * scale * widthScale
+	local height = baseHeight * scale * heightScale
+
+	local function applyRegion(region, offsetX, offsetY, mirrored)
+		if not region then return end
+		region:ClearAllPoints()
+		region:SetPoint("CENTER", icon, "CENTER", offsetX or 0, offsetY or 0)
+		region:SetSize(width, height)
+		if data.stateTextureType == "ATLAS" then
+			local atlas = data.stateTextureValue
+			region:SetTexture(nil)
+			region:SetAtlas(atlas, true)
+			if atlasInfo then
+				local left = atlasInfo.leftTexCoord or 0
+				local right = atlasInfo.rightTexCoord or 1
+				local top = atlasInfo.topTexCoord or 0
+				local bottom = atlasInfo.bottomTexCoord or 1
+				if mirrored then
+					region:SetTexCoord(right, left, top, bottom)
+				else
+					region:SetTexCoord(left, right, top, bottom)
+				end
+			end
+		else
+			local fileID = tonumber(data.stateTextureValue)
+			region:SetTexture(nil)
+			region:SetTexture(fileID)
+			if mirrored then
+				region:SetTexCoord(1, 0, 0, 1)
+			else
+				region:SetTexCoord(0, 1, 0, 1)
+			end
+		end
+		if region.SetRotation then region:SetRotation(math.rad(angle)) end
+		region:Show()
+	end
+
+	if doubleTexture and textureSecond then
+		local halfX = spacingX / 2
+		local halfY = spacingY / 2
+		local secondMirrored = (mirrorSecond and not mirror) or ((not mirrorSecond) and mirror)
+		applyRegion(texture, -halfX, -halfY, mirror)
+		applyRegion(textureSecond, halfX, halfY, secondMirrored)
+	else
+		applyRegion(texture, 0, 0, mirror)
+		if textureSecond then textureSecond:Hide() end
+	end
+end
+
 local function createIconFrame(parent)
 	local icon = CreateFrame("Frame", nil, parent)
 	icon:Hide()
@@ -3288,6 +3459,14 @@ local function createIconFrame(parent)
 	icon.rangeOverlay = icon.overlay:CreateTexture(nil, "BACKGROUND")
 	icon.rangeOverlay:SetAllPoints(icon.overlay)
 	icon.rangeOverlay:Hide()
+
+	icon.stateTexture = icon:CreateTexture(nil, "ARTWORK", nil, 1)
+	icon.stateTexture:SetBlendMode("BLEND")
+	icon.stateTexture:Hide()
+
+	icon.stateTextureSecond = icon:CreateTexture(nil, "ARTWORK", nil, 1)
+	icon.stateTextureSecond:SetBlendMode("BLEND")
+	icon.stateTextureSecond:Hide()
 
 	icon.keybind = icon.overlay:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
 	icon.keybind:SetPoint("TOPLEFT", icon.overlay, "TOPLEFT", 2, -2)
@@ -4270,21 +4449,16 @@ local function applyIconLayout(frame, count, layout)
 		end
 		setCooldownDrawState(icon.cooldown, drawEdge, drawBling, drawSwipe)
 		if icon.cooldown and icon.cooldown.GetCountdownFontString then
-			local fontString = icon.cooldown:GetCountdownFontString()
-			if fontString then
-				if not icon.cooldown._eqolCooldownTextDefaults then
-					local fontPath, fontSize, fontStyle = fontString:GetFont()
-					local point, _, relPoint, x, y = fontString:GetPoint()
-					icon.cooldown._eqolCooldownTextDefaults = {
-						font = fontPath,
-						size = fontSize,
-						style = fontStyle,
-						point = point,
-						relPoint = relPoint,
-						x = x,
-						y = y,
-					}
-				end
+				local fontString = icon.cooldown:GetCountdownFontString()
+				if fontString then
+					if not icon.cooldown._eqolCooldownTextDefaults then
+						local fontPath, fontSize, fontStyle = fontString:GetFont()
+						icon.cooldown._eqolCooldownTextDefaults = {
+							font = fontPath,
+							size = fontSize,
+							style = fontStyle,
+						}
+					end
 				local defaults = icon.cooldown._eqolCooldownTextDefaults
 				local fontPath = Helper.ResolveFontPath(cooldownTextFont, defaults and defaults.font)
 				local fontSize = Helper.ClampInt(cooldownTextSize, 6, 64, defaults and defaults.size or 12)
@@ -5040,9 +5214,14 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 		return CooldownPanels:GetLayoutEntryStandaloneEffectiveType(currentEntry)
 	end
 
-	local function refreshEntryViews()
-		CooldownPanels:RefreshPanel(panelId)
-		if CooldownPanels.IsEditorOpen and CooldownPanels:IsEditorOpen() then CooldownPanels:RefreshEditor() end
+	local refreshEntryDialogPending = false
+
+	local function isStandaloneDialogDragActive()
+		if type(IsMouseButtonDown) ~= "function" then return false end
+		return IsMouseButtonDown("LeftButton") == true
+	end
+
+	local function updateEntryDialog()
 		local state = CooldownPanels:GetLayoutEntryStandaloneMenuState(false)
 		local activeDialog = state and state.dialog
 		if state and normalizeId(state.panelId) == panelId and normalizeId(state.entryId) == entryId and activeDialog then
@@ -5054,6 +5233,40 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 			if activeDialog.UpdateButtons then activeDialog:UpdateButtons() end
 			if activeDialog.Layout then activeDialog:Layout() end
 		end
+	end
+
+	local function scheduleEntryDialogRefresh()
+		if refreshEntryDialogPending then return end
+		if not (C_Timer and C_Timer.After) then
+			updateEntryDialog()
+			return
+		end
+		refreshEntryDialogPending = true
+		C_Timer.After(0, function()
+			refreshEntryDialogPending = false
+			local state = CooldownPanels:GetLayoutEntryStandaloneMenuState(false)
+			if not state or normalizeId(state.panelId) ~= panelId or normalizeId(state.entryId) ~= entryId then return end
+			if isStandaloneDialogDragActive() then
+				scheduleEntryDialogRefresh()
+				return
+			end
+			updateEntryDialog()
+		end)
+	end
+
+	local function refreshEntryViews()
+		CooldownPanels:RefreshPanel(panelId)
+		if CooldownPanels.IsEditorOpen and CooldownPanels:IsEditorOpen() then CooldownPanels:RefreshEditor() end
+		if isStandaloneDialogDragActive() then
+			scheduleEntryDialogRefresh()
+			return
+		end
+		updateEntryDialog()
+	end
+
+	local function refreshEntryPreview()
+		CooldownPanels:RefreshPanel(panelId)
+		if CooldownPanels.IsEditorOpen and CooldownPanels:IsEditorOpen() then CooldownPanels:RefreshEditor() end
 	end
 
 	local function setEntryField(field, value)
@@ -5217,6 +5430,41 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 		if currentEntry.staticText == text then return end
 		currentEntry.staticText = text
 		refreshEntryViews()
+	end
+
+	local function isStateTextureSupported()
+		local effectiveType = getEffectiveType()
+		return effectiveType == "SPELL" or effectiveType == "CDM_AURA"
+	end
+
+	local function entryHasStateTexture()
+		local _, currentEntry = getEntry()
+		return CooldownPanels:HasConfiguredStateTexture(currentEntry)
+	end
+
+	local function entryUsesDoubleStateTexture()
+		local _, currentEntry = getEntry()
+		return currentEntry and currentEntry.stateTextureDouble == true or false
+	end
+
+	local function setStateTextureInput(_, value)
+		local _, currentEntry = getEntry()
+		if not currentEntry then return end
+		local ok, err = CooldownPanels:ApplyEntryStateTextureInput(currentEntry, value)
+		if not ok then
+			showErrorMessage(err)
+			refreshEntryViews()
+			return
+		end
+		refreshEntryPreview()
+	end
+
+	local function setStateTextureField(field, value)
+		local _, currentEntry = getEntry()
+		if not currentEntry then return end
+		if currentEntry[field] == value then return end
+		currentEntry[field] = value
+		refreshEntryPreview()
 	end
 
 	local function setCooldownTextOverrideEnabled(value)
@@ -5590,14 +5838,16 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 			parentId = "cooldownPanelStandaloneDisplay",
 			get = function()
 				local _, currentEntry = getEntry()
-				return currentEntry and currentEntry.hideIcon == true or false
+				return currentEntry and (currentEntry.hideIcon == true or CooldownPanels:HasConfiguredStateTexture(currentEntry)) or false
 			end,
+			disabled = function() return entryHasStateTexture() end,
 			set = function(_, value) setEntryBoolean("hideIcon", value) end,
 		},
 		{
 			name = L["CooldownPanelOverwriteGlobalDefault"] or "Overwrite global default",
 			kind = SettingType.Checkbox,
 			parentId = "cooldownPanelStandaloneDisplay",
+			disabled = function() return entryHasStateTexture() end,
 			get = function()
 				local _, currentEntry = getEntry()
 				return currentEntry and currentEntry.showIconTextureUseGlobal == false or false
@@ -5642,7 +5892,7 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 			kind = SettingType.Slider,
 			parentId = "cooldownPanelStandaloneDisplay",
 			minValue = -Helper.OFFSET_RANGE,
-			maxValue = Helper.OFFSET_RANGE,
+			maxValue = Helper.STATE_TEXTURE_SPACING_RANGE or 2000,
 			valueStep = 1,
 			allowInput = true,
 			get = function()
@@ -5657,7 +5907,7 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 			kind = SettingType.Slider,
 			parentId = "cooldownPanelStandaloneDisplay",
 			minValue = -Helper.OFFSET_RANGE,
-			maxValue = Helper.OFFSET_RANGE,
+			maxValue = Helper.STATE_TEXTURE_SPACING_RANGE or 2000,
 			valueStep = 1,
 			allowInput = true,
 			get = function()
@@ -6535,6 +6785,165 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 				return y
 			end,
 			set = function(_, value) setEntryField("staticTextY", Helper.ClampInt(value, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0)) end,
+			formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
+		},
+		{
+			name = L["CooldownPanelStateTexture"] or "State texture",
+			kind = SettingType.Collapsible,
+			id = "cooldownPanelStandaloneStateTexture",
+			defaultCollapsed = true,
+			isShown = function() return isStateTextureSupported() end,
+		},
+		{
+			name = L["CooldownPanelStateTextureInput"] or "Texture ID / Atlas",
+			kind = SettingType.Input,
+			parentId = "cooldownPanelStandaloneStateTexture",
+			inputWidth = 220,
+			isShown = function() return isStateTextureSupported() end,
+			get = function()
+				local _, currentEntry = getEntry()
+				return currentEntry and currentEntry.stateTextureInput or ""
+			end,
+			set = setStateTextureInput,
+			default = "",
+			maxChars = 128,
+		},
+		{
+			name = L["CooldownPanelStateTextureDouble"] or "Double texture",
+			kind = SettingType.Checkbox,
+			parentId = "cooldownPanelStandaloneStateTexture",
+			isShown = function() return isStateTextureSupported() end,
+			get = function()
+				local _, currentEntry = getEntry()
+				return currentEntry and currentEntry.stateTextureDouble == true or false
+			end,
+			set = function(_, value) setStateTextureField("stateTextureDouble", value == true) end,
+		},
+		{
+			name = L["CooldownPanelStateTextureMirror"] or "Mirror texture",
+			kind = SettingType.Checkbox,
+			parentId = "cooldownPanelStandaloneStateTexture",
+			isShown = function() return isStateTextureSupported() end,
+			get = function()
+				local _, currentEntry = getEntry()
+				return currentEntry and currentEntry.stateTextureMirror == true or false
+			end,
+			set = function(_, value) setStateTextureField("stateTextureMirror", value == true) end,
+		},
+		{
+			name = L["CooldownPanelStateTextureMirrorSecond"] or "Mirror second texture",
+			kind = SettingType.Checkbox,
+			parentId = "cooldownPanelStandaloneStateTexture",
+			isShown = function() return isStateTextureSupported() and entryUsesDoubleStateTexture() end,
+			get = function()
+				local _, currentEntry = getEntry()
+				return currentEntry and currentEntry.stateTextureMirrorSecond ~= false or false
+			end,
+			set = function(_, value) setStateTextureField("stateTextureMirrorSecond", value == true) end,
+		},
+		{
+			name = L["CooldownPanelStateTextureScale"] or "Texture scale",
+			kind = SettingType.Slider,
+			parentId = "cooldownPanelStandaloneStateTexture",
+			minValue = 0.1,
+			maxValue = 8,
+			valueStep = 0.05,
+			allowInput = true,
+			isShown = function() return isStateTextureSupported() end,
+			get = function()
+				local _, currentEntry = getEntry()
+				return Helper.ClampNumber(currentEntry and currentEntry.stateTextureScale, 0.1, 8, 1)
+			end,
+			set = function(_, value) setStateTextureField("stateTextureScale", Helper.ClampNumber(value, 0.1, 8, 1)) end,
+			formatter = function(value)
+				local num = tonumber(value) or 1
+				return string.format("%.2fx", num)
+			end,
+		},
+		{
+			name = L["CooldownPanelStateTextureWidth"] or "Texture width",
+			kind = SettingType.Slider,
+			parentId = "cooldownPanelStandaloneStateTexture",
+			minValue = 0.1,
+			maxValue = 8,
+			valueStep = 0.05,
+			allowInput = true,
+			isShown = function() return isStateTextureSupported() end,
+			get = function()
+				local _, currentEntry = getEntry()
+				return Helper.ClampNumber(currentEntry and currentEntry.stateTextureWidth, 0.1, 8, 1)
+			end,
+			set = function(_, value) setStateTextureField("stateTextureWidth", Helper.ClampNumber(value, 0.1, 8, 1)) end,
+			formatter = function(value)
+				local num = tonumber(value) or 1
+				return string.format("%.2fx", num)
+			end,
+		},
+		{
+			name = L["CooldownPanelStateTextureHeight"] or "Texture height",
+			kind = SettingType.Slider,
+			parentId = "cooldownPanelStandaloneStateTexture",
+			minValue = 0.1,
+			maxValue = 8,
+			valueStep = 0.05,
+			allowInput = true,
+			isShown = function() return isStateTextureSupported() end,
+			get = function()
+				local _, currentEntry = getEntry()
+				return Helper.ClampNumber(currentEntry and currentEntry.stateTextureHeight, 0.1, 8, 1)
+			end,
+			set = function(_, value) setStateTextureField("stateTextureHeight", Helper.ClampNumber(value, 0.1, 8, 1)) end,
+			formatter = function(value)
+				local num = tonumber(value) or 1
+				return string.format("%.2fx", num)
+			end,
+		},
+		{
+			name = L["CooldownPanelStateTextureAngle"] or "Texture angle",
+			kind = SettingType.Slider,
+			parentId = "cooldownPanelStandaloneStateTexture",
+			minValue = 0,
+			maxValue = 360,
+			valueStep = 1,
+			allowInput = true,
+			isShown = function() return isStateTextureSupported() end,
+			get = function()
+				local _, currentEntry = getEntry()
+				return Helper.ClampNumber(currentEntry and currentEntry.stateTextureAngle, 0, 360, 0)
+			end,
+			set = function(_, value) setStateTextureField("stateTextureAngle", Helper.ClampNumber(value, 0, 360, 0)) end,
+			formatter = function(value) return string.format("%d°", math.floor((tonumber(value) or 0) + 0.5)) end,
+		},
+		{
+			name = L["CooldownPanelStateTextureSpacingX"] or "Texture spacing X",
+			kind = SettingType.Slider,
+			parentId = "cooldownPanelStandaloneStateTexture",
+			minValue = 0,
+			maxValue = Helper.STATE_TEXTURE_SPACING_RANGE or 2000,
+			valueStep = 1,
+			allowInput = true,
+			isShown = function() return isStateTextureSupported() and entryUsesDoubleStateTexture() end,
+			get = function()
+				local _, currentEntry = getEntry()
+				return Helper.ClampInt(currentEntry and currentEntry.stateTextureSpacingX, 0, Helper.STATE_TEXTURE_SPACING_RANGE or 2000, 0)
+			end,
+			set = function(_, value) setStateTextureField("stateTextureSpacingX", Helper.ClampInt(value, 0, Helper.STATE_TEXTURE_SPACING_RANGE or 2000, 0)) end,
+			formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
+		},
+		{
+			name = L["CooldownPanelStateTextureSpacingY"] or "Texture spacing Y",
+			kind = SettingType.Slider,
+			parentId = "cooldownPanelStandaloneStateTexture",
+			minValue = 0,
+			maxValue = Helper.STATE_TEXTURE_SPACING_RANGE or 2000,
+			valueStep = 1,
+			allowInput = true,
+			isShown = function() return isStateTextureSupported() and entryUsesDoubleStateTexture() end,
+			get = function()
+				local _, currentEntry = getEntry()
+				return Helper.ClampInt(currentEntry and currentEntry.stateTextureSpacingY, 0, Helper.STATE_TEXTURE_SPACING_RANGE or 2000, 0)
+			end,
+			set = function(_, value) setStateTextureField("stateTextureSpacingY", Helper.ClampInt(value, 0, Helper.STATE_TEXTURE_SPACING_RANGE or 2000, 0)) end,
 			formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
 		},
 		{
@@ -9646,6 +10055,9 @@ local function refreshPreview(editor, panel)
 		local staticCooldown = entry and entry.staticTextShowOnCooldown == true or false
 		local showEntryIconTexture = entry and CooldownPanels:ResolveEntryShowIconTexture(baseLayout, entry) or true
 		local showGhostIcon = entry and CooldownPanels:ShouldShowEditorGhostIcon(entry, showEntryIconTexture, true) or false
+		local stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale, stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond, stateTextureSpacingX, stateTextureSpacingY = entry
+				and CooldownPanels:ResolveEntryStateTexture(entry)
+			or nil
 		icon:Show()
 		icon.entryId = entryId
 		icon._eqolPreviewCellColumn = i
@@ -9664,6 +10076,22 @@ local function refreshPreview(editor, panel)
 		icon.charges:Hide()
 		if icon.rangeOverlay then icon.rangeOverlay:Hide() end
 		if icon.keybind then icon.keybind:Hide() end
+		if icon.stateTexture then
+			applyStateTexture(icon, {
+				stateTextureShown = entry ~= nil and stateTextureType ~= nil,
+				stateTextureType = stateTextureType,
+				stateTextureValue = stateTextureValue,
+				stateTextureWidth = stateTextureWidth,
+				stateTextureHeight = stateTextureHeight,
+				stateTextureScale = stateTextureScale,
+				stateTextureAngle = stateTextureAngle,
+				stateTextureDouble = stateTextureDouble,
+				stateTextureMirror = stateTextureMirror,
+				stateTextureMirrorSecond = stateTextureMirrorSecond,
+				stateTextureSpacingX = stateTextureSpacingX,
+				stateTextureSpacingY = stateTextureSpacingY,
+			})
+		end
 		CooldownPanels.HidePreviewGlowBorder(icon)
 		if icon.previewBling then icon.previewBling:Hide() end
 		if icon.previewSoundBorder then icon.previewSoundBorder:Hide() end
@@ -10476,6 +10904,9 @@ function CooldownPanels:UpdatePreviewIcons(panelId, countOverride)
 		local showItemUses = entry and resolvedType == "ITEM" and entry.showItemUses == true
 		local showEntryIconTexture = entry and CooldownPanels:ResolveEntryShowIconTexture(layout, entry) or showIconTexture
 		local showGhostIcon = entry and CooldownPanels:ShouldShowEditorGhostIcon(entry, showEntryIconTexture, true) or false
+		local stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale, stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond, stateTextureSpacingX, stateTextureSpacingY = entry
+				and CooldownPanels:ResolveEntryStateTexture(entry)
+			or nil
 		local slotColumn = previewGridColumns and (((i - 1) % previewGridColumns) + 1) or (editGridColumns and (((i - 1) % editGridColumns) + 1) or i)
 		local slotRow = previewGridColumns and (math.floor((i - 1) / previewGridColumns) + 1) or (editGridColumns and (math.floor((i - 1) / editGridColumns) + 1) or 1)
 		icon:Show()
@@ -10497,6 +10928,22 @@ function CooldownPanels:UpdatePreviewIcons(panelId, countOverride)
 		icon.charges:Hide()
 		if icon.rangeOverlay then icon.rangeOverlay:Hide() end
 		if icon.keybind then icon.keybind:Hide() end
+		if icon.stateTexture then
+			applyStateTexture(icon, {
+				stateTextureShown = entry ~= nil and stateTextureType ~= nil,
+				stateTextureType = stateTextureType,
+				stateTextureValue = stateTextureValue,
+				stateTextureWidth = stateTextureWidth,
+				stateTextureHeight = stateTextureHeight,
+				stateTextureScale = stateTextureScale,
+				stateTextureAngle = stateTextureAngle,
+				stateTextureDouble = stateTextureDouble,
+				stateTextureMirror = stateTextureMirror,
+				stateTextureMirrorSecond = stateTextureMirrorSecond,
+				stateTextureSpacingX = stateTextureSpacingX,
+				stateTextureSpacingY = stateTextureSpacingY,
+			})
+		end
 		CooldownPanels.HidePreviewGlowBorder(icon)
 		if icon.previewBling then icon.previewBling:Hide() end
 		CooldownPanels.StopAllIconGlows(icon)
@@ -10772,6 +11219,8 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			local glowReady = entry.type ~= "MACRO" and entry.type ~= "CDM_AURA" and entry.glowReady ~= false
 			local glowDuration, glowColor, glowStyle, glowInset = CooldownPanels:ResolveEntryGlowStyle(layout, entry)
 			local procGlowStyle, procGlowInset = CooldownPanels:ResolveEntryProcGlowVisual(layout, entry)
+			local stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale, stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond, stateTextureSpacingX, stateTextureSpacingY =
+				CooldownPanels:ResolveEntryStateTexture(entry)
 			local pandemicGlowColor, pandemicGlowStyle, pandemicGlowInset = glowColor, glowStyle, glowInset
 			if resolvedType == "CDM_AURA" then
 				pandemicGlowColor, pandemicGlowStyle, pandemicGlowInset = CooldownPanels:ResolveEntryPandemicGlowVisual(layout, entry)
@@ -10803,7 +11252,8 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			local entryCheckPower = resolvedType == "SPELL" and self:ResolveEntryCheckPower(layout, entry)
 			local readyGlowCheckPower = resolvedType == "SPELL" and glowReady and self:ResolveEntryReadyGlowCheckPower(layout, entry)
 			local procGlowEnabled = resolvedType == "SPELL" and CooldownPanels:ResolveEntryProcGlowEnabled(layout, entry)
-			local overlayGlow = resolvedType == "SPELL" and procGlowEnabled and isSpellFlagged(overlayGlowSpells, baseSpellId, effectiveSpellId)
+			local procActive = resolvedType == "SPELL" and isSpellFlagged(overlayGlowSpells, baseSpellId, effectiveSpellId)
+			local overlayGlow = procActive and procGlowEnabled
 			local readyGlowResourceBlocked = resolvedType == "SPELL" and readyGlowCheckPower and isSpellFlagged(powerInsufficientSpells, baseSpellId, effectiveSpellId)
 			local powerInsufficient = resolvedType == "SPELL" and entryCheckPower and isSpellFlagged(powerInsufficientSpells, baseSpellId, effectiveSpellId)
 			local spellUnusable = resolvedType == "SPELL" and entryCheckPower and isSpellFlagged(spellUnusableSpells, baseSpellId, effectiveSpellId)
@@ -11009,6 +11459,18 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				data.overlayGlowColor = nil
 				data.overlayGlowStyle = procGlowStyle
 				data.overlayGlowInset = procGlowInset
+				data.stateTextureShown = false
+				data.stateTextureType = stateTextureType
+				data.stateTextureValue = stateTextureValue
+				data.stateTextureWidth = stateTextureWidth
+				data.stateTextureHeight = stateTextureHeight
+				data.stateTextureScale = stateTextureScale
+				data.stateTextureAngle = stateTextureAngle
+				data.stateTextureDouble = stateTextureDouble
+				data.stateTextureMirror = stateTextureMirror
+				data.stateTextureMirrorSecond = stateTextureMirrorSecond
+				data.stateTextureSpacingX = stateTextureSpacingX
+				data.stateTextureSpacingY = stateTextureSpacingY
 				if resolvedType == "STANCE" and glowReady then
 					data.overlayGlow = true
 					data.overlayGlowColor = glowColor
@@ -11025,6 +11487,15 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 					data.overlayGlowColor = glowColor
 					data.overlayGlowStyle = glowStyle
 					data.overlayGlowInset = glowInset
+				end
+				if stateTextureType then
+					if layoutEditActive then
+						data.stateTextureShown = true
+					elseif resolvedType == "SPELL" then
+						data.stateTextureShown = procActive == true
+					elseif resolvedType == "CDM_AURA" then
+						data.stateTextureShown = cdmAuraData and cdmAuraData.active == true or false
+					end
 				end
 				data.powerInsufficient = powerInsufficient
 				data.spellUnusable = spellUnusable
@@ -11179,7 +11650,6 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			icon.texture:SetShown(data.showIconTexture ~= false or showGhostIcon)
 			CooldownPanels.ApplyIconTooltip(icon, data.entry, showTooltips)
 			icon.cooldown:SetHideCountdownNumbers(not data.showCooldownText)
-			CooldownPanels:ApplyEntryCooldownTextStyle(icon, layout, data.entry)
 			CooldownPanels:ApplyEntryStackTextStyle(icon, layout, data.entry, defaultCountFontPath, defaultCountFontSize, defaultCountFontStyle)
 			CooldownPanels:ApplyEntryChargesTextStyle(icon, layout, data.entry, defaultChargesFontPath, defaultChargesFontSize, defaultChargesFontStyle)
 			if icon.cooldown.SetReverse then icon.cooldown:SetReverse(data.resolvedType == "CDM_AURA") end
@@ -11433,6 +11903,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				setExampleCooldown(icon.cooldown)
 				icon:SetAlpha(1)
 			end
+			CooldownPanels:ApplyEntryCooldownTextStyle(icon, layout, data.entry)
 			if data.spellUnusable then
 				icon.texture:SetVertexColor(unusableTintR or 0.6, unusableTintG or 0.6, unusableTintB or 0.6)
 			elseif data.powerInsufficient then
@@ -11472,6 +11943,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				staticTextCooldown = data.stanceActive == true or cdmAuraActive or durationActive or (cooldownEnabledOk and isCooldownActive(cooldownStart, cooldownDuration))
 			end
 			applyStaticText(icon, layout, data.entry, staticFontPath, staticFontSize, staticFontStyle, staticTextCooldown)
+			applyStateTexture(icon, data)
 			if layoutEditActive and icon.previewSoundBorder and data.previewSound then icon.previewSoundBorder:Show() end
 			if icon.rangeOverlay then
 				if data.rangeOverlay then
@@ -11612,6 +12084,8 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			if icon.rangeOverlay then icon.rangeOverlay:Hide() end
 			if icon.keybind then icon.keybind:Hide() end
 			if icon.staticText then icon.staticText:Hide() end
+			if icon.stateTexture then icon.stateTexture:Hide() end
+			if icon.stateTextureSecond then icon.stateTextureSecond:Hide() end
 			CooldownPanels.HidePreviewGlowBorder(icon)
 			if icon.previewBling then icon.previewBling:Hide() end
 			if icon.previewSoundBorder then icon.previewSoundBorder:Hide() end

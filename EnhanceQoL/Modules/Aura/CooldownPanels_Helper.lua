@@ -43,6 +43,8 @@ Api.IsSpellUsableFn = C_Spell and C_Spell.IsSpellUsable or IsUsableSpell
 Api.IsSpellPassiveFn = C_Spell and C_Spell.IsSpellPassive or IsPassiveSpell
 Api.GetAssistedCombatNextSpell = C_AssistedCombat and C_AssistedCombat.GetNextCastSpell
 Api.GetAssistedCombatRotationSpells = C_AssistedCombat and C_AssistedCombat.GetRotationSpells
+Api.GetAtlasInfo = C_Texture and C_Texture.GetAtlasInfo
+Api.GetFilenameFromFileDataID = C_Texture and C_Texture.GetFilenameFromFileDataID
 Api.IsSpellKnown = function(spellId, includeOverrides)
 	if not spellId then return false end
 	if not (C_SpellBook and C_SpellBook.IsSpellInSpellBook) then return true end
@@ -247,6 +249,16 @@ Helper.ENTRY_DEFAULTS = {
 	staticTextAnchor = "CENTER",
 	staticTextX = 0,
 	staticTextY = 0,
+	stateTextureInput = "",
+	stateTextureScale = 1,
+	stateTextureWidth = 1,
+	stateTextureHeight = 1,
+	stateTextureAngle = 0,
+	stateTextureDouble = false,
+	stateTextureMirror = false,
+	stateTextureMirrorSecond = true,
+	stateTextureSpacingX = 0,
+	stateTextureSpacingY = 0,
 }
 
 Helper.DEFAULT_PREVIEW_COUNT = 6
@@ -256,6 +268,7 @@ Helper.PREVIEW_ICON_SIZE = 36
 Helper.PREVIEW_COUNT_FONT_MIN = 12
 Helper.OFFSET_RANGE = 200
 Helper.SPACING_RANGE = 200
+Helper.STATE_TEXTURE_SPACING_RANGE = 2000
 Helper.GLOW_INSET_RANGE = 20
 Helper.RADIAL_RADIUS_RANGE = 600
 Helper.RADIAL_ROTATION_RANGE = 360
@@ -287,6 +300,34 @@ function Helper.NormalizeGlowStyle(style, fallback)
 end
 
 function Helper.NormalizeGlowInset(value, fallback) return Helper.ClampInt(value, -Helper.GLOW_INSET_RANGE, Helper.GLOW_INSET_RANGE, fallback) end
+
+function Helper.NormalizeTextureInput(value)
+	if type(value) ~= "string" then return "" end
+	if strtrim then return strtrim(value) end
+	return (value:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+function Helper.ResolveTextureInput(value)
+	local input = Helper.NormalizeTextureInput(value)
+	if input == "" then return nil end
+
+	local fileDataID = tonumber(input)
+	if fileDataID and fileDataID > 0 and math.floor(fileDataID) == fileDataID then
+		if Api.GetFilenameFromFileDataID then
+			local ok, filename = pcall(Api.GetFilenameFromFileDataID, fileDataID)
+			if ok and type(filename) == "string" and filename ~= "" then return "FILEID", fileDataID, filename end
+			return nil
+		end
+		return "FILEID", fileDataID
+	end
+
+	if Api.GetAtlasInfo then
+		local ok, info = pcall(Api.GetAtlasInfo, input)
+		if ok and info then return "ATLAS", input, info end
+	end
+
+	return nil
+end
 
 Helper.VALID_LAYOUT_MODES = {
 	GRID = true,
@@ -1195,6 +1236,36 @@ function Helper.NormalizeEntry(entry, defaults)
 	entry.staticTextAnchor = Helper.NormalizeAnchor(entry.staticTextAnchor, Helper.ENTRY_DEFAULTS.staticTextAnchor or "CENTER")
 	entry.staticTextX = Helper.ClampInt(entry.staticTextX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.ENTRY_DEFAULTS.staticTextX or 0)
 	entry.staticTextY = Helper.ClampInt(entry.staticTextY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.ENTRY_DEFAULTS.staticTextY or 0)
+	entry.stateTextureInput = Helper.NormalizeTextureInput(entry.stateTextureInput)
+	entry.stateTextureScale = Helper.ClampNumber(entry.stateTextureScale, 0.1, 8, Helper.ENTRY_DEFAULTS.stateTextureScale or 1)
+	entry.stateTextureWidth = Helper.ClampNumber(entry.stateTextureWidth, 0.1, 8, Helper.ENTRY_DEFAULTS.stateTextureWidth or 1)
+	entry.stateTextureHeight = Helper.ClampNumber(entry.stateTextureHeight, 0.1, 8, Helper.ENTRY_DEFAULTS.stateTextureHeight or 1)
+	entry.stateTextureAngle = Helper.ClampNumber(entry.stateTextureAngle, 0, 360, Helper.ENTRY_DEFAULTS.stateTextureAngle or 0)
+	entry.stateTextureDouble = entry.stateTextureDouble == true
+	entry.stateTextureMirror = entry.stateTextureMirror == true
+	if type(entry.stateTextureMirrorSecond) ~= "boolean" then entry.stateTextureMirrorSecond = Helper.ENTRY_DEFAULTS.stateTextureMirrorSecond == true end
+	entry.stateTextureSpacingX = Helper.ClampInt(entry.stateTextureSpacingX, 0, Helper.STATE_TEXTURE_SPACING_RANGE or 2000, Helper.ENTRY_DEFAULTS.stateTextureSpacingX or 0)
+	entry.stateTextureSpacingY = Helper.ClampInt(entry.stateTextureSpacingY, 0, Helper.STATE_TEXTURE_SPACING_RANGE or 2000, Helper.ENTRY_DEFAULTS.stateTextureSpacingY or 0)
+	if entry.stateTextureInput == "" then
+		entry.stateTextureType = nil
+		entry.stateTextureAtlas = nil
+		entry.stateTextureFileID = nil
+	else
+		local resolvedType, resolvedValue = Helper.ResolveTextureInput(entry.stateTextureInput)
+		if resolvedType == "ATLAS" then
+			entry.stateTextureType = "ATLAS"
+			entry.stateTextureAtlas = resolvedValue
+			entry.stateTextureFileID = nil
+		elseif resolvedType == "FILEID" then
+			entry.stateTextureType = "FILEID"
+			entry.stateTextureFileID = resolvedValue
+			entry.stateTextureAtlas = nil
+		else
+			entry.stateTextureType = nil
+			entry.stateTextureAtlas = nil
+			entry.stateTextureFileID = nil
+		end
+	end
 	if entry.cooldownTextFont ~= nil and type(entry.cooldownTextFont) ~= "string" then entry.cooldownTextFont = nil end
 	if entry.cooldownTextSize ~= nil then entry.cooldownTextSize = Helper.ClampInt(entry.cooldownTextSize, 6, 64, 12) end
 	if entry.cooldownTextStyle ~= nil then entry.cooldownTextStyle = Helper.NormalizeFontStyleChoice(entry.cooldownTextStyle, "NONE") end

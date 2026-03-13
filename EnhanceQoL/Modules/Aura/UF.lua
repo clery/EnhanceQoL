@@ -71,10 +71,6 @@ local HasFrameVisibilityOverride = addon.functions and addon.functions.HasFrameV
 local NormalizeUnitFrameVisibilityConfig = addon.functions and addon.functions.NormalizeUnitFrameVisibilityConfig
 local ApplyFrameVisibilityConfig = addon.functions and addon.functions.ApplyFrameVisibilityConfig
 
-local shouldShowSampleCast
-local setSampleCast
-local shouldHideClassificationText
-
 local UNIT = {
 	PLAYER = "player",
 	TARGET = "target",
@@ -201,12 +197,6 @@ local totemFrameClasses = {
 local classResourceOriginalLayouts = {}
 local classResourceManagedFrames = {}
 local classResourceHooks = {}
-local applyClassResourceLayout
-local totemFrameOriginalLayout
-local totemFrameManaged
-local totemFrameHooked
-local totemFrameSample
-local applyTotemFrameLayout
 
 UF.Profiles = UF.Profiles or {}
 local UFProfileManager = UF.Profiles
@@ -1106,6 +1096,23 @@ local defaults = {
 				texture = "Interface\\CharacterFrame\\UI-StateIcon",
 				texCoords = { 0.5, 1, 0, 0.5 }, -- combat icon region
 			},
+			dispelTint = {
+				enabled = true,
+				alpha = 0.25,
+				showSample = false,
+				fillEnabled = true,
+				fillAlpha = 0.2,
+				fillColor = { 0, 0, 0, 1 },
+				glowEnabled = false,
+				glowColorMode = "DISPEL",
+				glowColor = { 1, 1, 1, 1 },
+				glowEffect = "PIXEL",
+				glowFrequency = 0.25,
+				glowX = 0,
+				glowY = 0,
+				glowLines = 8,
+				glowThickness = 3,
+			},
 		},
 		combatFeedback = {
 			enabled = false,
@@ -1946,6 +1953,7 @@ local function copySettings(fromUnit, toUnit, opts)
 		unitStatus = {
 			{ "status", "classificationIcon" },
 			{ "status", "combatIndicator" },
+			{ "status", "dispelTint" },
 			{ "pvpIndicator" },
 			{ "roleIndicator" },
 			{ "leaderIcon" },
@@ -2156,7 +2164,7 @@ function ClassResourceUtil.restoreClassResourceFrames()
 end
 
 function ClassResourceUtil.onClassResourceShow()
-	if applyClassResourceLayout then applyClassResourceLayout(states[UNIT.PLAYER] and states[UNIT.PLAYER].cfg or ensureDB(UNIT.PLAYER)) end
+	if ClassResourceUtil.ApplyLayout then ClassResourceUtil.ApplyLayout(states[UNIT.PLAYER] and states[UNIT.PLAYER].cfg or ensureDB(UNIT.PLAYER)) end
 end
 
 function ClassResourceUtil.SetFrameLevelHookOffset(offset)
@@ -2216,7 +2224,7 @@ function ClassResourceUtil.ResolveClassResourceConfigValue(cfg, def, resourceId,
 	return fallback
 end
 
-applyClassResourceLayout = function(cfg)
+ClassResourceUtil.ApplyLayout = function(cfg)
 	local classKey = addon.variables and addon.variables.unitClass
 	local descriptors = classKey and ClassResourceUtil.getClassResourceDescriptors(classKey)
 	if not descriptors or #descriptors == 0 then
@@ -2297,7 +2305,7 @@ applyClassResourceLayout = function(cfg)
 end
 
 function TotemFrameUtil.storeTotemFrameDefaults(frame)
-	if not frame or totemFrameOriginalLayout then return end
+	if not frame or TotemFrameUtil._originalLayout then return end
 	local info = {
 		parent = frame:GetParent(),
 		scale = frame:GetScale(),
@@ -2310,7 +2318,7 @@ function TotemFrameUtil.storeTotemFrameDefaults(frame)
 		local point, rel, relPoint, x, y = frame:GetPoint(i)
 		info.points[#info.points + 1] = { point = point, relativeTo = rel, relativePoint = relPoint, x = x, y = y }
 	end
-	totemFrameOriginalLayout = info
+	TotemFrameUtil._originalLayout = info
 end
 
 local function normalizeTotemFrameConfig(value)
@@ -2320,21 +2328,24 @@ local function normalizeTotemFrameConfig(value)
 end
 
 function TotemFrameUtil.ensureSampleFrame(parent)
-	if not totemFrameSample then
-		totemFrameSample = CreateFrame("Frame", nil, parent)
-		totemFrameSample.ignoreFramePositionManager = true
-		totemFrameSample._eqolManageVisibility = true
-		totemFrameSample:SetSize(37, 37)
-		totemFrameSample:EnableMouse(false)
+	local sampleFrame = TotemFrameUtil._sampleFrame
+	if not sampleFrame then
+		sampleFrame = CreateFrame("Frame", nil, parent)
+		sampleFrame.ignoreFramePositionManager = true
+		sampleFrame._eqolManageVisibility = true
+		sampleFrame:SetSize(37, 37)
+		sampleFrame:EnableMouse(false)
+		TotemFrameUtil._sampleFrame = sampleFrame
 	end
-	if parent and totemFrameSample:GetParent() ~= parent then totemFrameSample:SetParent(parent) end
-	return totemFrameSample
+	if parent and sampleFrame:GetParent() ~= parent then sampleFrame:SetParent(parent) end
+	return sampleFrame
 end
 
 function TotemFrameUtil.hideSampleFrame()
-	if not totemFrameSample then return end
-	if totemFrameSample._eqolSampleButton then totemFrameSample._eqolSampleButton:Hide() end
-	totemFrameSample:Hide()
+	local sampleFrame = TotemFrameUtil._sampleFrame
+	if not sampleFrame then return end
+	if sampleFrame._eqolSampleButton then sampleFrame._eqolSampleButton:Hide() end
+	sampleFrame:Hide()
 end
 
 function TotemFrameUtil.syncSampleFrame(sampleFrame, totemFrame, fallbackParent)
@@ -2355,11 +2366,11 @@ end
 
 function TotemFrameUtil.restoreTotemFrame()
 	TotemFrameUtil.hideSampleFrame()
-	if not totemFrameManaged then return end
+	if not TotemFrameUtil._managed then return end
 	local frame = _G.TotemFrame
 	if not frame then return end
-	local info = totemFrameOriginalLayout
-	totemFrameManaged = nil
+	local info = TotemFrameUtil._originalLayout
+	TotemFrameUtil._managed = nil
 	if not info then return end
 	if frame._eqolSampleButton then frame._eqolSampleButton:Hide() end
 	if frame.SetParent and info.parent then frame:SetParent(info.parent) end
@@ -2376,12 +2387,12 @@ function TotemFrameUtil.restoreTotemFrame()
 end
 
 function TotemFrameUtil.onTotemFrameShow()
-	if applyTotemFrameLayout then applyTotemFrameLayout(states[UNIT.PLAYER] and states[UNIT.PLAYER].cfg or ensureDB(UNIT.PLAYER)) end
+	if TotemFrameUtil.ApplyLayout then TotemFrameUtil.ApplyLayout(states[UNIT.PLAYER] and states[UNIT.PLAYER].cfg or ensureDB(UNIT.PLAYER)) end
 end
 
 function TotemFrameUtil.hookTotemFrame(frame)
-	if not frame or totemFrameHooked then return end
-	totemFrameHooked = true
+	if not frame or TotemFrameUtil._hooked then return end
+	TotemFrameUtil._hooked = true
 	frame:HookScript("OnShow", TotemFrameUtil.onTotemFrameShow)
 	if hooksecurefunc and frame.SetFrameLevel then hooksecurefunc(frame, "SetFrameLevel", function(self)
 		if frame:GetFrameLevel() < 7 then frame:SetFrameLevel(7) end
@@ -2426,7 +2437,7 @@ function TotemFrameUtil.updateSample(frame, shouldShow, activeRefFrame)
 	if frame.Layout then frame:Layout() end
 end
 
-applyTotemFrameLayout = function(cfg)
+TotemFrameUtil.ApplyLayout = function(cfg)
 	local frame = _G.TotemFrame
 	if not frame then
 		TotemFrameUtil.hideSampleFrame()
@@ -2462,7 +2473,7 @@ applyTotemFrameLayout = function(cfg)
 
 	TotemFrameUtil.storeTotemFrameDefaults(frame)
 	TotemFrameUtil.hookTotemFrame(frame)
-	totemFrameManaged = true
+	TotemFrameUtil._managed = true
 	frame.ignoreFramePositionManager = true
 	frame:ClearAllPoints()
 	local anchor = tcfg.anchor or tdef.anchor
@@ -2473,11 +2484,11 @@ applyTotemFrameLayout = function(cfg)
 	if offsetY == nil then offsetY = (tdef.offset and tdef.offset.y) end
 	if offsetY == nil then offsetY = 0 end
 	if anchor then
-		local info = totemFrameOriginalLayout
+		local info = TotemFrameUtil._originalLayout
 		local selfPoint = (info and info.points and info.points[1] and info.points[1].point) or anchor
 		frame:SetPoint(selfPoint, st.frame, anchor, offsetX, offsetY)
 	else
-		local info = totemFrameOriginalLayout
+		local info = TotemFrameUtil._originalLayout
 		if info and info.points and #info.points > 0 then
 			for _, pt in ipairs(info.points) do
 				local rel = pt.relativeTo
@@ -2491,7 +2502,7 @@ applyTotemFrameLayout = function(cfg)
 	frame:SetParent(st.frame)
 	local scale = tcfg.scale
 	if scale == nil then scale = tdef.scale end
-	if scale == nil then scale = (totemFrameOriginalLayout and totemFrameOriginalLayout.scale) end
+	if scale == nil then scale = (TotemFrameUtil._originalLayout and TotemFrameUtil._originalLayout.scale) end
 	if scale == nil then scale = 1 end
 	if frame.SetScale then frame:SetScale(scale) end
 	if frame.SetFrameStrata and st.frame.GetFrameStrata then frame:SetFrameStrata(st.frame:GetFrameStrata()) end
@@ -3676,11 +3687,13 @@ function AuraUtil.updateTargetAuraIcons(startIndex, unit)
 	unit = unit or "target"
 	local st = states[unit]
 	if not st or not st.auraContainer or not st.frame then return end
+	local allowSample = addon.EditModeLib and addon.EditModeLib:IsInEditMode()
 	local cfg = st.cfg or ensureDB(unit)
 	local def = defaultsFor(unit)
 	local ac = cfg.auraIcons or (def and def.auraIcons) or defaults.target.auraIcons or { size = 24, padding = 2, max = 16, showCooldown = true }
 	if not AuraUtil.isAuraIconsEnabled(ac, def) then
 		AuraUtil.hideAuraContainers(st)
+		AuraUtil.UpdateSingleDispelIndicator(unit, allowSample)
 		return
 	end
 	local resolved = AuraUtil.resolveSingleAuraConfig(ac, def and def.auraIcons)
@@ -3690,6 +3703,7 @@ function AuraUtil.updateTargetAuraIcons(startIndex, unit)
 	local showDebuffs = debuffStyle.enabled ~= false
 	if not showBuffs and not showDebuffs then
 		AuraUtil.hideAuraContainers(st)
+		AuraUtil.UpdateSingleDispelIndicator(unit, allowSample)
 		return
 	end
 	local auras, order, indexById = AuraUtil.getAuraTables(unit)
@@ -3818,6 +3832,7 @@ function AuraUtil.updateTargetAuraIcons(startIndex, unit)
 			st.debuffContainer:SetShown(false)
 		end
 		AuraUtil.updateAuraContainerSize(st.auraContainer, shown, combinedLayout, perRowCombined, combinedPrimary)
+		AuraUtil.UpdateSingleDispelIndicator(unit, allowSample)
 		return
 	end
 
@@ -3861,6 +3876,7 @@ function AuraUtil.updateTargetAuraIcons(startIndex, unit)
 
 	AuraUtil.updateAuraContainerSize(st.auraContainer, buffCount, buffStyle, perRow, buffPrimary)
 	AuraUtil.updateAuraContainerSize(st.debuffContainer, debuffCount, debuffStyle, perRowDebuff, debPrimary)
+	AuraUtil.UpdateSingleDispelIndicator(unit, allowSample)
 end
 
 function AuraUtil.normalizeAuraQueryLimit(value)
@@ -4316,6 +4332,260 @@ end
 local function unpackColor(color, defaultR, defaultG, defaultB, defaultA)
 	if type(color) ~= "table" then return defaultR, defaultG, defaultB, defaultA end
 	return color[1] or color.r or defaultR, color[2] or color.g or defaultG, color[3] or color.b or defaultB, color[4] or color.a or defaultA
+end
+
+function AuraUtil.HideSingleDispelIndicator(unit)
+	if unit ~= UNIT.PLAYER and unit ~= UNIT.TARGET and unit ~= UNIT.FOCUS then return end
+	local st = states[unit]
+	if not st then return end
+
+	if st.dispelTint then
+		st._dispelTintShown = false
+		st.dispelTint:Hide()
+	end
+
+	if not st._dispelGlowActive then return end
+	local effect = st._dispelGlowEffect
+	st._dispelGlowActive = nil
+	st._dispelGlowEffect = nil
+
+	local glowLib = LibStub and LibStub("LibCustomGlow-1.0", true)
+	local target = st.barGroup or st.frame
+	if not (glowLib and target) then return end
+	if effect == "SHINE" then
+		if glowLib.AutoCastGlow_Stop then glowLib.AutoCastGlow_Stop(target, "EQOL_DISPEL") end
+	elseif effect == "PROC" then
+		if glowLib.ProcGlow_Stop then glowLib.ProcGlow_Stop(target, "EQOL_DISPEL") end
+	elseif effect == "BLIZZARD" then
+		if glowLib.ButtonGlow_Stop then glowLib.ButtonGlow_Stop(target) end
+	else
+		if glowLib.PixelGlow_Stop then glowLib.PixelGlow_Stop(target, "EQOL_DISPEL") end
+	end
+end
+
+function AuraUtil.UpdateSingleDispelIndicator(unit, allowSample)
+	if unit ~= UNIT.PLAYER and unit ~= UNIT.TARGET and unit ~= UNIT.FOCUS then return end
+	local st = states[unit]
+	if not st then return end
+
+	local function clampNumber(value, minValue, maxValue, fallback)
+		local v = tonumber(value)
+		if v == nil then return fallback end
+		if minValue ~= nil and v < minValue then v = minValue end
+		if maxValue ~= nil and v > maxValue then v = maxValue end
+		return v
+	end
+
+	local function hideTint()
+		if not st.dispelTint then return end
+		if st._dispelTintShown == false then return end
+		st._dispelTintShown = false
+		st.dispelTint:Hide()
+	end
+
+	local function applyTint(r, g, b, alpha, fr, fg, fb, bgAlpha)
+		if not st.dispelTint then return end
+		st._dispelTintShown = true
+		local bg = st.dispelTint.Background
+		if bg then
+			if bg.SetColorTexture then
+				bg:SetColorTexture(fr, fg, fb, 1)
+			elseif bg.SetVertexColor then
+				bg:SetVertexColor(fr, fg, fb, 1)
+			end
+			if bg.SetAlpha then bg:SetAlpha(bgAlpha) end
+			if bg.SetShown then bg:SetShown(bgAlpha > 0) end
+		end
+		local grad = st.dispelTint.Gradient
+		if grad then grad:SetVertexColor(r, g, b, alpha) end
+		local border = st.dispelTint.Border
+		if border then border:SetVertexColor(r, g, b, alpha) end
+		if st.dispelTint.SetAlpha then st.dispelTint:SetAlpha(1) end
+		st.dispelTint:Show()
+	end
+
+	local function stopGlow()
+		if not st._dispelGlowActive then return end
+		local effect = st._dispelGlowEffect
+		st._dispelGlowActive = nil
+		st._dispelGlowEffect = nil
+
+		local glowLib = LibStub and LibStub("LibCustomGlow-1.0", true)
+		local target = st.barGroup or st.frame
+		if not (glowLib and target) then return end
+		if effect == "SHINE" then
+			if glowLib.AutoCastGlow_Stop then glowLib.AutoCastGlow_Stop(target, "EQOL_DISPEL") end
+		elseif effect == "PROC" then
+			if glowLib.ProcGlow_Stop then glowLib.ProcGlow_Stop(target, "EQOL_DISPEL") end
+		elseif effect == "BLIZZARD" then
+			if glowLib.ButtonGlow_Stop then glowLib.ButtonGlow_Stop(target) end
+		else
+			if glowLib.PixelGlow_Stop then glowLib.PixelGlow_Stop(target, "EQOL_DISPEL") end
+		end
+	end
+
+	local function findDispelAura()
+		if not (C_UnitAuras and C_UnitAuras.GetAuraSlots and C_UnitAuras.GetAuraDataBySlot) or not UnitExists or not UnitExists(unit) then return nil end
+
+		local slots = { C_UnitAuras.GetAuraSlots(unit, "HARMFUL|INCLUDE_NAME_PLATE_ONLY|RAID_PLAYER_DISPELLABLE", 32) }
+		for i = 2, #slots do
+			local aura = C_UnitAuras.GetAuraDataBySlot(unit, slots[i])
+			if aura and not (UF.GlobalAuraIgnore and UF.GlobalAuraIgnore.ShouldIgnoreAura and UF.GlobalAuraIgnore.ShouldIgnoreAura(unit, aura)) then return aura end
+		end
+		return nil
+	end
+
+	local function resolveAuraColor(aura)
+		if not aura then return nil end
+		if not aura.isSample and aura.auraInstanceID and aura.auraInstanceID > 0 and C_UnitAuras and C_UnitAuras.GetAuraDispelTypeColor and UFHelper and UFHelper.debuffColorCurve then
+			local color = C_UnitAuras.GetAuraDispelTypeColor(unit, aura.auraInstanceID, UFHelper.debuffColorCurve)
+			if color then
+				if color.GetRGBA then
+					return color:GetRGBA()
+				elseif color.r then
+					return color.r, color.g, color.b
+				end
+			end
+		end
+		if UFHelper and UFHelper.getDebuffColorFromName then
+			local dispelName = aura.dispelName
+			local canActivePlayerDispel = aura.canActivePlayerDispel
+			if issecretvalue and issecretvalue(dispelName) then dispelName = nil end
+			if issecretvalue and issecretvalue(canActivePlayerDispel) then canActivePlayerDispel = nil end
+			if (not dispelName or dispelName == "") and canActivePlayerDispel == true then dispelName = "Magic" end
+			local r, g, b = UFHelper.getDebuffColorFromName(dispelName or "None")
+			if r then return r, g, b end
+		end
+		return nil
+	end
+
+	local cfg = st.cfg or defaultsFor(unit) or {}
+	local def = defaultsFor(unit) or {}
+	local scfg = cfg.status or {}
+	local dcfg = scfg.dispelTint or {}
+	local defDispel = (def.status and def.status.dispelTint) or {}
+
+	local overlayEnabled = dcfg.enabled
+	if overlayEnabled == nil then overlayEnabled = defDispel.enabled ~= false end
+	local glowEnabled = dcfg.glowEnabled
+	if glowEnabled == nil then glowEnabled = defDispel.glowEnabled == true end
+	local indicatorAllowedForUnit = true
+	if not allowSample and (unit == UNIT.TARGET or unit == UNIT.FOCUS) then indicatorAllowedForUnit = UnitExists and UnitExists(unit) and UnitIsFriend and UnitIsFriend("player", unit) == true end
+
+	if not overlayEnabled and not glowEnabled then
+		hideTint()
+		stopGlow()
+		return
+	end
+
+	if not indicatorAllowedForUnit then
+		hideTint()
+		stopGlow()
+		return
+	end
+
+	if allowSample then
+		local showSample = dcfg.showSample
+		if showSample == nil then showSample = defDispel.showSample == true end
+		if not showSample then
+			hideTint()
+			stopGlow()
+			return
+		end
+	end
+
+	local alpha = dcfg.alpha
+	if alpha == nil then alpha = defDispel.alpha or 0.25 end
+	local fillEnabled = dcfg.fillEnabled
+	if fillEnabled == nil then fillEnabled = defDispel.fillEnabled ~= false end
+	local fillAlpha = dcfg.fillAlpha
+	if fillAlpha == nil then fillAlpha = defDispel.fillAlpha or 0.2 end
+	local fillColor = dcfg.fillColor or defDispel.fillColor or { 0, 0, 0, 1 }
+	local fr, fg, fb, fa = unpackColor(fillColor, 0, 0, 0, 1)
+	if not fillEnabled then fillAlpha = 0 end
+	local bgAlpha = fillAlpha * (fa or 1)
+
+	local r, g, b
+	if allowSample then
+		if UFHelper and UFHelper.getDebuffColorFromName then
+			r, g, b = UFHelper.getDebuffColorFromName("Magic")
+		end
+		if not r then
+			r, g, b = 0.2, 0.6, 1
+		end
+	else
+		local aura = findDispelAura()
+		if aura then
+			r, g, b = resolveAuraColor(aura)
+		end
+	end
+
+	if overlayEnabled and r then
+		applyTint(r, g or 0, b or 0, alpha, fr, fg, fb, bgAlpha)
+	else
+		hideTint()
+	end
+
+	if not glowEnabled then
+		stopGlow()
+		return
+	end
+
+	local glowLib = LibStub and LibStub("LibCustomGlow-1.0", true)
+	local target = st.barGroup or st.frame
+	if not (glowLib and glowLib.PixelGlow_Start and target and r and g and b) then
+		stopGlow()
+		return
+	end
+
+	local colorMode = dcfg.glowColorMode or defDispel.glowColorMode or "DISPEL"
+	local cr, cg, cb = r, g, b
+	if colorMode == "CUSTOM" then
+		local glowColor = dcfg.glowColor or defDispel.glowColor or { 1, 1, 1, 1 }
+		cr, cg, cb = unpackColor(glowColor, 1, 1, 1, 1)
+	end
+
+	local lines = clampNumber(dcfg.glowLines or defDispel.glowLines or 8, 1, 20, 8)
+	local freq = clampNumber(dcfg.glowFrequency or defDispel.glowFrequency or 0.25, -1.5, 1.5, 0.25)
+	local thickness = clampNumber(dcfg.glowThickness or defDispel.glowThickness or 3, 1, 10, 3)
+	local xoff = clampNumber(dcfg.glowX or defDispel.glowX or 0, -10, 10, 0)
+	local yoff = clampNumber(dcfg.glowY or defDispel.glowY or 0, -10, 10, 0)
+	local effect = dcfg.glowEffect or defDispel.glowEffect or "PIXEL"
+	if effect ~= "PIXEL" and effect ~= "SHINE" and effect ~= "BLIZZARD" then effect = "PIXEL" end
+
+	local appliedEffect = effect
+	if appliedEffect == "SHINE" and not glowLib.AutoCastGlow_Start then
+		appliedEffect = "PIXEL"
+	elseif appliedEffect == "BLIZZARD" and not glowLib.ButtonGlow_Start then
+		appliedEffect = "PIXEL"
+	end
+	if st._dispelGlowActive and st._dispelGlowEffect ~= appliedEffect then stopGlow() end
+
+	local glowColor = { cr, cg, cb, 1 }
+	local scale = thickness / 3
+	if scale < 0.5 then
+		scale = 0.5
+	elseif scale > 4 then
+		scale = 4
+	end
+
+	if appliedEffect == "SHINE" and glowLib.AutoCastGlow_Start then
+		glowLib.AutoCastGlow_Start(target, glowColor, lines, freq, scale, xoff, yoff, "EQOL_DISPEL")
+	elseif appliedEffect == "BLIZZARD" and glowLib.ButtonGlow_Start then
+		glowLib.ButtonGlow_Start(target, glowColor, freq)
+	else
+		glowLib.PixelGlow_Start(target, glowColor, lines, freq, nil, thickness, xoff, yoff, nil, "EQOL_DISPEL")
+	end
+
+	st._dispelGlowActive = true
+	st._dispelGlowEffect = appliedEffect
+end
+
+function AuraUtil.GetSingleDispelOverlayOrientation()
+	if AuraUtil._singleDispelOverlayOrientation == nil and EnumUtil and EnumUtil.MakeEnum then
+		AuraUtil._singleDispelOverlayOrientation = EnumUtil.MakeEnum("VerticalTopToBottom", "VerticalBottomToTop", "HorizontalLeftToRight")
+	end
+	return AuraUtil._singleDispelOverlayOrientation
 end
 
 UF._isFrameBorderEnabled = UF._isFrameBorderEnabled
@@ -4862,8 +5132,8 @@ local function updateCastBar(unit)
 		return
 	end
 	if nowMs >= endMs then
-		if shouldShowSampleCast(unit) then
-			setSampleCast(unit)
+		if UF.ShouldShowSampleCast(unit) then
+			UF.SetSampleCast(unit)
 		else
 			stopCast(unit)
 		end
@@ -4942,9 +5212,9 @@ local function updateCastBar(unit)
 	end
 end
 
-shouldShowSampleCast = function(unit) return addon.EditModeLib and addon.EditModeLib:IsInEditMode() end
+function UF.ShouldShowSampleCast(unit) return addon.EditModeLib and addon.EditModeLib:IsInEditMode() end
 
-setSampleCast = function(unit)
+function UF.SetSampleCast(unit)
 	local key = isBossUnit(unit) and "boss" or unit
 	local st = states[unit]
 	if not st or not st.castBar then return end
@@ -5014,7 +5284,7 @@ function UF.ShowCastInterrupt(unit, event)
 	end
 	if showInterruptFeedback == false then
 		stopCast(unit)
-		if shouldShowSampleCast(unit) then setSampleCast(unit) end
+		if UF.ShouldShowSampleCast(unit) then UF.SetSampleCast(unit) end
 		return
 	end
 
@@ -5162,7 +5432,7 @@ function UF.ShowCastInterrupt(unit, event)
 		local st2 = states[unit]
 		if not st2 or st2.castInterruptToken ~= token then return end
 		stopCast(unit)
-		if shouldShowSampleCast(unit) then setSampleCast(unit) end
+		if UF.ShouldShowSampleCast(unit) then UF.SetSampleCast(unit) end
 	end)
 	st.castInterruptAnim:Play()
 end
@@ -5193,8 +5463,8 @@ local function setCastInfoFromUnit(unit)
 		numEmpowerStages = nil
 	end
 	if not name then
-		if shouldShowSampleCast(unit) then
-			setSampleCast(unit)
+		if UF.ShouldShowSampleCast(unit) then
+			UF.SetSampleCast(unit)
 		else
 			stopCast(unit)
 		end
@@ -5995,6 +6265,11 @@ local function syncTextFrameLevels(st)
 		if not fallbackStrata and st.status and st.status.GetFrameStrata then fallbackStrata = st.status:GetFrameStrata() end
 		if levelStrata or fallbackStrata then levelLayer:SetFrameStrata(levelStrata or fallbackStrata) end
 	end
+	if st.dispelTint then
+		local dispelParent = st.healthTextLayer or st.health
+		if st.dispelTint.GetParent and dispelParent and st.dispelTint:GetParent() ~= dispelParent then st.dispelTint:SetParent(dispelParent) end
+		setFrameLevelAbove(st.dispelTint, dispelParent or healthAnchor, 0)
+	end
 	if st.restLoop and st.statusTextLayer then setFrameLevelAbove(st.restLoop, st.statusTextLayer, 3) end
 	if st.castTextLayer then setFrameLevelAbove(st.castTextLayer, st.castBar, 5) end
 	if st.castIconLayer then setFrameLevelAbove(st.castIconLayer, st.castBar, 4) end
@@ -6148,7 +6423,7 @@ local function shouldShowLevel(scfg, unit)
 	return true
 end
 
-shouldHideClassificationText = function(cfg, unit)
+function UF.ShouldHideClassificationText(cfg, unit)
 	if unit == UNIT.PLAYER or not cfg then return false end
 	local scfg = cfg.status or {}
 	local icfg = scfg.classificationIcon or {}
@@ -6731,6 +7006,16 @@ local function layoutFrame(cfg, unit)
 		end
 	end
 	applyPortraitSeparator(cfg, unit, st, portraitEnabled)
+	if st.dispelTint then
+		if st.dispelTint.GetParent and st.healthTextLayer and st.dispelTint:GetParent() ~= st.healthTextLayer then st.dispelTint:SetParent(st.healthTextLayer) end
+		if st.dispelTint.SetFrameLevel and st.healthTextLayer then st.dispelTint:SetFrameLevel(st.healthTextLayer:GetFrameLevel() or 0) end
+		st.dispelTint:SetAllPoints(st.health)
+		local dispelOrientation = AuraUtil.GetSingleDispelOverlayOrientation()
+		if st.dispelTint.SetOrientation and dispelOrientation then
+			AuraUtil._singleDispelOverlaySetupFrame = AuraUtil._singleDispelOverlaySetupFrame or { powerBarUsedHeight = 0 }
+			st.dispelTint:SetOrientation(AuraUtil._singleDispelOverlaySetupFrame, dispelOrientation.VerticalTopToBottom, 0, 0)
+		end
+	end
 
 	local totalHeight = statusHeight + barsHeight
 	st.frame:SetHeight(totalHeight)
@@ -6821,8 +7106,8 @@ local function layoutFrame(cfg, unit)
 		end
 	end
 	if unit == UNIT.PLAYER then
-		applyClassResourceLayout(cfg)
-		if applyTotemFrameLayout then applyTotemFrameLayout(cfg) end
+		if ClassResourceUtil.ApplyLayout then ClassResourceUtil.ApplyLayout(cfg) end
+		if TotemFrameUtil.ApplyLayout then TotemFrameUtil.ApplyLayout(cfg) end
 	end
 	syncTextFrameLevels(st)
 end
@@ -6867,6 +7152,7 @@ local function ensureFrames(unit)
 	st.frame:HookScript("OnHide", function()
 		st._hovered = false
 		UFHelper.updateHighlight(st, unit, UNIT.PLAYER)
+		AuraUtil.HideSingleDispelIndicator(unit)
 		if unit == UNIT.TARGET then
 			local targetLoose = IsTargetLoose and IsTargetLoose()
 			if not targetLoose and UnitExists and not UnitExists(UNIT.TARGET) then
@@ -6981,6 +7267,12 @@ local function ensureFrames(unit)
 	st.statusTextLayer:SetAllPoints(st.status)
 	st.levelTextLayer = st.levelTextLayer or CreateFrame("Frame", nil, st.status)
 	st.levelTextLayer:SetAllPoints(st.status)
+	if (unit == UNIT.PLAYER or unit == UNIT.TARGET or unit == UNIT.FOCUS) and not st.dispelTint then
+		st.dispelTint = CreateFrame("Frame", nil, st.healthTextLayer or st.health, "CompactUnitFrameDispelOverlayTemplate")
+		st.dispelTint:SetAllPoints(st.health)
+		st.dispelTint:Hide()
+		if st.dispelTint.SetDispelType then st.dispelTint.SetDispelType = nil end
+	end
 	if not st.privateAuras then
 		st.privateAuras = CreateFrame("Frame", nil, st.frame)
 		st.privateAuras:EnableMouse(false)
@@ -7311,7 +7603,7 @@ local function updateNameAndLevel(cfg, unit, levelOverride)
 	if st.levelText then
 		local scfg = cfg.status or {}
 		local enabled = shouldShowLevel(scfg, unit)
-		local hideClassText = shouldHideClassificationText(cfg, unit)
+		local hideClassText = UF.ShouldHideClassificationText(cfg, unit)
 		st.levelText:SetShown(enabled)
 		if enabled then
 			local lc
@@ -7380,6 +7672,7 @@ local function applyConfig(unit)
 			UFHelper.RemovePrivateAuras(st.privateAuras)
 			if st.privateAuras.Hide then st.privateAuras:Hide() end
 		end
+		AuraUtil.HideSingleDispelIndicator(unit)
 		return
 	end
 	ensureFrames(unit)
@@ -7439,6 +7732,7 @@ local function applyConfig(unit)
 	updateHealth(cfg, unit)
 	updatePower(cfg, unit)
 	updatePortrait(cfg, unit)
+	AuraUtil.UpdateSingleDispelIndicator(unit, addon.EditModeLib and addon.EditModeLib:IsInEditMode())
 	checkRaidTargetIcon(unit, st)
 	UFHelper.updateLeaderIndicator(st, unit, cfg, defaultsFor(unit), false)
 	UFHelper.updatePvPIndicator(st, unit, cfg, defaultsFor(unit), false)
@@ -7587,7 +7881,7 @@ local function applyBossEditSample(idx, cfg)
 	local hc = cfg.health or defH or {}
 	local pcfg = cfg.power or defP or {}
 	local cdef = cfg.cast or def.cast or {}
-	local hideClassText = shouldHideClassificationText(cfg, unit)
+	local hideClassText = UF.ShouldHideClassificationText(cfg, unit)
 	local interpolation = getSmoothInterpolation(cfg, def)
 
 	local cur = UnitHealth("player") or 1
@@ -7707,7 +8001,7 @@ local function applyBossEditSample(idx, cfg)
 		st.levelText:SetText("??")
 		st.levelText:Show()
 	end
-	if st.castBar and cdef.enabled ~= false then setSampleCast(unit) end
+	if st.castBar and cdef.enabled ~= false then UF.SetSampleCast(unit) end
 end
 
 local function updateBossFrames(force)
@@ -7763,7 +8057,7 @@ local function updateBossFrames(force)
 					AuraUtil.fullScanTargetAuras(unit)
 					if st.castBar and cfg.cast and cfg.cast.enabled ~= false then
 						setCastInfoFromUnit(unit)
-						if shouldShowSampleCast(unit) and (not st.castInfo or not UnitCastingInfo or (UnitCastingInfo and not UnitCastingInfo(unit))) then setSampleCast(unit) end
+						if UF.ShouldShowSampleCast(unit) and (not st.castInfo or not UnitCastingInfo or (UnitCastingInfo and not UnitCastingInfo(unit))) then UF.SetSampleCast(unit) end
 					elseif st.castBar then
 						stopCast(unit)
 						st.castBar:Hide()
@@ -8128,6 +8422,7 @@ end
 local function updateFocusFrame(cfg, forceApply)
 	cfg = cfg or ensureDB(UNIT.FOCUS)
 	local st = states[UNIT.FOCUS]
+	AuraUtil.HideSingleDispelIndicator(UNIT.FOCUS)
 	if not cfg.enabled then
 		if applyFrameRuleOverride then applyFrameRuleOverride(BLIZZ_FRAME_NAMES.focus, false) end
 		if st then
@@ -8136,6 +8431,7 @@ local function updateFocusFrame(cfg, forceApply)
 			if st.auraContainer then AuraUtil.hideAuraContainers(st) end
 		end
 		AuraUtil.resetTargetAuras(UNIT.FOCUS)
+		AuraUtil.HideSingleDispelIndicator(UNIT.FOCUS)
 		updatePortrait(cfg, UNIT.FOCUS)
 		applyVisibilityRules(UNIT.FOCUS)
 		return
@@ -8175,6 +8471,7 @@ local function updateFocusFrame(cfg, forceApply)
 			if st.auraContainer then AuraUtil.hideAuraContainers(st) end
 		end
 		AuraUtil.resetTargetAuras(UNIT.FOCUS)
+		AuraUtil.HideSingleDispelIndicator(UNIT.FOCUS)
 	end
 	checkRaidTargetIcon(UNIT.FOCUS, st)
 	UFHelper.updateLeaderIndicator(st, UNIT.FOCUS, cfg, defaultsFor(UNIT.FOCUS), not forceApply)
@@ -8286,7 +8583,7 @@ function UF.UpdateUnitTexts(unit, force)
 			local roundPercent = hc.roundPercent == true
 			local levelText
 			if UFHelper.textModeUsesLevel(leftMode) or UFHelper.textModeUsesLevel(centerMode) or UFHelper.textModeUsesLevel(rightMode) then
-				levelText = UFHelper.getUnitLevelText(unit, nil, shouldHideClassificationText(cfg, unit))
+				levelText = UFHelper.getUnitLevelText(unit, nil, UF.ShouldHideClassificationText(cfg, unit))
 			end
 
 			if st.healthTextLeft then
@@ -8367,7 +8664,7 @@ function UF.UpdateUnitTexts(unit, force)
 		local roundPercent = pcfg.roundPercent == true
 		local levelText
 		if UFHelper.textModeUsesLevel(leftMode) or UFHelper.textModeUsesLevel(centerMode) or UFHelper.textModeUsesLevel(rightMode) then
-			levelText = UFHelper.getUnitLevelText(unit, nil, shouldHideClassificationText(cfg, unit))
+			levelText = UFHelper.getUnitLevelText(unit, nil, UF.ShouldHideClassificationText(cfg, unit))
 		end
 
 		if st.powerTextLeft then
@@ -8458,7 +8755,7 @@ function UF.UpdateUnitTexts(unit, force)
 		local roundPercent = secondaryCfg.roundPercent == true
 		local levelText
 		if UFHelper.textModeUsesLevel(leftMode) or UFHelper.textModeUsesLevel(centerMode) or UFHelper.textModeUsesLevel(rightMode) then
-			levelText = UFHelper.getUnitLevelText(unit, nil, shouldHideClassificationText(cfg, unit))
+			levelText = UFHelper.getUnitLevelText(unit, nil, UF.ShouldHideClassificationText(cfg, unit))
 		end
 
 		if st.secondaryPowerTextLeft then
@@ -8683,6 +8980,7 @@ onEvent = function(self, event, unit, ...)
 		local totCfg = getCfg(UNIT.TARGET_TARGET)
 		local focusCfg = getCfg(UNIT.FOCUS)
 		local unitToken = UNIT.TARGET
+		AuraUtil.HideSingleDispelIndicator(unitToken)
 		local st = states[unitToken]
 		if not st or not st.frame then
 			AuraUtil.resetTargetAuras()
@@ -8736,6 +9034,7 @@ onEvent = function(self, event, unit, ...)
 		else
 			AuraUtil.resetTargetAuras()
 			AuraUtil.updateTargetAuraIcons()
+			AuraUtil.HideSingleDispelIndicator(unitToken)
 			st.barGroup:Hide()
 			st.status:Hide()
 			stopCast(unitToken)
@@ -8757,6 +9056,7 @@ onEvent = function(self, event, unit, ...)
 	elseif event == "UNIT_AURA" and (unit == "target" or unit == UNIT.PLAYER or unit == UNIT.FOCUS or isBossUnit(unit)) then
 		local cfg = getCfg(unit)
 		if not cfg or cfg.enabled == false then return end
+		local allowSample = addon.EditModeLib and addon.EditModeLib:IsInEditMode()
 		local def = defaultsFor(unit)
 		if unit == UNIT.PLAYER then
 			local secondaryCfg = cfg.secondaryPower or {}
@@ -8767,7 +9067,10 @@ onEvent = function(self, event, unit, ...)
 			end
 		end
 		local ac = cfg.auraIcons or (def and def.auraIcons) or defaults.target.auraIcons or { size = 24, padding = 2, max = 16, showCooldown = true }
-		if not AuraUtil.isAuraIconsEnabled(ac, def) then return end
+		if not AuraUtil.isAuraIconsEnabled(ac, def) then
+			AuraUtil.UpdateSingleDispelIndicator(unit, allowSample)
+			return
+		end
 		local resolvedAuras = AuraUtil.resolveSingleAuraConfig(ac, def and def.auraIcons)
 		local buffAuras = AuraUtil.prepareSingleAuraSectionStyle(resolvedAuras.buff)
 		local debuffAuras = AuraUtil.prepareSingleAuraSectionStyle(resolvedAuras.debuff)
@@ -8778,7 +9081,7 @@ onEvent = function(self, event, unit, ...)
 			AuraUtil.updateTargetAuraIcons(nil, unit)
 			return
 		end
-		if addon.EditModeLib and addon.EditModeLib:IsInEditMode() then
+		if allowSample then
 			local st = states[unit]
 			if st and st._sampleAurasActive then return end
 			AuraUtil.fullScanTargetAuras(unit)
@@ -8874,7 +9177,11 @@ onEvent = function(self, event, unit, ...)
 				end
 			end
 		end
-		if firstChanged then AuraUtil.updateTargetAuraIcons(firstChanged, unit) end
+		if firstChanged then
+			AuraUtil.updateTargetAuraIcons(firstChanged, unit)
+		else
+			AuraUtil.UpdateSingleDispelIndicator(unit, false)
+		end
 	elseif event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" or event == "UNIT_ABSORB_AMOUNT_CHANGED" or event == "UNIT_HEAL_ABSORB_AMOUNT_CHANGED" then
 		if event == "UNIT_ABSORB_AMOUNT_CHANGED" and unit then
 			local st = states[unit]
@@ -9114,19 +9421,19 @@ onEvent = function(self, event, unit, ...)
 		if unit == UNIT.PLAYER then
 			if not (states[UNIT.PLAYER] and states[UNIT.PLAYER].castInterruptActive) then
 				stopCast(UNIT.PLAYER)
-				if shouldShowSampleCast(unit) then setSampleCast(unit) end
+				if UF.ShouldShowSampleCast(unit) then UF.SetSampleCast(unit) end
 			end
 		end
 		if unit == UNIT.TARGET then
 			if not (states[UNIT.TARGET] and states[UNIT.TARGET].castInterruptActive) then
 				stopCast(UNIT.TARGET)
-				if shouldShowSampleCast(unit) then setSampleCast(unit) end
+				if UF.ShouldShowSampleCast(unit) then UF.SetSampleCast(unit) end
 			end
 		end
 		if unit == UNIT.FOCUS then
 			if not (states[UNIT.FOCUS] and states[UNIT.FOCUS].castInterruptActive) then
 				stopCast(UNIT.FOCUS)
-				if shouldShowSampleCast(unit) then setSampleCast(unit) end
+				if UF.ShouldShowSampleCast(unit) then UF.SetSampleCast(unit) end
 			end
 		end
 		if isBossUnit(unit) then

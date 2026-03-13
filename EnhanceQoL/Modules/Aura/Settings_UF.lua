@@ -6143,7 +6143,227 @@ local function buildUnitSettings(unit)
 		)
 		leaderOffsetY.isEnabled = isLeaderIndicatorEnabled
 		list[#list + 1] = leaderOffsetY
-		addDivider("unitStatus")
+		list[#list + 1] = { name = L["UFDispelIndicator"] or "Dispel indicator", kind = settingType.Collapsible, id = "dispelTint", defaultCollapsed = true }
+
+		local dispelDef = statusDef.dispelTint
+			or {
+				enabled = true,
+				alpha = 0.25,
+				showSample = false,
+				fillEnabled = true,
+				fillAlpha = 0.2,
+				fillColor = { 0, 0, 0, 1 },
+				glowEnabled = false,
+				glowColorMode = "DISPEL",
+				glowColor = { 1, 1, 1, 1 },
+				glowEffect = "PIXEL",
+				glowFrequency = 0.25,
+				glowX = 0,
+				glowY = 0,
+				glowLines = 8,
+				glowThickness = 3,
+			}
+		local dispelGlowColorModeOptions = {
+			{ value = "DISPEL", label = L["Dispel color"] or "Dispel color" },
+			{ value = "CUSTOM", label = L["Custom color"] or "Custom color" },
+		}
+		local dispelGlowEffectOptions = {
+			{ value = "PIXEL", label = L["Pixel"] or "Pixel" },
+			{ value = "SHINE", label = L["Shine"] or "Shine" },
+			{ value = "BLIZZARD", label = L["Blizzard"] or "Blizzard" },
+		}
+		local dispelFillColorDefault = { toRGBA(dispelDef.fillColor, { 0, 0, 0, 1 }) }
+		local dispelGlowColorDefault = { toRGBA(dispelDef.glowColor, { 1, 1, 1, 1 }) }
+
+		local function isDispelIndicatorEnabled() return getValue(unit, { "status", "dispelTint", "enabled" }, dispelDef.enabled ~= false) ~= false end
+
+		local function isDispelFillEnabled() return isDispelIndicatorEnabled() and (getValue(unit, { "status", "dispelTint", "fillEnabled" }, dispelDef.fillEnabled ~= false) ~= false) end
+
+		local function isDispelGlowEnabled() return getValue(unit, { "status", "dispelTint", "glowEnabled" }, dispelDef.glowEnabled == true) == true end
+
+		local function getDispelGlowColorMode() return getValue(unit, { "status", "dispelTint", "glowColorMode" }, dispelDef.glowColorMode or "DISPEL") end
+
+		list[#list + 1] = checkbox(L["Enable tint"] or "Enable tint", isDispelIndicatorEnabled, function(val)
+			setValue(unit, { "status", "dispelTint", "enabled" }, val and true or false)
+			refreshSelf()
+			refreshSettingsUI()
+		end, dispelDef.enabled ~= false, "dispelTint")
+
+		list[#list + 1] = checkbox(L["Fill"] or "Fill", function() return getValue(unit, { "status", "dispelTint", "fillEnabled" }, dispelDef.fillEnabled ~= false) ~= false end, function(val)
+			setValue(unit, { "status", "dispelTint", "fillEnabled" }, val and true or false)
+			refreshSelf()
+			refreshSettingsUI()
+		end, dispelDef.fillEnabled ~= false, "dispelTint", isDispelIndicatorEnabled)
+
+		list[#list + 1] = slider(
+			L["Fill opacity"] or "Fill opacity",
+			0,
+			1,
+			0.01,
+			function() return getValue(unit, { "status", "dispelTint", "fillAlpha" }, dispelDef.fillAlpha or 0.2) end,
+			function(val)
+				setValue(unit, { "status", "dispelTint", "fillAlpha" }, clampNumber(val, 0, 1, dispelDef.fillAlpha or 0.2))
+				refreshSelf()
+			end,
+			dispelDef.fillAlpha or 0.2,
+			"dispelTint",
+			true,
+			function(value) return string.format("%.2f", tonumber(value) or 0) end
+		)
+		list[#list].isEnabled = isDispelFillEnabled
+
+		list[#list + 1] = {
+			name = L["Fill color"] or "Fill color",
+			kind = settingType.Color,
+			parentId = "dispelTint",
+			isEnabled = isDispelFillEnabled,
+			get = function() return getValue(unit, { "status", "dispelTint", "fillColor" }, dispelDef.fillColor or { 0, 0, 0, 1 }) end,
+			set = function(_, color)
+				setColor(unit, { "status", "dispelTint", "fillColor" }, color.r, color.g, color.b, color.a)
+				refreshSelf()
+			end,
+			colorGet = function()
+				local r, g, b, a = toRGBA(getValue(unit, { "status", "dispelTint", "fillColor" }, dispelDef.fillColor), dispelDef.fillColor or { 0, 0, 0, 1 })
+				return { r = r, g = g, b = b, a = a }
+			end,
+			colorSet = function(_, color)
+				setColor(unit, { "status", "dispelTint", "fillColor" }, color.r, color.g, color.b, color.a)
+				refreshSelf()
+			end,
+			colorDefault = {
+				r = dispelFillColorDefault[1] or 0,
+				g = dispelFillColorDefault[2] or 0,
+				b = dispelFillColorDefault[3] or 0,
+				a = dispelFillColorDefault[4] or 1,
+			},
+			hasOpacity = false,
+		}
+
+		list[#list + 1] = slider(L["Tint alpha"] or "Tint alpha", 0, 1, 0.01, function() return getValue(unit, { "status", "dispelTint", "alpha" }, dispelDef.alpha or 0.25) end, function(val)
+			setValue(unit, { "status", "dispelTint", "alpha" }, clampNumber(val, 0, 1, dispelDef.alpha or 0.25))
+			refreshSelf()
+		end, dispelDef.alpha or 0.25, "dispelTint", true, function(value) return string.format("%.2f", tonumber(value) or 0) end)
+		list[#list].isEnabled = isDispelIndicatorEnabled
+
+		list[#list + 1] = checkbox(
+			L["Show sample in Edit Mode"] or "Show sample in Edit Mode",
+			function() return getValue(unit, { "status", "dispelTint", "showSample" }, dispelDef.showSample == true) == true end,
+			function(val)
+				setValue(unit, { "status", "dispelTint", "showSample" }, val and true or false)
+				refreshSelf()
+			end,
+			dispelDef.showSample == true,
+			"dispelTint",
+			function() return isDispelIndicatorEnabled() or isDispelGlowEnabled() end
+		)
+
+		addDivider("dispelTint")
+
+		list[#list + 1] = checkbox(L["Enable glow"] or "Enable glow", isDispelGlowEnabled, function(val)
+			setValue(unit, { "status", "dispelTint", "glowEnabled" }, val and true or false)
+			refreshSelf()
+			refreshSettingsUI()
+		end, dispelDef.glowEnabled == true, "dispelTint")
+
+		list[#list + 1] = radioDropdown(L["Glow color"] or "Glow color", dispelGlowColorModeOptions, getDispelGlowColorMode, function(val)
+			setValue(unit, { "status", "dispelTint", "glowColorMode" }, val or "DISPEL")
+			refreshSelf()
+			refreshSettingsUI()
+		end, dispelDef.glowColorMode or "DISPEL", "dispelTint")
+		list[#list].isEnabled = isDispelGlowEnabled
+
+		list[#list + 1] = {
+			name = L["Custom glow color"] or "Custom glow color",
+			kind = settingType.Color,
+			parentId = "dispelTint",
+			isEnabled = function() return isDispelGlowEnabled() and getDispelGlowColorMode() == "CUSTOM" end,
+			get = function() return getValue(unit, { "status", "dispelTint", "glowColor" }, dispelDef.glowColor or { 1, 1, 1, 1 }) end,
+			set = function(_, color)
+				setColor(unit, { "status", "dispelTint", "glowColor" }, color.r, color.g, color.b, color.a)
+				refreshSelf()
+			end,
+			colorGet = function()
+				local r, g, b, a = toRGBA(getValue(unit, { "status", "dispelTint", "glowColor" }, dispelDef.glowColor), dispelDef.glowColor or { 1, 1, 1, 1 })
+				return { r = r, g = g, b = b, a = a }
+			end,
+			colorSet = function(_, color)
+				setColor(unit, { "status", "dispelTint", "glowColor" }, color.r, color.g, color.b, color.a)
+				refreshSelf()
+			end,
+			colorDefault = {
+				r = dispelGlowColorDefault[1] or 1,
+				g = dispelGlowColorDefault[2] or 1,
+				b = dispelGlowColorDefault[3] or 1,
+				a = dispelGlowColorDefault[4] or 1,
+			},
+			hasOpacity = false,
+		}
+
+		list[#list + 1] = radioDropdown(
+			L["Glow effect"] or "Glow effect",
+			dispelGlowEffectOptions,
+			function() return getValue(unit, { "status", "dispelTint", "glowEffect" }, dispelDef.glowEffect or "PIXEL") end,
+			function(val)
+				setValue(unit, { "status", "dispelTint", "glowEffect" }, val or "PIXEL")
+				refreshSelf()
+			end,
+			dispelDef.glowEffect or "PIXEL",
+			"dispelTint"
+		)
+		list[#list].isEnabled = isDispelGlowEnabled
+
+		list[#list + 1] = slider(
+			L["Animation speed"] or "Animation speed",
+			-1.5,
+			1.5,
+			0.25,
+			function() return getValue(unit, { "status", "dispelTint", "glowFrequency" }, dispelDef.glowFrequency or 0.25) end,
+			function(val)
+				setValue(unit, { "status", "dispelTint", "glowFrequency" }, clampNumber(val, -1.5, 1.5, dispelDef.glowFrequency or 0.25))
+				refreshSelf()
+			end,
+			dispelDef.glowFrequency or 0.25,
+			"dispelTint",
+			true,
+			function(value) return string.format("%.2f", tonumber(value) or 0) end
+		)
+		list[#list].isEnabled = isDispelGlowEnabled
+
+		list[#list + 1] = slider(L["X Offset"] or "X Offset", -10, 10, 1, function() return getValue(unit, { "status", "dispelTint", "glowX" }, dispelDef.glowX or 0) end, function(val)
+			setValue(unit, { "status", "dispelTint", "glowX" }, clampNumber(val, -10, 10, dispelDef.glowX or 0))
+			refreshSelf()
+		end, dispelDef.glowX or 0, "dispelTint", true)
+		list[#list].isEnabled = isDispelGlowEnabled
+
+		list[#list + 1] = slider(L["Y Offset"] or "Y Offset", -10, 10, 1, function() return getValue(unit, { "status", "dispelTint", "glowY" }, dispelDef.glowY or 0) end, function(val)
+			setValue(unit, { "status", "dispelTint", "glowY" }, clampNumber(val, -10, 10, dispelDef.glowY or 0))
+			refreshSelf()
+		end, dispelDef.glowY or 0, "dispelTint", true)
+		list[#list].isEnabled = isDispelGlowEnabled
+
+		list[#list + 1] = slider(
+			L["Number of lines"] or "Number of lines",
+			1,
+			20,
+			1,
+			function() return getValue(unit, { "status", "dispelTint", "glowLines" }, dispelDef.glowLines or 8) end,
+			function(val)
+				setValue(unit, { "status", "dispelTint", "glowLines" }, clampNumber(val, 1, 20, dispelDef.glowLines or 8))
+				refreshSelf()
+			end,
+			dispelDef.glowLines or 8,
+			"dispelTint",
+			true
+		)
+		list[#list].isEnabled = isDispelGlowEnabled
+
+		list[#list + 1] = slider(L["Thickness"] or "Thickness", 1, 10, 1, function() return getValue(unit, { "status", "dispelTint", "glowThickness" }, dispelDef.glowThickness or 3) end, function(val)
+			setValue(unit, { "status", "dispelTint", "glowThickness" }, clampNumber(val, 1, 10, dispelDef.glowThickness or 3))
+			refreshSelf()
+		end, dispelDef.glowThickness or 3, "dispelTint", true)
+		list[#list].isEnabled = isDispelGlowEnabled
+
+		addDivider("dispelTint")
 	end
 
 	list[#list + 1] = checkbox("Show status text", function() return getValue(unit, { "status", "unitStatus", "enabled" }, usDef.enabled == true) == true end, function(val)

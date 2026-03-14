@@ -7512,18 +7512,18 @@ function CooldownPanels:OpenLayoutPanelStandaloneMenu(panelId, anchorFrame)
 	self:HideLayoutEntryStandaloneMenu(panelId)
 
 	self:RegisterEditModePanel(panelId)
-	local runtime = getRuntime(panelId)
-	local panel = self:GetPanel(panelId)
-	local hostFrame = runtime and runtime.frame or nil
-	local settings = runtime and runtime.editModeSettings or nil
-	if panel and hostFrame and settings then
-		local spawnPosition = self:GetStandaloneDialogSpawnPosition(anchorFrame, hostFrame, 12, 0)
-		local dialog = lib:ShowStandaloneSettingsDialog(hostFrame, {
-			title = panel.name or "Cooldown Panel",
-			settings = settings,
+	local registeredRuntime = getRuntime(panelId)
+	local registeredPanel = self:GetPanel(panelId)
+	local registeredHostFrame = registeredRuntime and registeredRuntime.frame or nil
+	local registeredSettings = registeredRuntime and registeredRuntime.editModeSettings or nil
+	if registeredPanel and registeredHostFrame and registeredSettings then
+		local spawnPosition = self:GetStandaloneDialogSpawnPosition(anchorFrame, registeredHostFrame, 12, 0)
+		local dialog = lib:ShowStandaloneSettingsDialog(registeredHostFrame, {
+			title = registeredPanel.name or "Cooldown Panel",
+			settings = registeredSettings,
 			showReset = false,
 			showSettingsReset = false,
-			settingsMaxHeight = runtime.editModeSettingsMaxHeight or 620,
+			settingsMaxHeight = registeredRuntime.editModeSettingsMaxHeight or 620,
 			point = spawnPosition.point,
 			relativePoint = spawnPosition.relativePoint,
 			relativeTo = spawnPosition.relativeTo,
@@ -7531,13 +7531,13 @@ function CooldownPanels:OpenLayoutPanelStandaloneMenu(panelId, anchorFrame)
 			y = spawnPosition.y,
 			onHide = function() CooldownPanels:ClearLayoutPanelStandaloneMenuState() end,
 		})
-		if dialog then
-			local state = self:GetLayoutPanelStandaloneMenuState()
-			state.panelId = panelId
-			state.hostFrame = hostFrame
-			state.dialog = dialog
-		end
-		return
+			if dialog then
+				local state = self:GetLayoutPanelStandaloneMenuState()
+				state.panelId = panelId
+				state.hostFrame = registeredHostFrame
+				state.dialog = dialog
+			end
+			return
 	end
 
 	local panel = self:GetPanel(panelId)
@@ -10253,9 +10253,14 @@ local function refreshPreview(editor, panel)
 		local staticCooldown = entry and entry.staticTextShowOnCooldown == true or false
 		local showEntryIconTexture = entry and CooldownPanels:ResolveEntryShowIconTexture(baseLayout, entry) or true
 		local showGhostIcon = entry and CooldownPanels:ShouldShowEditorGhostIcon(entry, showEntryIconTexture, true) or false
-		local stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale, stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond, stateTextureSpacingX, stateTextureSpacingY = entry
-				and CooldownPanels:ResolveEntryStateTexture(entry)
-			or nil
+		local stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale,
+			stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond,
+			stateTextureSpacingX, stateTextureSpacingY
+		if entry then
+			stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale,
+				stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond,
+				stateTextureSpacingX, stateTextureSpacingY = CooldownPanels:ResolveEntryStateTexture(entry)
+		end
 		icon:Show()
 		icon.entryId = entryId
 		icon._eqolPreviewCellColumn = i
@@ -11111,9 +11116,14 @@ function CooldownPanels:UpdatePreviewIcons(panelId, countOverride)
 		local showItemUses = entry and resolvedType == "ITEM" and entry.showItemUses == true
 		local showEntryIconTexture = entry and CooldownPanels:ResolveEntryShowIconTexture(layout, entry) or showIconTexture
 		local showGhostIcon = entry and CooldownPanels:ShouldShowEditorGhostIcon(entry, showEntryIconTexture, true) or false
-		local stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale, stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond, stateTextureSpacingX, stateTextureSpacingY = entry
-				and CooldownPanels:ResolveEntryStateTexture(entry)
-			or nil
+		local stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale,
+			stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond,
+			stateTextureSpacingX, stateTextureSpacingY
+		if entry then
+			stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale,
+				stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond,
+				stateTextureSpacingX, stateTextureSpacingY = CooldownPanels:ResolveEntryStateTexture(entry)
+		end
 		local slotColumn = previewGridColumns and (((i - 1) % previewGridColumns) + 1) or (editGridColumns and (((i - 1) % editGridColumns) + 1) or i)
 		local slotRow = previewGridColumns and (math.floor((i - 1) / previewGridColumns) + 1) or (editGridColumns and (math.floor((i - 1) / editGridColumns) + 1) or 1)
 		icon:Show()

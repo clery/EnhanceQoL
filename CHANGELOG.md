@@ -16,6 +16,10 @@
 - Cooldown Panels (Charges): Fixed charge-based abilities being desaturated while charges were still available. Icons now stay colored until all charges are spent.
 - Minimap Buttons & Cluster (Tracking icon): Fixed `Minimap elements to hide` not hiding the Blizzard tracking icon unless the separate Square Minimap Stats tracking-button feature was enabled. The tracking icon hide option now works again on its own.
 
+### ❌ Removed
+
+- Cooldown Panels (Ready Glow): Removed `Glow duration` from panel and per-entry settings. Ready glow now stays active until the next real cooldown instead of expiring on a timer.
+
 ---
 
 ## [9.0.3] - 2026-03-16

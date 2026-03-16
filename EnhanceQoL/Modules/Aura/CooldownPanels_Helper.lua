@@ -1065,7 +1065,7 @@ function Helper.NormalizePanel(panel, defaults)
 		panel.layout.pandemicGlowColor,
 		layoutDefaults.pandemicGlowColor or panel.layout.readyGlowColor or Helper.PANEL_LAYOUT_DEFAULTS.pandemicGlowColor or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor
 	)
-	panel.layout.readyGlowDuration = Helper.ClampInt(panel.layout.readyGlowDuration, 0, 30, layoutDefaults.readyGlowDuration or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowDuration or 0)
+	panel.layout.readyGlowDuration = 0
 	panel.layout.readyGlowCheckPower = panel.layout.readyGlowCheckPower == true
 	panel.layout.noDesaturation = panel.layout.noDesaturation == true
 	panel.layout.stackColor = Helper.NormalizeColor(panel.layout.stackColor, layoutDefaults.stackColor or Helper.PANEL_LAYOUT_DEFAULTS.stackColor or { 1, 1, 1, 1 })
@@ -1141,11 +1141,7 @@ function Helper.NormalizeEntry(entry, defaults)
 		if CooldownPanels and CooldownPanels.NormalizeStanceEntry then CooldownPanels:NormalizeStanceEntry(entry) end
 		entry.showWhenMissing = entry.showWhenMissing == true
 	end
-	local duration = tonumber(entry.glowDuration)
-	if duration == nil then duration = defaults.entry and defaults.entry.glowDuration or Helper.ENTRY_DEFAULTS.glowDuration or 0 end
-	if duration < 0 then duration = 0 end
-	if duration > 30 then duration = 30 end
-	entry.glowDuration = math.floor(duration + 0.5)
+	entry.glowDuration = 0
 	local hasLegacySharedProcGlowVisual = entry.type == "SPELL" and (entry.glowStyle ~= nil or entry.glowInset ~= nil)
 	if hasLegacySharedProcGlowVisual then
 		if entry.procGlowStyle == nil then entry.procGlowStyle = entry.glowStyle end

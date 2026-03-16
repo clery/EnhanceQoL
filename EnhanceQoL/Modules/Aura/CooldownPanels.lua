@@ -3307,17 +3307,14 @@ end
 
 function CooldownPanels:ResolveEntryGlowStyle(layout, entry)
 	local panelCache = CooldownPanels._styleCacheRoots.glowPanel[layout]
-	local srcDuration = layout and layout.readyGlowDuration or nil
 	local srcColor = layout and layout.readyGlowColor or nil
 	local srcStyle = layout and layout.readyGlowStyle or nil
 	local srcInset = layout and layout.readyGlowInset or nil
-	if not panelCache or panelCache.srcDuration ~= srcDuration or panelCache.srcColor ~= srcColor or panelCache.srcStyle ~= srcStyle or panelCache.srcInset ~= srcInset then
+	if not panelCache or panelCache.srcColor ~= srcColor or panelCache.srcStyle ~= srcStyle or panelCache.srcInset ~= srcInset then
 		panelCache = panelCache or {}
-		panelCache.srcDuration = srcDuration
 		panelCache.srcColor = srcColor
 		panelCache.srcStyle = srcStyle
 		panelCache.srcInset = srcInset
-		panelCache.duration = Helper.ClampInt(srcDuration, 0, 30, Helper.PANEL_LAYOUT_DEFAULTS.readyGlowDuration or 0)
 		local r, g, b, a = Helper.ResolveColor(srcColor, Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor)
 		panelCache.color = CooldownPanels.FillCachedColor(panelCache.color, r, g, b, a)
 		panelCache.style = Helper.NormalizeGlowStyle(srcStyle, Helper.PANEL_LAYOUT_DEFAULTS.readyGlowStyle)
@@ -3325,30 +3322,21 @@ function CooldownPanels:ResolveEntryGlowStyle(layout, entry)
 		panelCache.version = (panelCache.version or 0) + 1
 		CooldownPanels._styleCacheRoots.glowPanel[layout] = panelCache
 	end
-	if not entry or entry.glowUseGlobal ~= false then return panelCache.duration, panelCache.color, panelCache.style, panelCache.inset end
+	if not entry or entry.glowUseGlobal ~= false then return 0, panelCache.color, panelCache.style, panelCache.inset end
 	local cache = CooldownPanels._styleCacheRoots.glowEntry[entry]
-	if
-		not cache
-		or cache.panelVersion ~= panelCache.version
-		or cache.srcDuration ~= entry.glowDuration
-		or cache.srcColor ~= entry.glowColor
-		or cache.srcStyle ~= entry.glowStyle
-		or cache.srcInset ~= entry.glowInset
-	then
+	if not cache or cache.panelVersion ~= panelCache.version or cache.srcColor ~= entry.glowColor or cache.srcStyle ~= entry.glowStyle or cache.srcInset ~= entry.glowInset then
 		cache = cache or {}
 		cache.panelVersion = panelCache.version
-		cache.srcDuration = entry.glowDuration
 		cache.srcColor = entry.glowColor
 		cache.srcStyle = entry.glowStyle
 		cache.srcInset = entry.glowInset
-		cache.duration = Helper.ClampInt(entry.glowDuration, 0, 30, panelCache.duration)
 		local r, g, b, a = Helper.ResolveColor(entry.glowColor, panelCache.color)
 		cache.color = CooldownPanels.FillCachedColor(cache.color, r, g, b, a)
 		cache.style = Helper.NormalizeGlowStyle(entry.glowStyle, panelCache.style)
 		cache.inset = Helper.NormalizeGlowInset(entry.glowInset, panelCache.inset)
 		CooldownPanels._styleCacheRoots.glowEntry[entry] = cache
 	end
-	return cache.duration, cache.color, cache.style, cache.inset
+	return 0, cache.color, cache.style, cache.inset
 end
 
 function CooldownPanels:ResolveEntryReadyGlowCheckPower(layout, entry)
@@ -4118,17 +4106,6 @@ local function triggerReadyGlow(panelId, entryId, glowDuration)
 
 	local now = Api.GetTime and Api.GetTime() or 0
 	runtime.readyAt[entryId] = now
-
-	local duration = tonumber(glowDuration) or 0
-	if duration > 0 and C_Timer and C_Timer.NewTimer then
-		runtime.glowTimers[entryId] = C_Timer.NewTimer(duration, function()
-			local rt = getRuntime(panelId)
-			if rt and rt.readyAt and rt.readyAt[entryId] == now then rt.readyAt[entryId] = nil end
-			if rt and rt.glowTimers then rt.glowTimers[entryId] = nil end
-			if CooldownPanels and CooldownPanels.RefreshPanel then CooldownPanels:RequestPanelRefresh(panelId) end
-			-- if CooldownPanels and CooldownPanels.RequestUpdate then CooldownPanels:RequestUpdate() end
-		end)
-	end
 end
 
 local function onCooldownDone(self)
@@ -5717,16 +5694,6 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 		local _, panelInset = CooldownPanels:ResolveEntryProcGlowVisual(layout, nil)
 		local normalized = Helper.NormalizeGlowInset(value, panelInset)
 		currentEntry.procGlowInset = normalized == panelInset and nil or normalized
-		refreshEntryViews()
-	end
-
-	local function setGlowDuration(_, value)
-		local _, currentEntry = getEntry()
-		if not currentEntry then return end
-		local clamped = Helper.ClampInt(value, 0, 30, currentEntry.glowDuration or 0)
-		if currentEntry.glowDuration == clamped then return end
-		currentEntry.glowDuration = clamped
-		refreshReadyGlowState(currentEntry)
 		refreshEntryViews()
 	end
 
@@ -7414,26 +7381,6 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 			formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
 		},
 		{
-			name = L["CooldownPanelGlowDuration"] or "Glow duration",
-			kind = SettingType.Slider,
-			parentId = "cooldownPanelStandaloneGlow",
-			minValue = 0,
-			maxValue = 30,
-			valueStep = 1,
-			allowInput = true,
-			isShown = function() return getEffectiveType() ~= "MACRO" and getEffectiveType() ~= "CDM_AURA" end,
-			disabled = function()
-				local _, currentEntry = getEntry()
-				return not (currentEntry and currentEntry.glowReady == true and currentEntry.glowUseGlobal == false)
-			end,
-			get = function()
-				local duration = CooldownPanels:ResolveEntryGlowStyle(getLayout(), select(2, getEntry()))
-				return duration
-			end,
-			set = setGlowDuration,
-			formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) .. "s" end,
-		},
-		{
 			name = L["CooldownPanelGlowStyle"] or "Glow style",
 			kind = SettingType.Dropdown,
 			parentId = "cooldownPanelStandaloneGlow",
@@ -7746,32 +7693,6 @@ function CooldownPanels:OpenLayoutPanelStandaloneMenu(panelId, anchorFrame)
 
 	local function setPanelLayout(field, value)
 		applyEditLayout(panelId, field, value, true)
-		refreshPanelViews()
-	end
-
-	local function refreshPanelReadyGlows()
-		local currentPanel = getPanel()
-		if not currentPanel or type(currentPanel.entries) ~= "table" then return end
-		local runtimeState = getRuntime(panelId)
-		if not (runtimeState and runtimeState.readyAt) then return end
-		local primed = CooldownPanels.GetReadyGlowPrimedState(runtimeState)
-		local layout = getLayout()
-		for currentEntryId, currentEntry in pairs(currentPanel.entries) do
-			if currentEntry and currentEntry.glowReady == true and currentEntry.glowUseGlobal ~= false and runtimeState.readyAt[currentEntryId] then
-				local resolvedDuration = CooldownPanels:ResolveEntryGlowStyle(layout, currentEntry)
-				triggerReadyGlow(panelId, currentEntryId, resolvedDuration)
-				if primed then primed[currentEntryId] = true end
-			end
-		end
-	end
-
-	local function setPanelGlowDuration(_, value)
-		local layout = getLayout()
-		local currentValue = Helper.ClampInt(layout and layout.readyGlowDuration, 0, 30, Helper.PANEL_LAYOUT_DEFAULTS.readyGlowDuration or 0)
-		local clamped = Helper.ClampInt(value, 0, 30, currentValue)
-		if currentValue == clamped then return end
-		applyEditLayout(panelId, "readyGlowDuration", clamped, true)
-		refreshPanelReadyGlows()
 		refreshPanelViews()
 	end
 
@@ -8837,21 +8758,6 @@ function CooldownPanels:OpenLayoutPanelStandaloneMenu(panelId, anchorFrame)
 			end,
 		},
 		{
-			name = L["CooldownPanelGlowDuration"] or "Glow duration",
-			kind = SettingType.Slider,
-			parentId = "cooldownPanelStandalonePanelGlow",
-			minValue = 0,
-			maxValue = 30,
-			valueStep = 1,
-			allowInput = true,
-			get = function()
-				local duration = CooldownPanels:ResolveEntryGlowStyle(getLayout(), nil)
-				return duration
-			end,
-			set = setPanelGlowDuration,
-			formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) .. "s" end,
-		},
-		{
 			name = L["CooldownPanelGlowInset"] or "Glow inset",
 			kind = SettingType.Slider,
 			parentId = "cooldownPanelStandalonePanelGlow",
@@ -9355,11 +9261,8 @@ local function ensureEditor()
 	local cbPandemicGlow = Helper.CreateCheck(rightContent, L["CooldownPanelGlowPandemic"] or "Pandemic glow")
 	cbPandemicGlow:SetPoint("TOPLEFT", cbGlow, "BOTTOMLEFT", 0, -4)
 
-	local glowDuration = Helper.CreateSlider(rightContent, 180, 0, 30, 1)
-	glowDuration:SetPoint("TOPLEFT", cbPandemicGlow, "BOTTOMLEFT", 18, -8)
-
 	local cbSound = Helper.CreateCheck(rightContent, L["CooldownPanelSoundReady"] or "Sound when ready")
-	cbSound:SetPoint("TOPLEFT", glowDuration, "BOTTOMLEFT", -18, -6)
+	cbSound:SetPoint("TOPLEFT", cbPandemicGlow, "BOTTOMLEFT", 0, -6)
 
 	local soundButton = Helper.CreateButton(rightContent, "", 180, 20)
 	soundButton:SetPoint("TOPLEFT", cbSound, "BOTTOMLEFT", 18, -6)
@@ -9565,7 +9468,6 @@ local function ensureEditor()
 			cbGlow = cbGlow,
 			cbPandemicGlow = cbPandemicGlow,
 			cbSound = cbSound,
-			glowDuration = glowDuration,
 			soundButton = soundButton,
 			removeEntry = removeEntry,
 		},
@@ -9743,36 +9645,6 @@ local function ensureEditor()
 		end)
 	end
 
-	local function bindEntrySlider(slider, field, minValue, maxValue)
-		slider:SetScript("OnValueChanged", function(self, value)
-			if self._suspend then return end
-			local panelId = editor.selectedPanelId
-			local entryId = editor.selectedEntryId
-			local panel = panelId and CooldownPanels:GetPanel(panelId)
-			local entry = panel and panel.entries and panel.entries[entryId]
-			if not entry then return end
-			local clamped = Helper.ClampInt(value, minValue, maxValue, entry[field] or 0)
-			entry[field] = clamped
-			if self.Text then self.Text:SetText((L["CooldownPanelGlowDuration"] or "Glow duration") .. ": " .. tostring(clamped) .. "s") end
-
-			-- Keep active ready-glow state in sync when duration changes in editor.
-			if field == "glowDuration" then
-				entry.glowUseGlobal = false
-				local runtime = getRuntime(panelId)
-				local hadReady = runtime.readyAt and runtime.readyAt[entryId] ~= nil
-				CooldownPanels.ClearReadyGlowEntryState(panelId, entryId, false)
-				local primed = CooldownPanels.GetReadyGlowPrimedState(runtime)
-				if primed then primed[entryId] = nil end
-				if entry.glowReady and hadReady then
-					triggerReadyGlow(panelId, entryId, clamped)
-					if primed then primed[entryId] = true end
-				end
-			end
-
-			CooldownPanels:RefreshPanel(panelId)
-		end)
-	end
-
 	bindEntryToggle(cbCharges, "showCharges")
 	bindEntryToggle(cbStacks, "showStacks")
 	bindEntryToggle(cbCooldownText, "showCooldownText")
@@ -9809,7 +9681,6 @@ local function ensureEditor()
 		CooldownPanels:RefreshPanel(panelId)
 		CooldownPanels:RefreshEditor()
 	end)
-	bindEntrySlider(glowDuration, "glowDuration", 0, 30)
 
 	local function applyStaticTextValue(self)
 		local panelId = editor.selectedPanelId
@@ -10939,7 +10810,6 @@ local function layoutInspectorToggles(inspector, entry)
 		hideToggle(inspector.cbGlow)
 		hideToggle(inspector.cbPandemicGlow)
 		hideToggle(inspector.cbSound)
-		hideControl(inspector.glowDuration)
 		hideControl(inspector.soundButton)
 		if inspector.content and inspector.scroll then
 			local height = inspector.scroll:GetHeight() or 1
@@ -11048,25 +10918,7 @@ local function layoutInspectorToggles(inspector, entry)
 	local showSoundEffects = soundEnabledField ~= nil
 	place(inspector.cbGlow, showGlowToggle)
 	place(inspector.cbPandemicGlow, showPandemicGlowToggle)
-	local glowAnchor = (showPandemicGlowToggle and inspector.cbPandemicGlow and inspector.cbPandemicGlow:IsShown()) and inspector.cbPandemicGlow or inspector.cbGlow
-	if showReadyEffects and inspector.glowDuration then
-		inspector.glowDuration:ClearAllPoints()
-		inspector.glowDuration:SetPoint("TOPLEFT", glowAnchor, "BOTTOMLEFT", 18, -8)
-		if entry.glowReady then
-			inspector.glowDuration:Show()
-			inspector.glowDuration:Enable()
-			prev = inspector.glowDuration
-		else
-			inspector.glowDuration:Hide()
-			inspector.glowDuration:Disable()
-		end
-	elseif inspector.glowDuration then
-		inspector.glowDuration:Hide()
-		inspector.glowDuration:Disable()
-	end
-	local soundOffsetX = 0
-	if showReadyEffects and inspector.glowDuration and entry.glowReady then soundOffsetX = -20 end
-	place(inspector.cbSound, showSoundEffects, soundOffsetX, -6)
+	place(inspector.cbSound, showSoundEffects, 0, -6)
 	if showSoundEffects and inspector.soundButton then
 		inspector.soundButton:ClearAllPoints()
 		inspector.soundButton:SetPoint("TOPLEFT", inspector.cbSound, "BOTTOMLEFT", 18, -6)
@@ -11214,15 +11066,6 @@ local function refreshInspector(editor, panel, entry)
 		end
 		if inspector.staticTextBox then inspector.staticTextBox:SetText(entry.staticText or "") end
 		if inspector.cbStaticTextDuringCD then inspector.cbStaticTextDuringCD:SetChecked(entry.staticTextShowOnCooldown == true) end
-		if inspector.glowDuration then
-			local duration = Helper.ClampInt(entry.glowDuration, 0, 30, 0)
-			inspector.glowDuration._suspend = true
-			inspector.glowDuration:SetValue(duration)
-			inspector.glowDuration._suspend = nil
-			if inspector.glowDuration.Text then inspector.glowDuration.Text:SetText((L["CooldownPanelGlowDuration"] or "Glow duration") .. ": " .. tostring(duration) .. "s") end
-			if inspector.glowDuration.Low then inspector.glowDuration.Low:SetText("0s") end
-			if inspector.glowDuration.High then inspector.glowDuration.High:SetText("30s") end
-		end
 
 		if cdmAuras and cdmAuras.RefreshInspector then cdmAuras:RefreshInspector(editor, panel, entry) end
 		inspector.removeEntry:Enable()
@@ -12756,16 +12599,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			local simpleGlowStyle = data.overlayGlowStyle or data.readyGlowStyle
 			local simpleGlowInset = data.overlayGlowInset or data.readyGlowInset
 			if data.glowReady and not useSecretReadyGlow then
-				local ready = false
-				local duration = tonumber(data.glowDuration) or 0
-
-				if data.readyAt and Api.GetTime then
-					if duration > 0 then
-						ready = (Api.GetTime() - data.readyAt) <= duration
-					else
-						ready = true
-					end
-				end
+				local ready = data.readyAt ~= nil
 				if ready and data.readyGlowCheckPower == true and data.readyGlowResourceBlocked == true then ready = false end
 
 				simpleGlowEnabled = overlayGlow or ready
@@ -13260,7 +13094,7 @@ applyEditLayout = function(panelId, field, value, skipRefresh)
 	elseif field == "pandemicGlowColor" then
 		layout.pandemicGlowColor = Helper.NormalizeColor(value, layout.readyGlowColor or Helper.PANEL_LAYOUT_DEFAULTS.pandemicGlowColor or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor)
 	elseif field == "readyGlowDuration" then
-		layout.readyGlowDuration = Helper.ClampInt(value, 0, 30, layout.readyGlowDuration or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowDuration or 0)
+		layout.readyGlowDuration = 0
 	elseif field == "readyGlowCheckPower" then
 		layout.readyGlowCheckPower = value == true
 		CooldownPanels:RebuildPowerIndex()

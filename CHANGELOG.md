@@ -1,5 +1,13 @@
 # Changelog
 
+## [9.0.3] - 2026-03-16
+
+### 🐛 Fixed
+
+- Group Frames (Health / Absorb): Fixed reverse absorb rendering on party/raid frames at full health.
+
+---
+
 ## [9.0.2] - 2026-03-15
 
 ### 🐛 Fixed

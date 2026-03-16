@@ -6283,8 +6283,8 @@ function GF:UpdateHealthValue(self, unit, st)
 	end
 	if absorbEnabled and st.absorb then
 		local abs = 0
-		if calc and calc.GetDamageAbsorbs then
-			abs = calc:GetDamageAbsorbs() or 0
+		if calc and calc.GetTotalDamageAbsorbs then
+			abs = calc:GetTotalDamageAbsorbs() or 0
 		elseif UnitGetTotalAbsorbs then
 			abs = UnitGetTotalAbsorbs(unit) or 0
 		end
@@ -6346,10 +6346,10 @@ function GF:UpdateHealthValue(self, unit, st)
 
 	if healAbsorbEnabled and st.healAbsorb then
 		local healAbs = 0
-		if calc and calc.GetHealAbsorbs then
-			healAbs = calc:GetHealAbsorbs() or 0
-		elseif UnitGetTotalHealAbsorbs then
+		if UnitGetTotalHealAbsorbs then
 			healAbs = UnitGetTotalHealAbsorbs(unit) or 0
+		elseif calc and calc.GetHealAbsorbs then
+			healAbs = calc:GetHealAbsorbs() or 0
 		end
 		local healSecret = issecretvalue and issecretvalue(healAbs)
 		local healValue = healAbs

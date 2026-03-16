@@ -1,5 +1,13 @@
 # Changelog
 
+## [9.1.2] - 2026-03-16
+
+### 🐛 Fixed
+
+- Cooldown Panels (Tracked Buffs / CDM): Fixed imported tracked auras disappearing after switching specialization. The same tracked spell now continues to work across specs.
+
+---
+
 ## [9.1.1] - 2026-03-16
 
 ### 🐛 Fixed

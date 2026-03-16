@@ -5,7 +5,7 @@
 ### 🐛 Fixed
 
 - Health Macro: Fixed `Potent Healing Potion` not being picked correctly in Midnight.
-
+- Cooldown Panels: Opening Edit Mode in Combat had stale panels showing
 ---
 
 ## [9.1.2] - 2026-03-16

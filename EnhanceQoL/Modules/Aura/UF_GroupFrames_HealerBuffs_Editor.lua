@@ -1696,8 +1696,12 @@ function Editor:EnsureFrame()
 	controls.RuleNot = createCheck(settingsPanel, tr("UFGroupHealerBuffEditorRuleNot", "NOT (active when missing)"))
 	controls.RuleNot:SetPoint("TOPLEFT", controls.RuleEnabled, "BOTTOMLEFT", 0, -6)
 
+	controls.RuleMissingDesaturate = createCheck(settingsPanel, tr("UFGroupHealerBuffEditorRuleMissingDesaturate", "Desaturate missing icon"))
+	controls.RuleMissingDesaturate:SetPoint("TOPLEFT", controls.RuleNot, "BOTTOMLEFT", 16, -6)
+	controls.RuleMissingDesaturate:Hide()
+
 	controls.RuleAppliesParty = createCheck(settingsPanel, tr("UFGroupHealerBuffEditorParty", "Party"))
-	controls.RuleAppliesParty:SetPoint("TOPLEFT", controls.RuleNot, "BOTTOMLEFT", 0, -6)
+	controls.RuleAppliesParty:SetPoint("TOPLEFT", controls.RuleMissingDesaturate, "BOTTOMLEFT", -16, -6)
 
 	controls.RuleAppliesRaid = createCheck(settingsPanel, tr("UFGroupHealerBuffEditorRaid", "Raid"))
 	controls.RuleAppliesRaid:SetPoint("TOPLEFT", controls.RuleAppliesParty, "BOTTOMLEFT", 0, -6)
@@ -2515,7 +2519,16 @@ function Editor:EnsureFrame()
 		local rule = ruleFromSelection()
 		if not rule then return end
 		rule["not"] = self:GetChecked() == true
+		Editor:RefreshRuleControls()
 		Editor:RefreshRuleList()
+		Editor:RefreshPreview()
+		Editor:RefreshRuntimeNow()
+	end)
+
+	controls.RuleMissingDesaturate:SetScript("OnClick", function(self)
+		local rule = ruleFromSelection()
+		if not rule then return end
+		rule.desaturateMissing = self:GetChecked() == true
 		Editor:RefreshPreview()
 		Editor:RefreshRuntimeNow()
 	end)
@@ -2720,6 +2733,7 @@ function Editor:RefreshRuleControls()
 	local selectedGroup = placement and self.selectedGroupId and placement.groupsById and placement.groupsById[self.selectedGroupId] or nil
 	local selectedGroupStyle = tostring(selectedGroup and selectedGroup.style or "")
 	local showIconRuleMode = selectedGroupStyle == "ICON" or selectedGroupStyle == "SQUARE"
+	local showMissingDesaturate = selectedGroupStyle == "ICON" and rule ~= nil and rule["not"] == true
 	local showTintRuleMatch = selectedGroupStyle == "TINT"
 	local showRuleColor = selectedGroupStyle == "SQUARE"
 	local showBarDrainInfo = selectedGroupStyle == "BAR" and selectedGroup and selectedGroup.barDrainAnimation == true
@@ -2743,6 +2757,17 @@ function Editor:RefreshRuleControls()
 	setControlVisible(controls.RuleMatch, showTintRuleMatch)
 	setControlEnabled(controls.RuleMatch, showTintRuleMatch)
 	if showTintRuleMatch then setDropdown(controls.RuleMatch, ruleMatchOptions, tostring(selectedGroup.ruleMatch or "ANY"):upper(), controls.RuleMatch._eqolOnSelect) end
+
+	controls.RuleMissingDesaturate:ClearAllPoints()
+	if showMissingDesaturate then controls.RuleMissingDesaturate:SetPoint("TOPLEFT", controls.RuleNot, "BOTTOMLEFT", 16, -6) end
+	controls.RuleAppliesParty:ClearAllPoints()
+	if showMissingDesaturate then
+		controls.RuleAppliesParty:SetPoint("TOPLEFT", controls.RuleMissingDesaturate, "BOTTOMLEFT", -16, -6)
+	else
+		controls.RuleAppliesParty:SetPoint("TOPLEFT", controls.RuleNot, "BOTTOMLEFT", 0, -6)
+	end
+	controls.RuleAppliesRaid:ClearAllPoints()
+	controls.RuleAppliesRaid:SetPoint("TOPLEFT", controls.RuleAppliesParty, "BOTTOMLEFT", 0, -6)
 
 	controls.RuleColorLabel:ClearAllPoints()
 	if showTintRuleMatch then
@@ -2781,10 +2806,13 @@ function Editor:RefreshRuleControls()
 
 	controls.RuleEnabled:SetChecked(rule and rule.enabled ~= false)
 	controls.RuleNot:SetChecked(rule and rule["not"] == true)
+	controls.RuleMissingDesaturate:SetChecked(rule and rule.desaturateMissing == true)
 	controls.RuleAppliesParty:SetChecked(rule and rule.appliesParty ~= false)
 	controls.RuleAppliesRaid:SetChecked(rule and rule.appliesRaid ~= false)
 	setControlEnabled(controls.RuleEnabled, rule ~= nil)
 	setControlEnabled(controls.RuleNot, rule ~= nil)
+	setControlVisible(controls.RuleMissingDesaturate, showMissingDesaturate)
+	setControlEnabled(controls.RuleMissingDesaturate, showMissingDesaturate and rule ~= nil)
 	setControlEnabled(controls.RuleAppliesParty, rule ~= nil)
 	setControlEnabled(controls.RuleAppliesRaid, rule ~= nil)
 	setControlEnabled(frame.RulePanel and frame.RulePanel.AddButton, self.selectedGroupId ~= nil)
@@ -3492,9 +3520,11 @@ function Editor:RefreshPreview()
 							local r, g, b, a = resolveColor(squareColor)
 							icon.Texture:SetTexture("Interface\\Buttons\\WHITE8x8")
 							icon.Texture:SetVertexColor(r, g, b, a)
+							if icon.Texture.SetDesaturated then icon.Texture:SetDesaturated(false) end
 						else
 							icon.Texture:SetTexture(iconTex or 134400)
 							icon.Texture:SetVertexColor(1, 1, 1, 1)
+							if icon.Texture.SetDesaturated then icon.Texture:SetDesaturated(HB.ShouldDesaturateRuleIcon and HB.ShouldDesaturateRuleIcon(group, rule) or false) end
 						end
 						icon._eqolPreviewAura = true
 						icon._eqolPreviewGroup = group

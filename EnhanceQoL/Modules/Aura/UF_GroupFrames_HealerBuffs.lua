@@ -698,6 +698,7 @@ function HB.CreateDefaultRule(id, familyId, groupId)
 		spellFamilyId = familyId,
 		groupId = tostring(groupId or "1"),
 		["not"] = false,
+		desaturateMissing = false,
 		enabled = true,
 		appliesParty = true,
 		appliesRaid = true,
@@ -788,6 +789,10 @@ local function normalizeRule(rule, id)
 	rule.familyId = nil
 	rule.groupId = tostring(rule.groupId or "")
 	rule["not"] = rule["not"] == true
+	local desaturateMissing = rule.desaturateMissing
+	if desaturateMissing == nil then desaturateMissing = rule.missingDesaturate end
+	rule.desaturateMissing = desaturateMissing == true
+	rule.missingDesaturate = nil
 	if rule.enabled == nil then rule.enabled = true end
 	rule.enabled = rule.enabled ~= false
 	local appliesParty = rule.appliesParty
@@ -807,6 +812,14 @@ local function normalizeRule(rule, id)
 	rule.color = normalizeOptionalColor(rule.color or rule.spellColor)
 	rule.spellColor = nil
 	return rule
+end
+
+function HB.ShouldDesaturateRuleIcon(group, rule)
+	if not (group and rule) then return false end
+	if normalizeStyle(group.style) ~= STYLE_ICON then return false end
+	local desaturateMissing = rule.desaturateMissing
+	if desaturateMissing == nil then desaturateMissing = rule.missingDesaturate end
+	return rule["not"] == true and desaturateMissing == true
 end
 
 function HB.EnsureConfig(cfg)
@@ -1857,6 +1870,7 @@ local function styleSquareButton(btn, color)
 		btn.icon:SetTexture("Interface\\Buttons\\WHITE8x8")
 		btn.icon:SetTexCoord(0, 1, 0, 1)
 		btn.icon:SetVertexColor(r, g, b, a)
+		if btn.icon.SetDesaturated then btn.icon:SetDesaturated(false) end
 	end
 	if btn.border then btn.border:Hide() end
 	if btn.dispelIcon then btn.dispelIcon:Hide() end
@@ -1864,7 +1878,19 @@ end
 
 local function styleIconButton(btn)
 	if not btn then return end
-	if btn.icon then btn.icon:SetVertexColor(1, 1, 1, 1) end
+	if btn.icon then
+		btn.icon:SetVertexColor(1, 1, 1, 1)
+		if btn.icon.SetDesaturated then btn.icon:SetDesaturated(false) end
+	end
+end
+
+local function setButtonIconDesaturated(btn, enabled)
+	local icon = btn and btn.icon
+	if not (icon and icon.SetDesaturated) then return end
+	local shouldDesaturate = enabled == true
+	if icon._hbDesaturated == shouldDesaturate then return end
+	icon:SetDesaturated(shouldDesaturate)
+	icon._hbDesaturated = shouldDesaturate
 end
 
 local function resolveBorderTexture(key)
@@ -2230,6 +2256,7 @@ local function renderIconStyleForGroup(btn, st, state, compiled, cfg, group, cha
 				button._hbVisualRuleId = nil
 				button._hbVisualGeneration = compiled.generation
 			end
+			setButtonIconDesaturated(button, HB.ShouldDesaturateRuleIcon(group, rule))
 			local showTooltip = style.showTooltip == true and (auraInstanceId and auraInstanceId > 0)
 			if button._hbTooltipShown ~= showTooltip then
 				setAuraTooltipState(button, showTooltip)

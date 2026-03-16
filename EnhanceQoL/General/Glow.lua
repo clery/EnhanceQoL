@@ -359,7 +359,7 @@ local function blizzardOverlayOnHide(self)
 end
 
 local function blizzardOverlayOnUpdate(self, elapsed)
-	if not (self and self.ants and self.ants:IsShown() and self.ants:GetAlpha() > 0) then return end
+	if not (self and self.ants and self.ants:IsShown()) then return end
 	if AnimateTexCoords then AnimateTexCoords(self.ants, 256, 256, 48, 48, 22, elapsed, 0.01) end
 end
 
@@ -480,11 +480,7 @@ local function updateBlizzardOverlay(host, opts)
 	overlay.outerGlow:SetVertexColor(r, g, b, a)
 	overlay.outerGlowOver:SetVertexColor(r, g, b, a)
 	overlay.ants:SetVertexColor(r, g, b, a)
-	if overlay:IsShown()
-		and not (overlay.animIn and overlay.animIn:IsPlaying())
-		and not (overlay.animOut and overlay.animOut:IsPlaying()) then
-		applyBlizzardOverlayRestState(overlay)
-	end
+	if overlay:IsShown() and not (overlay.animIn and overlay.animIn:IsPlaying()) and not (overlay.animOut and overlay.animOut:IsPlaying()) then applyBlizzardOverlayRestState(overlay) end
 	return overlay
 end
 

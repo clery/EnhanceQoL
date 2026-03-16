@@ -1,5 +1,13 @@
 # Changelog
 
+## [9.1.1] - 2026-03-16
+
+### 🐛 Fixed
+
+- Cooldown Panels: glow had some secret errors
+
+---
+
 ## [9.1.0] - 2026-03-16
 
 ### 🔄 Changed

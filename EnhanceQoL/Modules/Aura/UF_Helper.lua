@@ -231,6 +231,54 @@ local function getDropShadowStrength(outline)
 	return nil
 end
 
+function H._looksLikeFontFile(path)
+	if type(path) ~= "string" or path == "" then return false end
+	local lower = path:lower()
+	if path:find("\\", 1, true) or path:find("/", 1, true) then return true end
+	if lower:find(".ttf", 1, true) or lower:find(".otf", 1, true) or lower:find(".ttc", 1, true) then return true end
+	return false
+end
+
+function H.getAlphabetAwareFontFamily(fontFile, size, flags)
+	if not (Font and Font.CreateFontFamily and H._looksLikeFontFile(fontFile)) then return nil end
+	size = tonumber(size) or 14
+	if size <= 0 then size = 1 end
+	flags = flags or ""
+	H._fontFamilyCache = H._fontFamilyCache or {}
+	local fontFamilyCache = H._fontFamilyCache
+	local key = table.concat({
+		tostring(fontFile),
+		tostring(size),
+		tostring(flags or ""),
+	}, "\031")
+	local cached = fontFamilyCache[key]
+	if cached then return cached end
+
+	H._fontFamilyCounter = (H._fontFamilyCounter or 0) + 1
+	local familyName = ("EQOLUFFontFamily%d"):format(H._fontFamilyCounter)
+	local ok, family = pcall(Font.CreateFontFamily, familyName, {
+		{ alphabet = "roman", file = fontFile, height = size, flags = flags },
+		{ alphabet = "korean", file = "Fonts\\2002.TTF", height = size, flags = flags },
+		{ alphabet = "simplifiedchinese", file = "Fonts\\ARKai_T.ttf", height = size, flags = flags },
+		{ alphabet = "traditionalchinese", file = "Fonts\\bLEI00D.TTF", height = size, flags = flags },
+		{ alphabet = "russian", file = UNIT_NAME_FONT_CYRILLIC or "Fonts\\FRIZQT___CYR.TTF", height = size, flags = flags },
+	})
+	if not ok or not family then return nil end
+	fontFamilyCache[key] = family
+	return family
+end
+
+function H.setFontWithFallback(target, fontFile, size, flags)
+	if not target then return nil end
+	local family = H.getAlphabetAwareFontFamily(fontFile, size, flags)
+	if family and target.SetFontObject then
+		target:SetFontObject(family)
+		return true
+	end
+	if target.SetFont then return target:SetFont(fontFile, size, flags) end
+	return nil
+end
+
 function H.clamp(value, minV, maxV)
 	if value < minV then return minV end
 	if value > maxV then return maxV end
@@ -434,8 +482,8 @@ function H.applyFont(fs, fontPath, size, outline)
 	local flags = normalizeFontOutline(outline)
 	local fontFile = H.getFont(fontPath)
 	if size == nil or size <= 0 then size = 1 end
-	local ok = fs.SetFont and fs:SetFont(fontFile, size or 14, flags)
-	if not ok and fontPath and fontPath ~= "" then fs:SetFont(H.getFont(nil), size or 14, flags) end
+	local ok = H.setFontWithFallback(fs, fontFile, size or 14, flags)
+	if not ok and fontPath and fontPath ~= "" then H.setFontWithFallback(fs, H.getFont(nil), size or 14, flags) end
 	local shadowStrength = getDropShadowStrength(outline)
 	if shadowStrength == "strong" then
 		fs:SetShadowColor(0, 0, 0, 0.85)
@@ -2650,10 +2698,10 @@ function H.getNameLimitWidth(fontPath, fontSize, fontOutline, maxChars)
 	end
 	local measure = nameWidthCache._measure
 	if not measure then return nil end
-	local ok = measure.SetFont and measure:SetFont(font, size, outline)
+	local ok = H.setFontWithFallback(measure, font, size, outline)
 	if not ok then
 		local fallback = H.getFont(nil)
-		measure:SetFont(fallback, size, outline)
+		H.setFontWithFallback(measure, fallback, size, outline)
 	end
 	measure:SetText(string.rep("i", maxChars))
 	local width = measure:GetStringWidth() or 0
@@ -2688,8 +2736,8 @@ function H.truncateTextToWidth(fontPath, fontSize, fontOutline, text, maxWidth)
 	if not measure then return text end
 	local size = fontSize or 14
 	local outline = normalizeFontOutline(fontOutline)
-	local ok = measure.SetFont and measure:SetFont(H.getFont(fontPath), size, outline)
-	if ok == false then measure:SetFont(H.getFont(nil), size, outline) end
+	local ok = H.setFontWithFallback(measure, H.getFont(fontPath), size, outline)
+	if ok == false then H.setFontWithFallback(measure, H.getFont(nil), size, outline) end
 	measure:SetText(text)
 	if measure:GetStringWidth() <= maxWidth then return text end
 	local length = utf8Len(text)

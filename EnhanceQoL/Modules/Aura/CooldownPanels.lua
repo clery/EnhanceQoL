@@ -15255,7 +15255,10 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 			self:ShowEditModeHint(panelId, false)
 			self:RequestPanelRefresh(panelId)
 		end,
-		isEnabled = function() return panel.enabled ~= false end,
+		isEnabled = function()
+			if self:IsInEditMode() == true then return panel.enabled ~= false end
+			return panel.enabled ~= false and panelAllowsSpec(panel)
+		end,
 		relativeTo = function() return resolveAnchorFrame(ensureAnchorTable()) end,
 		allowDrag = function() return anchorUsesUIParent(ensureAnchorTable()) end,
 		settings = settings,
@@ -15315,10 +15318,30 @@ local function registerEditModeCallbacks()
 			if CooldownPanels.UpdateEventRegistration then CooldownPanels:UpdateEventRegistration() end
 		end)
 		addon.EditModeLib:RegisterCallback("exit", function()
-			CooldownPanels:UpdateCursorAnchorState()
-			CooldownPanels:RefreshAllPanels()
-			refreshPanelsForCharges()
-			if CooldownPanels.UpdateEventRegistration then CooldownPanels:UpdateEventRegistration() end
+			CooldownPanels.runtime = CooldownPanels.runtime or {}
+			local runtime = CooldownPanels.runtime
+			if runtime.editModeExitRefreshPending then return end
+			runtime.editModeExitRefreshPending = true
+
+			local function finishExitRefresh(attempt)
+				local retryCount = tonumber(attempt) or 1
+				if CooldownPanels:IsInEditMode() == true and retryCount < 10 and C_Timer and C_Timer.After then
+					C_Timer.After(0, function() finishExitRefresh(retryCount + 1) end)
+					return
+				end
+				runtime.editModeExitRefreshPending = nil
+				CooldownPanels:RebuildSpellIndex()
+				CooldownPanels:UpdateCursorAnchorState()
+				CooldownPanels:RefreshAllPanels()
+				refreshPanelsForCharges()
+				if CooldownPanels.UpdateEventRegistration then CooldownPanels:UpdateEventRegistration() end
+			end
+
+			if C_Timer and C_Timer.After then
+				C_Timer.After(0, function() finishExitRefresh(1) end)
+			else
+				finishExitRefresh(10)
+			end
 		end)
 	end
 	editModeCallbacksRegistered = true

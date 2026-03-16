@@ -30,6 +30,8 @@ local DB_XY_TEXT_COLOR = "classBuffReminderXYTextColor"
 local DB_XY_TEXT_OFFSET_X = "classBuffReminderXYTextOffsetX"
 local DB_XY_TEXT_OFFSET_Y = "classBuffReminderXYTextOffsetY"
 local LEGACY_DB_SOUND_DEBUG_TRACE = "classBuffReminderSoundDebugTrace"
+local LEGACY_DB_SHOW_ICON = "classBuffReminderShowIcon"
+local LEGACY_DB_ONLY_WHEN_MISSING = "classBuffReminderOnlyWhenMissing"
 
 local defaults = (Reminder and Reminder.defaults)
 	or {
@@ -117,6 +119,8 @@ function addon.functions.initClassBuffReminder()
 	init(DB_XY_TEXT_OFFSET_X, defaults.xyTextOffsetX)
 	init(DB_XY_TEXT_OFFSET_Y, defaults.xyTextOffsetY)
 	if addon.db then addon.db[LEGACY_DB_SOUND_DEBUG_TRACE] = nil end
+	if addon.db then addon.db[LEGACY_DB_SHOW_ICON] = nil end
+	if addon.db then addon.db[LEGACY_DB_ONLY_WHEN_MISSING] = nil end
 
 	refreshReminder()
 end

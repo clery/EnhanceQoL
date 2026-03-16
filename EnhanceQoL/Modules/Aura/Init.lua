@@ -55,6 +55,8 @@ function addon.Aura.functions.InitDB()
 	init("cooldownPanelsEditorPoint", "CENTER")
 	init("cooldownPanelsEditorX", 0)
 	init("cooldownPanelsEditorY", 0)
+	addon.db["_cooldownPanelsDebugLog"] = nil
+	addon.db["debugCooldownPanelsSession"] = nil
 
 	if addon.Aura and addon.Aura.CooldownPanels and addon.Aura.CooldownPanels.NormalizeAll then addon.Aura.CooldownPanels:NormalizeAll() end
 end

@@ -547,14 +547,13 @@ function addon.functions.initQuest()
 	addon.functions.InitDBValue("questWowheadLink", false)
 	addon.functions.InitDBValue("ignoredQuestNPC", {})
 	addon.functions.InitDBValue("autogossipID", {})
+	if addon.db then addon.db.testOwner = nil end
 
 	EnsureObjectiveTrackerMinimizeWatcher()
 	EnsureObjectiveTrackerMinimizeHook()
 
 	local function EQOL_GetQuestIDFromMenu(owner, ctx)
 		if ctx and (ctx.questID or ctx.questId) then return ctx.questID or ctx.questId end
-
-		addon.db.testOwner = owner
 
 		if owner then
 			if owner.questID then return owner.questID end

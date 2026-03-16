@@ -63,51 +63,6 @@ local function refreshReminder()
 	if Reminder and Reminder.OnSettingChanged then Reminder:OnSettingChanged() end
 end
 
-local glowStyleValues = {
-	BLIZZARD = L["ClassBuffReminderGlowStyleBlizzard"] or "Blizzard",
-	MARCHING_ANTS = L["ClassBuffReminderGlowStyleMarchingAnts"] or "Marching ants",
-	FLASH = L["ClassBuffReminderGlowStyleFlash"] or "Flash",
-}
-local glowStyleOrder = { "BLIZZARD", "MARCHING_ANTS", "FLASH" }
-
-local function normalizeGlowStyle(value)
-	if Reminder and Reminder.NormalizeGlowStyle then return Reminder.NormalizeGlowStyle(value) end
-	local normalized = type(value) == "string" and string.upper(value) or nil
-	if normalized == "BLIZZARD" or normalized == "CLASSIC" or normalized == "BUTTON_GLOW" then return "BLIZZARD" end
-	if normalized == "MARCHING_ANTS" or normalized == "MARCHINGANTS" or normalized == "ANTS" then return "MARCHING_ANTS" end
-	if normalized == "FLASH" then return "FLASH" end
-	return "MARCHING_ANTS"
-end
-
-local function normalizeGlowInset(value)
-	if Reminder and Reminder.NormalizeGlowInset then return Reminder.NormalizeGlowInset(value) end
-	local n = tonumber(value)
-	if n == nil then n = defaults.glowInset or 0 end
-	local range = Reminder and Reminder.GLOW_INSET_RANGE or 20
-	if n < -range then n = -range end
-	if n > range then n = range end
-	if n < 0 then return math.ceil(n - 0.5) end
-	return math.floor(n + 0.5)
-end
-
-local function openFlaskSettings()
-	if addon.functions and addon.functions.OpenFlaskMacroSettings then
-		addon.functions.OpenFlaskMacroSettings()
-		return
-	end
-
-	if not (Settings and Settings.OpenToCategory) then return end
-	local gameplayCategory = addon.SettingsLayout and addon.SettingsLayout.rootGAMEPLAY
-	if not gameplayCategory then return end
-
-	if InCombatLockdown and InCombatLockdown() then
-		if UIErrorsFrame and ERR_NOT_IN_COMBAT then UIErrorsFrame:AddMessage(ERR_NOT_IN_COMBAT, 1, 0, 0) end
-		return
-	end
-
-	Settings.OpenToCategory(gameplayCategory:GetID(), "Flask Macro")
-end
-
 local expandable = addon.functions.SettingsCreateExpandableSection(cat, {
 	name = L["Class Buff Reminder"] or "Class Buff Reminder",
 	newTagID = "ClassBuffReminder",
@@ -130,82 +85,6 @@ addon.functions.SettingsCreateCheckbox(cat, {
 		addon.db[DB_ENABLED] = value == true
 		refreshReminder()
 	end,
-	parentSection = expandable,
-})
-
-addon.functions.SettingsCreateCheckbox(cat, {
-	var = DB_GLOW,
-	text = L["ClassBuffReminderGlow"] or "Glow when missing",
-	func = function(value)
-		addon.db[DB_GLOW] = value == true
-		refreshReminder()
-	end,
-	parentSection = expandable,
-})
-
-addon.functions.SettingsCreateDropdown(cat, {
-	var = DB_GLOW_STYLE,
-	text = L["ClassBuffReminderGlowStyle"] or "Glow style",
-	default = defaults.glowStyle,
-	list = glowStyleValues,
-	order = glowStyleOrder,
-	get = function() return normalizeGlowStyle(addon.db and addon.db[DB_GLOW_STYLE] or defaults.glowStyle) end,
-	set = function(_, value)
-		addon.db[DB_GLOW_STYLE] = normalizeGlowStyle(value)
-		refreshReminder()
-	end,
-	parentSection = expandable,
-	parentCheck = function() return addon.db and addon.db[DB_GLOW] == true end,
-})
-
-addon.functions.SettingsCreateSlider(cat, {
-	var = DB_GLOW_INSET,
-	text = L["ClassBuffReminderGlowInset"] or "Glow inset",
-	default = defaults.glowInset,
-	min = -(Reminder and Reminder.GLOW_INSET_RANGE or 20),
-	max = Reminder and Reminder.GLOW_INSET_RANGE or 20,
-	step = 1,
-	get = function() return normalizeGlowInset(addon.db and addon.db[DB_GLOW_INSET] or defaults.glowInset) end,
-	set = function(_, value)
-		addon.db[DB_GLOW_INSET] = normalizeGlowInset(value)
-		refreshReminder()
-	end,
-	formatter = function(value) return tostring(math.floor((tonumber(value) or defaults.glowInset or 0) + 0.5)) end,
-	parentSection = expandable,
-	parentCheck = function() return addon.db and addon.db[DB_GLOW] == true end,
-})
-
-addon.functions.SettingsCreateCheckbox(cat, {
-	var = DB_TRACK_FLASKS,
-	text = L["ClassBuffReminderTrackFlasks"] or "Track missing flask buff",
-	desc = L["ClassBuffReminderTrackFlasksDesc"] or "Shows a flask reminder only when a matching flask is available in your bags.",
-	func = function(value)
-		addon.db[DB_TRACK_FLASKS] = value == true
-		refreshReminder()
-	end,
-	parentSection = expandable,
-})
-
-addon.functions.SettingsCreateCheckbox(cat, {
-	var = DB_TRACK_FLASKS_INSTANCE_ONLY,
-	text = L["ClassBuffReminderTrackFlasksInstanceOnly"] or "Only in dungeons/raids",
-	desc = L["ClassBuffReminderTrackFlasksInstanceOnlyDesc"] or "Limits flask reminder checks to dungeon and raid instances.",
-	func = function(value)
-		addon.db[DB_TRACK_FLASKS_INSTANCE_ONLY] = value == true
-		refreshReminder()
-	end,
-	parentSection = expandable,
-})
-
-addon.functions.SettingsCreateText(cat, L["ClassBuffReminderFlaskSharedHint"] or "Flask preferences are shared with Flask Macro (Gameplay -> Macros & Consumables).", {
-	parentSection = expandable,
-})
-
-addon.functions.SettingsCreateButton(cat, {
-	var = "classBuffReminderOpenFlaskSettings",
-	text = L["ClassBuffReminderOpenFlaskSettings"] or "Open Flask settings",
-	desc = L["ClassBuffReminderOpenFlaskSettingsDesc"] or "Jumps to Gameplay -> Macros & Consumables and focuses Flask Macro settings.",
-	func = openFlaskSettings,
 	parentSection = expandable,
 })
 

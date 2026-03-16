@@ -1,5 +1,13 @@
 # Changelog
 
+## [9.1.0] - 2026-03-16
+
+### 🔄 Changed
+
+- Character Panel (Gem Tracker): Reworked the socketed gem tracker for Midnight. It now tracks `Eversong Diamond`, `Amethyst`, `Peridot`, `Garnet`, and `Lapis` by item ID, replacing the old `Blasphemite` / `Amber` / `Onyx` / `Sapphire` / `Emerald` / `Ruby` setup.
+
+---
+
 ## [9.0.3] - 2026-03-16
 
 ### 🐛 Fixed

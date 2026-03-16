@@ -21,12 +21,11 @@ local TRACKED_SOCKET_SLOTS = {
 }
 
 local TRACKED_GEM_TYPES = {
-	{ key = "Blasphemite", icon = 630620 },
-	{ key = "Amber", icon = 5931396 },
-	{ key = "Onyx", icon = 5931393 },
-	{ key = "Sapphire", icon = 5931403 },
-	{ key = "Emerald", icon = 5931390 },
-	{ key = "Ruby", icon = 5931400 },
+	{ key = "Diamond", itemID = 240967, label = "Diam." },
+	{ key = "Amethyst", itemID = 240900, label = "Ameth" },
+	{ key = "Peridot", itemID = 240892, label = "Perid" },
+	{ key = "Garnet", itemID = 240908, label = "Garn." },
+	{ key = "Lapis", itemID = 240918, label = "Lapis" },
 }
 
 local TRACKER_ICON_SIZE = 32
@@ -38,10 +37,81 @@ local TRACKER_ANCHOR_X = -2
 local TRACKER_ANCHOR_Y = -(40 + TRACKER_LABEL_HEIGHT + TRACKER_LABEL_SPACING)
 local TRACKER_UPDATE_DELAY = 1.0
 
-local TRACKED_GEM_BY_KEY = {}
-for _, entry in ipairs(TRACKED_GEM_TYPES) do
-	TRACKED_GEM_BY_KEY[entry.key] = entry
-end
+-- Midnight gem colors that contribute to Eversong Diamond bonuses.
+local trackedGemGroups = {
+	[240966] = "Diamond",
+	[240967] = "Diamond",
+	[240968] = "Diamond",
+	[240969] = "Diamond",
+
+	[240863] = "Amethyst",
+	[240864] = "Amethyst",
+	[240865] = "Amethyst",
+	[240866] = "Amethyst",
+	[240867] = "Amethyst",
+	[240868] = "Amethyst",
+	[240869] = "Amethyst",
+	[240870] = "Amethyst",
+	[240895] = "Amethyst",
+	[240896] = "Amethyst",
+	[240897] = "Amethyst",
+	[240898] = "Amethyst",
+	[240899] = "Amethyst",
+	[240900] = "Amethyst",
+	[240901] = "Amethyst",
+	[240902] = "Amethyst",
+
+	[240855] = "Peridot",
+	[240856] = "Peridot",
+	[240857] = "Peridot",
+	[240858] = "Peridot",
+	[240859] = "Peridot",
+	[240860] = "Peridot",
+	[240861] = "Peridot",
+	[240862] = "Peridot",
+	[240887] = "Peridot",
+	[240888] = "Peridot",
+	[240889] = "Peridot",
+	[240890] = "Peridot",
+	[240891] = "Peridot",
+	[240892] = "Peridot",
+	[240893] = "Peridot",
+	[240894] = "Peridot",
+
+	[240871] = "Garnet",
+	[240872] = "Garnet",
+	[240873] = "Garnet",
+	[240874] = "Garnet",
+	[240875] = "Garnet",
+	[240876] = "Garnet",
+	[240877] = "Garnet",
+	[240878] = "Garnet",
+	[240903] = "Garnet",
+	[240904] = "Garnet",
+	[240905] = "Garnet",
+	[240906] = "Garnet",
+	[240907] = "Garnet",
+	[240908] = "Garnet",
+	[240909] = "Garnet",
+	[240910] = "Garnet",
+
+	[240879] = "Lapis",
+	[240880] = "Lapis",
+	[240881] = "Lapis",
+	[240882] = "Lapis",
+	[240883] = "Lapis",
+	[240884] = "Lapis",
+	[240885] = "Lapis",
+	[240886] = "Lapis",
+	[240911] = "Lapis",
+	[240912] = "Lapis",
+	[240913] = "Lapis",
+	[240914] = "Lapis",
+	[240915] = "Lapis",
+	[240916] = "Lapis",
+	[240917] = "Lapis",
+	[240918] = "Lapis",
+}
 
 local GEM_TYPE_INFO = {}
 GEM_TYPE_INFO["Yellow"] = 9
@@ -111,6 +181,10 @@ local function clearGemButtons()
 end
 
 local function getGemTracker() return _G.EnhanceQoLGemTracker end
+local function getTrackedGemIcon(info)
+	if info and info.itemID and C_Item and C_Item.GetItemIconByID then return C_Item.GetItemIconByID(info.itemID) end
+	return nil
+end
 
 local function ensureGemTracker()
 	local tracker = getGemTracker()
@@ -143,7 +217,7 @@ local function ensureGemTracker()
 		icon:SetPoint("TOPLEFT", iconFrame, "TOPLEFT", 1, -1)
 		icon:SetPoint("BOTTOMRIGHT", iconFrame, "BOTTOMRIGHT", -1, 1)
 		icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-		icon:SetTexture(info.icon)
+		icon:SetTexture(getTrackedGemIcon(info))
 		btn.icon = icon
 
 		local glow = iconFrame:CreateTexture(nil, "OVERLAY")
@@ -161,7 +235,7 @@ local function ensureGemTracker()
 		local label = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 		label:SetPoint("TOP", iconFrame, "BOTTOM", 0, -TRACKER_LABEL_SPACING)
 		label:SetJustifyH("CENTER")
-		local labelText = info.key
+		local labelText = info.label or info.key
 		if labelText and #labelText > TRACKER_LABEL_MAX then labelText = labelText:sub(1, TRACKER_LABEL_MAX) end
 		label:SetText(labelText or "")
 		btn.label = label
@@ -171,16 +245,6 @@ local function ensureGemTracker()
 
 	_G.EnhanceQoLGemTracker = tracker
 	return tracker
-end
-
-local function parseGemType(gemName)
-	if not gemName then return nil, nil end
-	local prefix, gemType = gemName:match("^([^%s]+)%s+([^%s]+)")
-	if gemType and TRACKED_GEM_BY_KEY[gemType] then return prefix, gemType end
-	for key in pairs(TRACKED_GEM_BY_KEY) do
-		if gemName:find(key, 1, true) then return nil, key end
-	end
-	return nil, nil
 end
 
 local updateGemTracker
@@ -225,7 +289,6 @@ updateGemTracker = function()
 	tracker:Show()
 
 	local gemsByType = {}
-	local needsRetry = false
 	for slotID in pairs(TRACKED_SOCKET_SLOTS) do
 		local itemLink = GetInventoryItemLink("player", slotID)
 		if itemLink then
@@ -233,19 +296,14 @@ updateGemTracker = function()
 			for i = 1, numSockets do
 				local gemID = C_Item.GetItemGemID(itemLink, i)
 				if gemID then
-					local gemName = C_Item.GetItemNameByID(gemID)
-					if not gemName then
-						needsRetry = true
-					else
-						local _, gemType = parseGemType(gemName)
-						if gemType then
-							local entry = gemsByType[gemType]
-							if not entry then
-								entry = { count = 0, icon = C_Item.GetItemIconByID(gemID) }
-								gemsByType[gemType] = entry
-							end
-							entry.count = entry.count + 1
+					local gemType = trackedGemGroups[gemID]
+					if gemType then
+						local entry = gemsByType[gemType]
+						if not entry then
+							entry = { count = 0, icon = C_Item.GetItemIconByID(gemID) }
+							gemsByType[gemType] = entry
 						end
+						entry.count = entry.count + 1
 					end
 				end
 			end
@@ -257,20 +315,18 @@ updateGemTracker = function()
 		if btn then
 			local data = gemsByType[info.key]
 			if data then
-				btn.icon:SetTexture(data.icon or info.icon)
+				btn.icon:SetTexture(data.icon or getTrackedGemIcon(info))
 				btn.icon:SetDesaturated(false)
 				btn.glow:Hide()
 				btn.count:SetText(data.count and data.count > 1 and tostring(data.count) or "")
 			else
-				btn.icon:SetTexture(info.icon)
+				btn.icon:SetTexture(getTrackedGemIcon(info))
 				btn.icon:SetDesaturated(true)
 				btn.glow:Show()
 				btn.count:SetText("")
 			end
 		end
 	end
-
-	if needsRetry then queueGemTrackerUpdate() end
 end
 
 GemHelper.UpdateTracker = updateGemTracker

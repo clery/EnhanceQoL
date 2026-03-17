@@ -57,6 +57,7 @@ LSM:Register("statusbar", "EQOL: Thunder", "Interface\\AddOns\\" .. addonName ..
 LSM:Register("statusbar", "EQOL: Astral", "Interface\\AddOns\\" .. addonName .. "\\Assets\\Astral.tga")
 LSM:Register("statusbar", "EQOL: Rage", "Interface\\AddOns\\" .. addonName .. "\\Assets\\Rage.tga")
 LSM:Register("statusbar", "EQOL: Absorb", "Interface\\AddOns\\" .. addonName .. "\\Assets\\Absorb.tga")
+LSM:Register("statusbar", "EQOL: Void", "Interface\\AddOns\\" .. addonName .. "\\Assets\\Void.tga")
 LSM:Register("statusbar", "EQOL: Blizzard cropped", "Interface\\AddOns\\" .. addonName .. "\\Assets\\BlizzardRetailBarCrop2.tga")
 
 LSM:Register("font", "EQOL: Expressway", "Interface\\AddOns\\" .. addonName .. "\\Fonts\\ExpresswayRegular.ttf")

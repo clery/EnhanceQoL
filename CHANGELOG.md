@@ -1,6 +1,10 @@
 # Changelog
 
-## [9.1.3] - 2026-03-17
+## [9.2.0] - 2026-03-17
+
+### ✨ Added
+
+- Shared Media: Added new Void texture (EQOL: Void)
 
 ### 🐛 Fixed
 

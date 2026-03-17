@@ -1,10 +1,15 @@
 # Changelog
 
-## [9.2.1] - 2026-03-17
+## [9.3.0] - 2026-03-17
+
+### ✨ Added
+
+- Class Buff Reminder (Evoker / Augmentation): Added `Blistering Scales` to the reminder. It now also shows correctly while solo.
 
 ### 🐛 Fixed
 
 - Class Buff Reminder (Settings): Restored the missing Flask info text and `Open Flask settings` button in the Blizzard settings UI.
+- Unit Frames: Fixed `Always hide in party/raid` so it now only hides the frame while you are actually in a party or raid.
 
 ---
 

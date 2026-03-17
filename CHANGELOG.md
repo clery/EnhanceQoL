@@ -17,6 +17,7 @@
 
 - Cooldown Panels (Items / Trinkets): Fixed GCD-only item cooldowns being treated as real cooldowns, so trinkets and other usable items no longer briefly react to the global cooldown.
 - Cooldown Panels (Stance): Fixed `Static text` being unavailable for stance entries in the editor and standalone entry settings.
+- Data Panels: Fixed panels breaking when one of their entries came from an addon that is no longer installed.
 - Food Macros (Drink / Health / Flask / Buff Food): Fixed hard Lua errors when the global macro limit (`120`) is already reached. EQoL now checks the limit before `CreateMacro()` and prints a one-time chat warning instead.
 - Minimap (Instance Difficulty Indicator): Fixed the difficulty label not using the configured Global Font.
 

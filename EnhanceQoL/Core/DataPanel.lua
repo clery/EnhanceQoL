@@ -402,6 +402,23 @@ local function copyList(source)
 	return result
 end
 
+local function sanitizeStreamList(source)
+	local list = {}
+	local set = {}
+	if type(source) ~= "table" then return list, set end
+	for _, name in ipairs(source) do
+		if type(name) == "string" and name ~= "" and not set[name] then
+			set[name] = true
+			list[#list + 1] = name
+		end
+	end
+	return list, set
+end
+
+local function isStreamAvailable(name)
+	return type(name) == "string" and name ~= "" and DataHub and DataHub.streams and DataHub.streams[name] ~= nil
+end
+
 local function streamDisplayName(name)
 	local stream = DataHub and DataHub.streams and DataHub.streams[name]
 	if stream and stream.meta then return stream.meta.title or stream.meta.name or name end
@@ -592,9 +609,21 @@ local function ensureLDBStream(name, dataobj)
 	return streamName, stream
 end
 
+local function restoreConfiguredPanelsForStream(streamName)
+	if not isStreamAvailable(streamName) then return end
+	for _, panel in pairs(panels) do
+		if panel and panel.info and panel.info.streamSet and panel.info.streamSet[streamName] and not panel.streams[streamName] and panel.ApplyStreams then
+			panel:ApplyStreams(copyList(panel.info.streams))
+		end
+	end
+end
+
 local function onLDBDataObjectCreated(_, name, dataobj)
 	local streamName = ensureLDBStream(name, dataobj)
-	if streamName then DataHub:RequestUpdate(streamName) end
+	if streamName then
+		restoreConfiguredPanelsForStream(streamName)
+		DataHub:RequestUpdate(streamName)
+	end
 end
 
 local function onLDBAttributeChanged(_, name, attr, _, dataobj)
@@ -1302,9 +1331,7 @@ local function ensureSettings(id, name)
 	addon.db.dataPanels[id] = info
 	if addon.db.dataPanels[tonumber(id)] then addon.db.dataPanels[tonumber(id)] = nil end
 
-	for _, n in ipairs(info.streams) do
-		info.streamSet[n] = true
-	end
+	info.streams, info.streamSet = sanitizeStreamList(info.streams)
 
 	return info
 end
@@ -1682,25 +1709,23 @@ function DataPanel.Create(id, name, existingOnly)
 
 	function panel:ApplyStreams(streamList)
 		self.suspendEditSync = true
-		local desired = {}
-		for _, name in ipairs(streamList or {}) do
-			desired[name] = true
-		end
+		local configured, desired = sanitizeStreamList(streamList)
+		local removeList = {}
 		for existing in pairs(self.streams) do
-			if not desired[existing] then self:RemoveStream(existing) end
+			if not desired[existing] then removeList[#removeList + 1] = existing end
 		end
-		for _, name in ipairs(streamList or {}) do
-			if not self.streams[name] then self:AddStream(name) end
+		for _, name in ipairs(removeList) do
+			self:RemoveStream(name)
+		end
+		for _, name in ipairs(configured) do
+			if isStreamAvailable(name) and not self.streams[name] then self:AddStream(name) end
 		end
 		self.order = {}
-		self.info.streams = {}
-		self.info.streamSet = {}
-		for _, name in ipairs(streamList or {}) do
-			if self.streams[name] then
-				self.order[#self.order + 1] = name
-				self.info.streams[#self.info.streams + 1] = name
-				self.info.streamSet[name] = true
-			end
+		-- Preserve configured-but-missing streams so external LDB providers can reattach later.
+		self.info.streams = configured
+		self.info.streamSet = desired
+		for _, name in ipairs(configured) do
+			if self.streams[name] then self.order[#self.order + 1] = name end
 		end
 		self:Refresh()
 		self.suspendEditSync = nil
@@ -1939,7 +1964,7 @@ function DataPanel.Create(id, name, existingOnly)
 	end
 
 	function panel:AddStream(name)
-		if self.streams[name] then return end
+		if self.streams[name] or not isStreamAvailable(name) then return end
 		local button = CreateFrame("Button", nil, self.frame)
 		button:SetHeight(self.frame:GetHeight())
 		local text = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")

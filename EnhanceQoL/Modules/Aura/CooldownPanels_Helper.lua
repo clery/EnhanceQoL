@@ -964,6 +964,21 @@ function Helper.CopyTableShallow(source)
 	return result
 end
 
+function Helper.CopyTableDeep(source, seen)
+	if type(source) ~= "table" then return source end
+	if addon.functions and addon.functions.copyTable then return addon.functions.copyTable(source) end
+	if CopyTable then return CopyTable(source) end
+	seen = seen or {}
+	if seen[source] then return seen[source] end
+	local result = {}
+	seen[source] = result
+	for key, value in pairs(source) do
+		local copiedKey = type(key) == "table" and Helper.CopyTableDeep(key, seen) or key
+		result[copiedKey] = Helper.CopyTableDeep(value, seen)
+	end
+	return result
+end
+
 function Helper.NormalizeBool(value, fallback)
 	if value == nil then return fallback end
 	return value and true or false

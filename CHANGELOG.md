@@ -1,5 +1,13 @@
 # Changelog
 
+## [9.4.0] - 2026-03-17
+
+### ✨ Added
+
+- Cooldown Panels (Editor): Added panel duplication from the panel-list right-click context menu. Duplicates keep their entries, layout, and group assignment.
+
+---
+
 ## [9.3.0] - 2026-03-17
 
 ### ✨ Added

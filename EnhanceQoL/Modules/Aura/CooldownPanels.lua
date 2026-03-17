@@ -2144,6 +2144,72 @@ function CooldownPanels:CreatePanel(name)
 	return id, panel
 end
 
+function CooldownPanels:DuplicatePanel(panelId)
+	local root = ensureRoot()
+	panelId = normalizeId(panelId)
+	if not root or not root.panels or not panelId then return nil end
+	local source = root.panels[panelId]
+	if not source then return nil end
+
+	local id = Helper.GetNextNumericId(root.panels)
+	local panel = Helper.CopyTableDeep(source)
+	if type(panel) ~= "table" then return nil end
+	panel.id = id
+
+	local usedNames = {}
+	for _, existingPanel in pairs(root.panels or {}) do
+		local existingName = existingPanel and existingPanel.name
+		if type(existingName) == "string" and existingName ~= "" then usedNames[existingName] = true end
+	end
+	local baseName = (type(source.name) == "string" and source.name ~= "" and source.name) or (L["CooldownPanelNewPanel"] or "New Panel")
+	local copyLabel = L["Copy"] or "Copy"
+	panel.name = string.format("%s %s", baseName, copyLabel)
+	if usedNames[panel.name] then
+		local suffix = 2
+		repeat
+			panel.name = string.format("%s %s %d", baseName, copyLabel, suffix)
+			suffix = suffix + 1
+		until not usedNames[panel.name]
+	end
+
+	local anchor = ensurePanelAnchor(panel)
+	if anchor then
+		anchor.x = (tonumber(anchor.x) or tonumber(panel.x) or 0) + 24
+		anchor.y = (tonumber(anchor.y) or tonumber(panel.y) or 0) - 24
+		panel.point = anchor.point or panel.point or "CENTER"
+		panel.x = anchor.x
+		panel.y = anchor.y
+	else
+		panel.x = (tonumber(panel.x) or 0) + 24
+		panel.y = (tonumber(panel.y) or 0) - 24
+	end
+
+	Helper.NormalizePanel(panel, root.defaults)
+	for _, entry in pairs(panel.entries or {}) do
+		Helper.NormalizeEntry(entry, root.defaults)
+	end
+
+	root.panels[id] = panel
+	local inserted = false
+	for index, currentId in ipairs(root.order or {}) do
+		if currentId == panelId then
+			table.insert(root.order, index + 1, id)
+			inserted = true
+			break
+		end
+	end
+	if not inserted then root.order[#root.order + 1] = id end
+	markRootOrderDirty(root)
+	Keybinds.MarkPanelsDirty()
+	self:RegisterEditModePanel(id)
+	self:RebuildSpellIndex()
+	local cdmAuras = CooldownPanels.CDMAuras
+	if cdmAuras and cdmAuras.HandleRootRefresh then cdmAuras:HandleRootRefresh() end
+	self:UpdateCursorAnchorState()
+	self:RefreshPanel(id)
+	return id, panel
+end
+
 function CooldownPanels:DeletePanel(panelId)
 	local root = ensureRoot()
 	panelId = normalizeId(panelId)
@@ -9962,6 +10028,10 @@ function CooldownPanels:ShowPanelGroupAssignMenu(owner, panelId)
 	Api.MenuUtil.CreateContextMenu(owner, function(_, rootDescription)
 		rootDescription:CreateTitle(panel.name or ("Panel " .. tostring(panelId)))
 		rootDescription:CreateDivider()
+		rootDescription:CreateButton(L["CooldownPanelDuplicate"] or "Duplicate", function()
+			local duplicatedPanelId = CooldownPanels:DuplicatePanel(panelId)
+			if duplicatedPanelId then CooldownPanels:SelectPanel(duplicatedPanelId) end
+		end)
 
 		local currentGroupId = normalizeId(panel.editorGroupId)
 		local groupMenu = rootDescription:CreateButton(L["CooldownPanelAddToGroup"] or "Add to group")

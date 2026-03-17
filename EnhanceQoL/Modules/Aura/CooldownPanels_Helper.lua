@@ -158,6 +158,7 @@ Helper.PANEL_LAYOUT_DEFAULTS = {
 	chargesFontSize = 12,
 	chargesFontStyle = "OUTLINE",
 	chargesColor = { 1, 1, 1, 1 },
+	chargesHideWhenZero = false,
 	keybindsEnabled = false,
 	keybindsIgnoreItems = false,
 	keybindAnchor = "TOPLEFT",
@@ -1085,6 +1086,7 @@ function Helper.NormalizePanel(panel, defaults)
 	panel.layout.noDesaturation = panel.layout.noDesaturation == true
 	panel.layout.stackColor = Helper.NormalizeColor(panel.layout.stackColor, layoutDefaults.stackColor or Helper.PANEL_LAYOUT_DEFAULTS.stackColor or { 1, 1, 1, 1 })
 	panel.layout.chargesColor = Helper.NormalizeColor(panel.layout.chargesColor, layoutDefaults.chargesColor or Helper.PANEL_LAYOUT_DEFAULTS.chargesColor or { 1, 1, 1, 1 })
+	panel.layout.chargesHideWhenZero = panel.layout.chargesHideWhenZero == true
 	panel.layout.cooldownTextColor = Helper.NormalizeColor(panel.layout.cooldownTextColor, layoutDefaults.cooldownTextColor or Helper.PANEL_LAYOUT_DEFAULTS.cooldownTextColor)
 	if panel.layout.cooldownTextFont ~= nil and type(panel.layout.cooldownTextFont) ~= "string" then panel.layout.cooldownTextFont = nil end
 	if panel.layout.cooldownTextSize ~= nil then panel.layout.cooldownTextSize = Helper.ClampInt(panel.layout.cooldownTextSize, 6, 64, 12) end

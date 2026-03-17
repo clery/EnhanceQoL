@@ -6,6 +6,15 @@
 
 - Cooldown Panels (Editor): Added panel duplication from the panel-list right-click context menu. Duplicates keep their entries, layout, and group assignment.
 
+### 🔄 Changed
+
+- Cooldown Panels (Charges): Added a panel-wide `Hide when 0` option for spell charge text. Charge numbers now fade out automatically when the current charge count reaches `0`.
+
+### 🐛 Fixed
+
+- Cooldown Panels (Items / Trinkets): Fixed GCD-only item cooldowns being treated as real cooldowns, so trinkets and other usable items no longer briefly react to the global cooldown.
+- Cooldown Panels (Stance): Fixed `Static text` being unavailable for stance entries in the editor and standalone entry settings.
+
 ---
 
 ## [9.3.0] - 2026-03-17

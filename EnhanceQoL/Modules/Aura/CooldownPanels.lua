@@ -4359,6 +4359,38 @@ local function getItemCooldownInfo(itemID, slotID)
 	return start or 0, duration or 0, enabled
 end
 
+function CooldownPanels:GetItemUseSpellID(itemID)
+	if not itemID then return nil end
+	self.runtime = self.runtime or {}
+	local runtime = self.runtime
+	runtime.itemUseSpellCache = runtime.itemUseSpellCache or {}
+	local cached = runtime.itemUseSpellCache[itemID]
+	if cached ~= nil then return cached or nil end
+	if not Api.GetItemSpell then
+		runtime.itemUseSpellCache[itemID] = false
+		return nil
+	end
+	local _, spellId = Api.GetItemSpell(itemID)
+	spellId = tonumber(spellId)
+	runtime.itemUseSpellCache[itemID] = spellId or false
+	return spellId
+end
+
+function CooldownPanels:IsCooldownMatchingGlobalCooldown(cooldownStart, cooldownDuration)
+	if not isCooldownActive(cooldownStart, cooldownDuration) then return false end
+	local gcdStart, gcdDuration = self:GetCachedSpellCooldownInfo(61304)
+	if not isCooldownActive(gcdStart, gcdDuration) then return false end
+	return cooldownStart == gcdStart and cooldownDuration == gcdDuration
+end
+
+function CooldownPanels:IsItemCooldownOnGCD(itemID, cooldownStart, cooldownDuration)
+	if not self:IsCooldownMatchingGlobalCooldown(cooldownStart, cooldownDuration) then return false end
+	local spellId = self:GetItemUseSpellID(itemID)
+	if not spellId then return false end
+	local spellStart, spellDuration = self:GetCachedSpellCooldownInfo(spellId)
+	return self:IsCooldownMatchingGlobalCooldown(spellStart, spellDuration)
+end
+
 getSpellCooldownDurationObject = function(spellID)
 	if not spellID or not Api.GetSpellCooldownDuration then return nil end
 	return Api.GetSpellCooldownDuration(spellID)
@@ -4373,20 +4405,7 @@ local function hasItem(itemID)
 end
 
 local function itemHasUseSpell(itemID)
-	if not itemID then return false end
-	CooldownPanels.runtime = CooldownPanels.runtime or {}
-	local runtime = CooldownPanels.runtime
-	runtime.itemUseSpellCache = runtime.itemUseSpellCache or {}
-	local cached = runtime.itemUseSpellCache[itemID]
-	if cached ~= nil then return cached == true end
-	if not Api.GetItemSpell then
-		runtime.itemUseSpellCache[itemID] = false
-		return false
-	end
-	local _, spellId = Api.GetItemSpell(itemID)
-	local hasUseSpell = spellId ~= nil
-	runtime.itemUseSpellCache[itemID] = hasUseSpell
-	return hasUseSpell
+	return CooldownPanels.GetItemUseSpellID and CooldownPanels:GetItemUseSpellID(itemID) ~= nil or false
 end
 
 local function clearItemUseSpellCache()
@@ -7025,14 +7044,14 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 			kind = SettingType.Collapsible,
 			id = "cooldownPanelStandaloneStaticText",
 			defaultCollapsed = true,
-			isShown = function() return getEffectiveType() ~= "STANCE" end,
+			isShown = function() return true end,
 		},
 		{
 			name = L["CooldownPanelStaticText"] or "Static text",
 			kind = SettingType.Input,
 			parentId = "cooldownPanelStandaloneStaticText",
 			inputWidth = 220,
-			isShown = function() return getEffectiveType() ~= "STANCE" end,
+			isShown = function() return true end,
 			get = function()
 				local _, currentEntry = getEntry()
 				return currentEntry and currentEntry.staticText or ""
@@ -7045,7 +7064,7 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 			name = L["CooldownPanelOverwriteGlobalDefault"] or "Overwrite global default",
 			kind = SettingType.Checkbox,
 			parentId = "cooldownPanelStandaloneStaticText",
-			isShown = function() return getEffectiveType() ~= "STANCE" end,
+			isShown = function() return true end,
 			get = function()
 				local _, currentEntry = getEntry()
 				return currentEntry and currentEntry.staticTextUseGlobal == false or false
@@ -7056,7 +7075,7 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 			name = L["CooldownPanelStaticTextDuringCD"] or "Show text during CD",
 			kind = SettingType.Checkbox,
 			parentId = "cooldownPanelStandaloneStaticText",
-			isShown = function() return getEffectiveType() ~= "STANCE" end,
+			isShown = function() return true end,
 			get = function()
 				local _, currentEntry = getEntry()
 				return currentEntry and currentEntry.staticTextShowOnCooldown == true or false
@@ -7068,7 +7087,7 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 			kind = SettingType.Dropdown,
 			parentId = "cooldownPanelStandaloneStaticText",
 			height = 220,
-			isShown = function() return getEffectiveType() ~= "STANCE" end,
+			isShown = function() return true end,
 			disabled = function()
 				local _, currentEntry = getEntry()
 				return not (currentEntry and currentEntry.staticTextUseGlobal == false)
@@ -7086,7 +7105,7 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 			kind = SettingType.Dropdown,
 			parentId = "cooldownPanelStandaloneStaticText",
 			height = 120,
-			isShown = function() return getEffectiveType() ~= "STANCE" end,
+			isShown = function() return true end,
 			disabled = function()
 				local _, currentEntry = getEntry()
 				return not (currentEntry and currentEntry.staticTextUseGlobal == false)
@@ -7104,7 +7123,7 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 			kind = SettingType.Color,
 			parentId = "cooldownPanelStandaloneStaticText",
 			hasOpacity = true,
-			isShown = function() return getEffectiveType() ~= "STANCE" end,
+			isShown = function() return true end,
 			disabled = function()
 				local _, currentEntry = getEntry()
 				return not (currentEntry and currentEntry.staticTextUseGlobal == false)
@@ -7123,7 +7142,7 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 			maxValue = 64,
 			valueStep = 1,
 			allowInput = true,
-			isShown = function() return getEffectiveType() ~= "STANCE" end,
+			isShown = function() return true end,
 			disabled = function()
 				local _, currentEntry = getEntry()
 				return not (currentEntry and currentEntry.staticTextUseGlobal == false)
@@ -7140,7 +7159,7 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 			kind = SettingType.Dropdown,
 			parentId = "cooldownPanelStandaloneStaticText",
 			height = 160,
-			isShown = function() return getEffectiveType() ~= "STANCE" end,
+			isShown = function() return true end,
 			disabled = function()
 				local _, currentEntry = getEntry()
 				return not (currentEntry and currentEntry.staticTextUseGlobal == false)
@@ -7167,7 +7186,7 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 			maxValue = Helper.OFFSET_RANGE,
 			valueStep = 1,
 			allowInput = true,
-			isShown = function() return getEffectiveType() ~= "STANCE" end,
+			isShown = function() return true end,
 			disabled = function()
 				local _, currentEntry = getEntry()
 				return not (currentEntry and currentEntry.staticTextUseGlobal == false)
@@ -7187,7 +7206,7 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 			maxValue = Helper.OFFSET_RANGE,
 			valueStep = 1,
 			allowInput = true,
-			isShown = function() return getEffectiveType() ~= "STANCE" end,
+			isShown = function() return true end,
 			disabled = function()
 				local _, currentEntry = getEntry()
 				return not (currentEntry and currentEntry.staticTextUseGlobal == false)
@@ -8354,6 +8373,16 @@ function CooldownPanels:OpenLayoutPanelStandaloneMenu(panelId, anchorFrame)
 			formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
 		},
 		{
+			name = L["CooldownPanelHideWhenZero"] or "Hide when 0",
+			kind = SettingType.Checkbox,
+			parentId = "cooldownPanelStandalonePanelCharges",
+			get = function()
+				local layout = getLayout()
+				return layout and layout.chargesHideWhenZero == true or false
+			end,
+			set = function(_, value) setPanelLayout("chargesHideWhenZero", value) end,
+		},
+		{
 			name = L["CooldownPanelKeybindsHeader"] or "Keybinds",
 			kind = SettingType.Collapsible,
 			id = "cooldownPanelStandalonePanelKeybinds",
@@ -9050,6 +9079,7 @@ function CooldownPanels:SyncEditModeDataFromPanel(panelId, editModeId)
 	data.chargesFontSize = layout.chargesFontSize or data.chargesFontSize
 	data.chargesFontStyle = Helper.NormalizeFontStyleChoice(layout.chargesFontStyle, data.chargesFontStyle)
 	data.chargesColor = Helper.NormalizeColor(layout.chargesColor, Helper.PANEL_LAYOUT_DEFAULTS.chargesColor or { 1, 1, 1, 1 })
+	data.chargesHideWhenZero = layout.chargesHideWhenZero == true
 	data.keybindsEnabled = layout.keybindsEnabled == true
 	data.keybindsIgnoreItems = layout.keybindsIgnoreItems == true
 	data.keybindAnchor = Helper.NormalizeAnchor(layout.keybindAnchor, Helper.PANEL_LAYOUT_DEFAULTS.keybindAnchor)
@@ -11002,7 +11032,7 @@ local function layoutInspectorToggles(inspector, entry)
 		place(inspector.cbShowWhenEmpty, false)
 		place(inspector.cbShowWhenNoCooldown, false)
 	end
-	local allowStaticText = effectiveType ~= "STANCE"
+	local allowStaticText = true
 	place(inspector.staticTextLabel, allowStaticText, 2, -8)
 	place(inspector.staticTextBox, allowStaticText, -2, -4)
 	place(inspector.cbStaticTextDuringCD, allowStaticText, -2, -6)
@@ -11592,6 +11622,7 @@ function CooldownPanels:UpdatePreviewIcons(panelId, countOverride)
 		icon.cooldown:Clear()
 		if icon.cooldown.SetScript then icon.cooldown:SetScript("OnCooldownDone", nil) end
 		icon.count:Hide()
+		icon.charges:SetAlpha(1)
 		icon.charges:Hide()
 		if icon.rangeOverlay then icon.rangeOverlay:Hide() end
 		if icon.keybind then icon.keybind:Hide() end
@@ -11632,6 +11663,7 @@ function CooldownPanels:UpdatePreviewIcons(panelId, countOverride)
 				local usesValue = Api.GetItemCount(previewItemId, false, true)
 				if isSafeGreaterThan(usesValue, 0) then
 					icon.charges:SetText(usesValue)
+					icon.charges:SetAlpha(1)
 					icon.charges:Show()
 				end
 			end
@@ -12005,86 +12037,94 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 					if not show and showCharges and chargesInfo and isSafeLessThan(chargesInfo.currentCharges, chargesInfo.maxCharges) then show = true end
 					if not show and showStacks and Helper.HasDisplayCount(stackCount) then show = true end
 				end
-			elseif resolvedType == "ITEM" and resolvedItemId then
-				local itemCache = shared and shared.itemCountCache
-				local cached = itemCache and itemCache[resolvedItemId]
-				local cachedCount = cached and cached.count
-				local cachedUses = cached and cached.uses
-				local ownsItem
-				if cachedCount ~= nil then
-					ownsItem = cachedCount > 0 or (Api.IsEquippedItem and Api.IsEquippedItem(resolvedItemId))
-				else
-					ownsItem = hasItem(resolvedItemId)
-				end
-				emptyItem = showWhenEmpty and not ownsItem
-				if (ownsItem or showWhenEmpty) and itemHasUseSpell(resolvedItemId) then
-					canTriggerReadyGlow = ownsItem == true
-					if trackCooldown and ownsItem then
-						cooldownStart, cooldownDuration, cooldownEnabled = getItemCooldownInfo(resolvedItemId)
+				elseif resolvedType == "ITEM" and resolvedItemId then
+					local itemCache = shared and shared.itemCountCache
+					local cached = itemCache and itemCache[resolvedItemId]
+					local cachedCount = cached and cached.count
+					local cachedUses = cached and cached.uses
+					local ownsItem
+					if cachedCount ~= nil then
+						ownsItem = cachedCount > 0 or (Api.IsEquippedItem and Api.IsEquippedItem(resolvedItemId))
+					else
+						ownsItem = hasItem(resolvedItemId)
 					end
-					if showItemCount then
-						local count = cachedCount
-						if count == nil then
-							count = Api.GetItemCount(resolvedItemId, false, false) or 0
-							if itemCache then
-								local slot = itemCache[resolvedItemId] or {}
-								slot.count = count
-								if slot.uses == nil then slot.uses = cachedUses end
-								itemCache[resolvedItemId] = slot
+					emptyItem = showWhenEmpty and not ownsItem
+					if (ownsItem or showWhenEmpty) and itemHasUseSpell(resolvedItemId) then
+						canTriggerReadyGlow = ownsItem == true
+						if trackCooldown and ownsItem then
+							cooldownStart, cooldownDuration, cooldownEnabled = getItemCooldownInfo(resolvedItemId)
+							if CooldownPanels:IsItemCooldownOnGCD(resolvedItemId, cooldownStart, cooldownDuration) then
+								cooldownStart, cooldownDuration, cooldownEnabled = 0, 0, true
+								cooldownGCD = true
 							end
 						end
-						if isSafeGreaterThan(count, 0) then
-							itemCount = count
-						elseif showWhenEmpty then
-							itemCount = 0
-						end
-					end
-					if showItemUses then
-						local uses = cachedUses
-						if uses == nil then
-							uses = Api.GetItemCount(resolvedItemId, false, true) or 0
-							if itemCache then
-								local slot = itemCache[resolvedItemId] or {}
-								slot.uses = uses
-								if slot.count == nil then slot.count = cachedCount end
-								itemCache[resolvedItemId] = slot
+						if showItemCount then
+							local count = cachedCount
+							if count == nil then
+								count = Api.GetItemCount(resolvedItemId, false, false) or 0
+								if itemCache then
+									local slot = itemCache[resolvedItemId] or {}
+									slot.count = count
+									if slot.uses == nil then slot.uses = cachedUses end
+									itemCache[resolvedItemId] = slot
+								end
+							end
+							if isSafeGreaterThan(count, 0) then
+								itemCount = count
+							elseif showWhenEmpty then
+								itemCount = 0
 							end
 						end
-						if isSafeGreaterThan(uses, 0) then
-							itemUses = uses
-						elseif showWhenEmpty then
-							itemUses = 0
-						end
-					end
-					cooldownEnabledOk = isSafeNotFalse(cooldownEnabled)
-					if showCooldown and isCooldownActive(cooldownStart, cooldownDuration) then
-						cooldownEnabledOk = true
-						cooldownEnabled = true
-					end
-					show = alwaysShow or showWhenEmpty
-					if not show and showCooldown and cooldownEnabledOk and isCooldownActive(cooldownStart, cooldownDuration) then show = true end
-				end
-			elseif resolvedType == "SLOT" and resolvedSlotId then
-				local itemId = Api.GetInventoryItemID and Api.GetInventoryItemID("player", resolvedSlotId) or nil
-				if itemId then
-					iconTexture = Api.GetItemIconByID and Api.GetItemIconByID(itemId) or iconTexture
-					if itemHasUseSpell(itemId) then
-						canTriggerReadyGlow = true
-						if trackCooldown then
-							cooldownStart, cooldownDuration, cooldownEnabled = getItemCooldownInfo(itemId, resolvedSlotId)
+						if showItemUses then
+							local uses = cachedUses
+							if uses == nil then
+								uses = Api.GetItemCount(resolvedItemId, false, true) or 0
+								if itemCache then
+									local slot = itemCache[resolvedItemId] or {}
+									slot.uses = uses
+									if slot.count == nil then slot.count = cachedCount end
+									itemCache[resolvedItemId] = slot
+								end
+							end
+							if isSafeGreaterThan(uses, 0) then
+								itemUses = uses
+							elseif showWhenEmpty then
+								itemUses = 0
+							end
 						end
 						cooldownEnabledOk = isSafeNotFalse(cooldownEnabled)
 						if showCooldown and isCooldownActive(cooldownStart, cooldownDuration) then
 							cooldownEnabledOk = true
 							cooldownEnabled = true
 						end
-						show = alwaysShow or showWhenNoCooldown
+						show = alwaysShow or showWhenEmpty
 						if not show and showCooldown and cooldownEnabledOk and isCooldownActive(cooldownStart, cooldownDuration) then show = true end
-					elseif showWhenNoCooldown then
-						show = true
 					end
-				end
-			elseif resolvedType == "STANCE" then
+				elseif resolvedType == "SLOT" and resolvedSlotId then
+					local itemId = Api.GetInventoryItemID and Api.GetInventoryItemID("player", resolvedSlotId) or nil
+					if itemId then
+						iconTexture = Api.GetItemIconByID and Api.GetItemIconByID(itemId) or iconTexture
+						if itemHasUseSpell(itemId) then
+							canTriggerReadyGlow = true
+							if trackCooldown then
+								cooldownStart, cooldownDuration, cooldownEnabled = getItemCooldownInfo(itemId, resolvedSlotId)
+								if CooldownPanels:IsItemCooldownOnGCD(itemId, cooldownStart, cooldownDuration) then
+									cooldownStart, cooldownDuration, cooldownEnabled = 0, 0, true
+									cooldownGCD = true
+								end
+							end
+							cooldownEnabledOk = isSafeNotFalse(cooldownEnabled)
+							if showCooldown and isCooldownActive(cooldownStart, cooldownDuration) then
+								cooldownEnabledOk = true
+								cooldownEnabled = true
+							end
+							show = alwaysShow or showWhenNoCooldown
+							if not show and showCooldown and cooldownEnabledOk and isCooldownActive(cooldownStart, cooldownDuration) then show = true end
+						elseif showWhenNoCooldown then
+							show = true
+						end
+					end
+				elseif resolvedType == "STANCE" then
 				if not stanceRelevant then
 					show = false
 				elseif showWhenMissing then
@@ -12131,6 +12171,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				data.showStacks = showStacks
 				data.showItemCount = showItemCount
 				data.showItemUses = showItemUses
+				data.chargesHideWhenZero = layout.chargesHideWhenZero == true
 				data.showKeybinds = showKeybinds
 				data.keybindText = showKeybinds and Keybinds.GetEntryKeybindText(entry, layout) or nil
 				data.entry = entry
@@ -12378,11 +12419,15 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			local entryGcdDrawBling = data.cooldownGcdDrawBling == true
 			local entryGcdDrawSwipe = data.cooldownGcdDrawSwipe == true
 
+			local chargesAlpha = 1
 			if data.showCharges and data.chargesInfo and data.chargesInfo.maxCharges ~= nil then
 				if data.chargesInfo.currentCharges ~= nil then
 					icon.charges:SetText(data.chargesInfo.currentCharges)
+					if data.chargesHideWhenZero == true and isSafeNumber(data.chargesInfo.currentCharges) then chargesAlpha = data.chargesInfo.currentCharges end
+					icon.charges:SetAlpha(chargesAlpha)
 					icon.charges:Show()
 				else
+					icon.charges:SetAlpha(1)
 					icon.charges:Hide()
 				end
 				if data.showCooldown then
@@ -12413,23 +12458,28 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 					end
 				end
 			else
+				icon.charges:SetAlpha(1)
 				icon.charges:Hide()
 			end
 
 			if data.showItemUses then
 				if data.itemUses ~= nil then
 					icon.charges:SetText(data.itemUses)
+					icon.charges:SetAlpha(1)
 					icon.charges:Show()
 				else
+					icon.charges:SetAlpha(1)
 					icon.charges:Hide()
 				end
 			end
 			if layoutEditActive and not (icon.charges and icon.charges.IsShown and icon.charges:IsShown()) then
 				if data.resolvedType == "SPELL" and data.showCharges then
 					icon.charges:SetText("2")
+					icon.charges:SetAlpha(1)
 					icon.charges:Show()
 				elseif data.resolvedType == "ITEM" and data.showItemUses then
 					icon.charges:SetText("2")
+					icon.charges:SetAlpha(1)
 					icon.charges:Show()
 				end
 			end
@@ -13233,6 +13283,8 @@ applyEditLayout = function(panelId, field, value, skipRefresh)
 		layout.chargesFontStyle = Helper.NormalizeFontStyleChoice(value, layout.chargesFontStyle or Helper.PANEL_LAYOUT_DEFAULTS.chargesFontStyle)
 	elseif field == "chargesColor" then
 		layout.chargesColor = Helper.NormalizeColor(value, Helper.PANEL_LAYOUT_DEFAULTS.chargesColor or { 1, 1, 1, 1 })
+	elseif field == "chargesHideWhenZero" then
+		layout.chargesHideWhenZero = value == true
 	elseif field == "keybindsEnabled" then
 		layout.keybindsEnabled = value == true
 		Keybinds.MarkPanelsDirty()
@@ -13410,6 +13462,7 @@ function CooldownPanels:ApplyEditMode(panelId, data)
 	applyEditLayout(panelId, "chargesFontSize", data.chargesFontSize, true)
 	applyEditLayout(panelId, "chargesFontStyle", data.chargesFontStyle, true)
 	applyEditLayout(panelId, "chargesColor", data.chargesColor, true)
+	applyEditLayout(panelId, "chargesHideWhenZero", data.chargesHideWhenZero, true)
 	applyEditLayout(panelId, "keybindsEnabled", data.keybindsEnabled, true)
 	applyEditLayout(panelId, "keybindsIgnoreItems", data.keybindsIgnoreItems, true)
 	applyEditLayout(panelId, "keybindAnchor", data.keybindAnchor, true)
@@ -15059,6 +15112,15 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 				formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
 			},
 			{
+				name = L["CooldownPanelHideWhenZero"] or "Hide when 0",
+				kind = SettingType.Checkbox,
+				field = "chargesHideWhenZero",
+				parentId = "cooldownPanelCharges",
+				default = layout.chargesHideWhenZero == true,
+				get = function() return layout.chargesHideWhenZero == true end,
+				set = function(_, value) applyEditLayout(panelId, "chargesHideWhenZero", value) end,
+			},
+			{
 				name = L["CooldownPanelKeybindsHeader"] or "Keybinds",
 				kind = SettingType.Collapsible,
 				id = "cooldownPanelKeybinds",
@@ -15294,6 +15356,7 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 			chargesFont = layout.chargesFont or chargesFontPath,
 			chargesFontSize = layout.chargesFontSize or chargesFontSize or 12,
 			chargesFontStyle = Helper.NormalizeFontStyleChoice(layout.chargesFontStyle, chargesFontStyle),
+			chargesHideWhenZero = layout.chargesHideWhenZero == true,
 			keybindsEnabled = layout.keybindsEnabled == true,
 			keybindsIgnoreItems = layout.keybindsIgnoreItems == true,
 			keybindAnchor = Helper.NormalizeAnchor(layout.keybindAnchor, Helper.PANEL_LAYOUT_DEFAULTS.keybindAnchor),

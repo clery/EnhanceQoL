@@ -1,10 +1,10 @@
 # Changelog
 
-## [9.4.1] - 2026-03-18
+## [9.5.0] - 2026-03-18
 
 ### 🔄 Changed
 
-- Action Tracker, World Map Teleport, Dungeon Teleport: Changed some API to newer API
+- Action Tracker, World Map Teleport, Dungeon Teleport, CD Panels: Changed some API to newer API
 
 ### 🐛 Fixed
 

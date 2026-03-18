@@ -13314,15 +13314,12 @@ function CooldownPanels:UpdatePanelMouseState(panelId)
 	if not frame then return end
 	local inEditMode = self:IsInEditMode() == true
 	local layoutEditActive = self:IsPanelLayoutEditActive(panelId)
-	local panel = self:GetPanel(panelId)
-	local layout = panel and panel.layout or nil
-	local tooltipMouseActive = not layoutEditActive and layout and layout.showTooltips == true
 	if frame._mouseEnabled ~= false then
 		frame._mouseEnabled = false
 		frame:EnableMouse(false)
 	end
 	if frame.Selection and frame.Selection.EnableMouse then
-		local enableSelection = inEditMode and not layoutEditActive and not tooltipMouseActive
+		local enableSelection = inEditMode and not layoutEditActive
 		if frame._eqolSelectionMouseEnabled ~= enableSelection then
 			frame._eqolSelectionMouseEnabled = enableSelection
 			frame.Selection:EnableMouse(enableSelection)

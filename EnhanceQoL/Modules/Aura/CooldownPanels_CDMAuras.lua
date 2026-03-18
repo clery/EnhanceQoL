@@ -124,6 +124,13 @@ local function normalizeSourceType(value)
 	return SOURCE_ICON
 end
 
+local function normalizeAlwaysShowMode(value, fallback)
+	if CooldownPanels and CooldownPanels.NormalizeCDMAuraAlwaysShowMode then return CooldownPanels:NormalizeCDMAuraAlwaysShowMode(value, fallback) end
+	local mode = type(value) == "string" and string.upper(value) or nil
+	if mode == "SHOW" or mode == "DESATURATE" or mode == "HIDE" then return mode end
+	return fallback or "HIDE"
+end
+
 local function getImportSourceType(sourceKind)
 	if sourceKind == IMPORT_SOURCE_BAR then return SOURCE_BAR end
 	if sourceKind == IMPORT_SOURCE_ICON then return SOURCE_ICON end
@@ -971,7 +978,11 @@ function CDMAuras:NormalizeEntry(entry)
 	entry.iconTextureID = entry.iconTextureID or getSpellTexture(entry.spellID)
 	entry.sourceType = normalizeSourceType(entry.sourceType)
 	entry.sourceViewer = entry.sourceType == SOURCE_BAR and BAR_VIEWER or ICON_VIEWER
-	entry.alwaysShow = entry.alwaysShow == true
+	local legacyAlwaysShow = entry.alwaysShow == true
+	local hadExplicitMode = entry.cdmAuraAlwaysShowMode ~= nil
+	if type(entry.cdmAuraAlwaysShowUseGlobal) ~= "boolean" then entry.cdmAuraAlwaysShowUseGlobal = not (legacyAlwaysShow or hadExplicitMode) end
+	entry.cdmAuraAlwaysShowMode = normalizeAlwaysShowMode(entry.cdmAuraAlwaysShowMode, legacyAlwaysShow and "SHOW" or "HIDE")
+	entry.alwaysShow = entry.cdmAuraAlwaysShowMode ~= "HIDE"
 	entry.showCooldown = entry.showCooldown ~= false
 	entry.showCooldownText = entry.showCooldownText ~= false
 	if entry.showStacks == nil then
@@ -1013,6 +1024,8 @@ function CDMAuras:CreateEntryData(idValue, overrides, defaults)
 	entry.iconTextureID = info.iconTextureID or getSpellTexture(entry.spellID) or Helper.PREVIEW_ICON
 	entry.sourceType = normalizeSourceType(info.sourceType)
 	entry.sourceViewer = info.sourceViewer or (entry.sourceType == SOURCE_BAR and BAR_VIEWER or ICON_VIEWER)
+	entry.cdmAuraAlwaysShowUseGlobal = true
+	entry.cdmAuraAlwaysShowMode = "HIDE"
 	entry.alwaysShow = false
 	entry.showCooldown = true
 	entry.showCooldownText = true
@@ -1449,9 +1462,13 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry)
 		end
 	end
 
-	local show = active or entry.alwaysShow ~= false
+	local panel = CooldownPanels.GetPanel and CooldownPanels:GetPanel(panelId) or nil
+	local alwaysShowMode = CooldownPanels.ResolveEntryCDMAuraAlwaysShowMode and CooldownPanels:ResolveEntryCDMAuraAlwaysShowMode(panel and panel.layout or nil, entry)
+		or normalizeAlwaysShowMode(entry.cdmAuraAlwaysShowMode, entry.alwaysShow == true and "SHOW" or "HIDE")
+	local show = active or alwaysShowMode ~= "HIDE"
 	data.show = show
 	data.active = active
+	data.inactiveDesaturate = alwaysShowMode == "DESATURATE" and not active
 	data.durationActive = durationActive
 	data.cooldownStart = cooldownStart
 	data.cooldownDuration = cooldownDuration

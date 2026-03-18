@@ -106,6 +106,12 @@ Helper.FontStyleOptions = {
 	{ value = "MONOCHROMEOUTLINE", label = L["Monochrome Outline"] or "Monochrome Outline" },
 }
 
+local function normalizeCDMAuraAlwaysShowMode(value, fallback)
+	local mode = type(value) == "string" and string.upper(value) or nil
+	if mode == "SHOW" or mode == "DESATURATE" or mode == "HIDE" then return mode end
+	return fallback or "HIDE"
+end
+
 Helper.PANEL_LAYOUT_DEFAULTS = {
 	iconSize = 36,
 	spacing = 2,
@@ -132,6 +138,7 @@ Helper.PANEL_LAYOUT_DEFAULTS = {
 	readyGlowDuration = 0,
 	readyGlowCheckPower = false,
 	noDesaturation = false,
+	cdmAuraAlwaysShowMode = "HIDE",
 	checkPower = false,
 	powerTintColor = { 0.5, 0.5, 1, 1 },
 	unusableTintColor = { 0.6, 0.6, 0.6, 1 },
@@ -188,6 +195,8 @@ Helper.PANEL_LAYOUT_DEFAULTS = {
 
 Helper.ENTRY_DEFAULTS = {
 	alwaysShow = true,
+	cdmAuraAlwaysShowUseGlobal = true,
+	cdmAuraAlwaysShowMode = "HIDE",
 	hideIcon = false,
 	iconSizeUseGlobal = true,
 	iconSize = 36,
@@ -1087,6 +1096,8 @@ function Helper.NormalizePanel(panel, defaults)
 	panel.layout.readyGlowDuration = 0
 	panel.layout.readyGlowCheckPower = panel.layout.readyGlowCheckPower == true
 	panel.layout.noDesaturation = panel.layout.noDesaturation == true
+	panel.layout.cdmAuraAlwaysShowMode =
+		normalizeCDMAuraAlwaysShowMode(panel.layout.cdmAuraAlwaysShowMode, layoutDefaults.cdmAuraAlwaysShowMode or Helper.PANEL_LAYOUT_DEFAULTS.cdmAuraAlwaysShowMode or "HIDE")
 	panel.layout.stackColor = Helper.NormalizeColor(panel.layout.stackColor, layoutDefaults.stackColor or Helper.PANEL_LAYOUT_DEFAULTS.stackColor or { 1, 1, 1, 1 })
 	panel.layout.chargesColor = Helper.NormalizeColor(panel.layout.chargesColor, layoutDefaults.chargesColor or Helper.PANEL_LAYOUT_DEFAULTS.chargesColor or { 1, 1, 1, 1 })
 	panel.layout.chargesHideWhenZero = panel.layout.chargesHideWhenZero == true

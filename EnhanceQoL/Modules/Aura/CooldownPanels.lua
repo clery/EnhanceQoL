@@ -30,6 +30,12 @@ CooldownPanels.ENTRY_TYPE = {
 	CDM_AURA = "CDM_AURA",
 }
 
+CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE = CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE or {
+	HIDE = "HIDE",
+	SHOW = "SHOW",
+	DESATURATE = "DESATURATE",
+}
+
 CooldownPanels.itemHighestRankByID = CooldownPanels.itemHighestRankByID
 	or {
 		-- Potion of Recklessness (rank1 -> rank2)
@@ -202,6 +208,31 @@ local curveAlpha = C_CurveUtil.CreateCurve()
 curveAlpha:SetType(Enum.LuaCurveType.Step)
 curveAlpha:AddPoint(0, 1)
 curveAlpha:AddPoint(0.1, 0)
+
+function CooldownPanels:NormalizeCDMAuraAlwaysShowMode(value, fallback)
+	local mode = type(value) == "string" and string.upper(value) or nil
+	local values = self.CDM_AURA_ALWAYS_SHOW_MODE or {}
+	if mode == values.SHOW or mode == values.DESATURATE or mode == values.HIDE then return mode end
+	return fallback or values.HIDE or "HIDE"
+end
+
+function CooldownPanels:GetCDMAuraAlwaysShowOptions()
+	local values = self.CDM_AURA_ALWAYS_SHOW_MODE or {}
+	return {
+		{
+			value = values.HIDE or "HIDE",
+			label = L["CooldownPanelCDMAuraAlwaysShowModeHide"] or "Only show when active",
+		},
+		{
+			value = values.SHOW or "SHOW",
+			label = L["CooldownPanelCDMAuraAlwaysShowModeShow"] or (L["CooldownPanelAlwaysShow"] or "Always show"),
+		},
+		{
+			value = values.DESATURATE or "DESATURATE",
+			label = L["CooldownPanelCDMAuraAlwaysShowModeDesaturate"] or "Always show (desaturate if inactive)",
+		},
+	}
+end
 
 local function normalizeId(value)
 	local num = tonumber(value)
@@ -3812,6 +3843,13 @@ function CooldownPanels:ResolveEntryNoDesaturation(layout, entry)
 	return entry.noDesaturation == true
 end
 
+function CooldownPanels:ResolveEntryCDMAuraAlwaysShowMode(layout, entry)
+	local values = self.CDM_AURA_ALWAYS_SHOW_MODE or {}
+	local panelValue = self:NormalizeCDMAuraAlwaysShowMode(layout and layout.cdmAuraAlwaysShowMode, Helper.PANEL_LAYOUT_DEFAULTS.cdmAuraAlwaysShowMode or values.HIDE or "HIDE")
+	if not entry or entry.type ~= "CDM_AURA" or entry.cdmAuraAlwaysShowUseGlobal ~= false then return panelValue end
+	return self:NormalizeCDMAuraAlwaysShowMode(entry.cdmAuraAlwaysShowMode, panelValue)
+end
+
 function CooldownPanels:ResolveEntryCheckPower(layout, entry)
 	local panelValue = layout and layout.checkPower == true
 	if not entry or entry.checkPowerUseGlobal ~= false then return panelValue end
@@ -5976,12 +6014,21 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 	end
 
 	local function setAlwaysShowLike(value)
+		local layout = getLayout()
 		local _, currentEntry = getEntry()
 		if not currentEntry then return end
 		local normalized = value == true
 		if currentEntry.type == "STANCE" then
 			if (currentEntry.showWhenMissing == true) == normalized then return end
 			currentEntry.showWhenMissing = normalized and true or false
+		elseif currentEntry.type == "CDM_AURA" then
+			local mode = normalized and (CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE and CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE.SHOW or "SHOW")
+				or (CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE and CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE.HIDE or "HIDE")
+			local resolvedMode = CooldownPanels:ResolveEntryCDMAuraAlwaysShowMode(layout, currentEntry)
+			if currentEntry.cdmAuraAlwaysShowUseGlobal == false and resolvedMode == mode then return end
+			currentEntry.cdmAuraAlwaysShowUseGlobal = false
+			currentEntry.cdmAuraAlwaysShowMode = mode
+			currentEntry.alwaysShow = normalized and true or false
 		else
 			if (currentEntry.alwaysShow == true) == normalized then return end
 			currentEntry.alwaysShow = normalized and true or false
@@ -6197,6 +6244,29 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 		refreshEntryViews()
 	end
 
+	local function setCDMAuraAlwaysShowOverrideEnabled(value)
+		local layout = getLayout()
+		local _, currentEntry = getEntry()
+		if not currentEntry then return end
+		local useGlobal = value ~= true
+		if currentEntry.cdmAuraAlwaysShowUseGlobal == useGlobal then return end
+		if not useGlobal then currentEntry.cdmAuraAlwaysShowMode = CooldownPanels:ResolveEntryCDMAuraAlwaysShowMode(layout, currentEntry) end
+		currentEntry.cdmAuraAlwaysShowUseGlobal = useGlobal
+		currentEntry.alwaysShow = CooldownPanels:ResolveEntryCDMAuraAlwaysShowMode(layout, currentEntry)
+			~= (CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE and CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE.HIDE or "HIDE")
+		refreshEntryViews()
+	end
+
+	local function setCDMAuraAlwaysShowMode(_, value)
+		local _, currentEntry = getEntry()
+		if not currentEntry then return end
+		local normalized = CooldownPanels:NormalizeCDMAuraAlwaysShowMode(value, CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE and CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE.HIDE or "HIDE")
+		if currentEntry.cdmAuraAlwaysShowMode == normalized then return end
+		currentEntry.cdmAuraAlwaysShowMode = normalized
+		currentEntry.alwaysShow = normalized ~= (CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE and CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE.HIDE or "HIDE")
+		refreshEntryViews()
+	end
+
 	local function setStackStyleOverrideEnabled(value)
 		local _, currentEntry = getEntry()
 		if not currentEntry then return end
@@ -6387,6 +6457,12 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 		return CooldownPanels:ResolveEntryNoDesaturation(layout, currentEntry)
 	end
 
+	local function getResolvedCDMAuraAlwaysShowMode()
+		local layout = getLayout()
+		local _, currentEntry = getEntry()
+		return CooldownPanels:ResolveEntryCDMAuraAlwaysShowMode(layout, currentEntry)
+	end
+
 	local function getResolvedIconSize()
 		local layout = getLayout()
 		local runtimeState = getRuntime(panelId)
@@ -6411,7 +6487,7 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 			parentId = "cooldownPanelStandaloneDisplay",
 			isShown = function()
 				local effectiveType = getEffectiveType()
-				return effectiveType == "ITEM" or effectiveType == "CDM_AURA" or effectiveType == "STANCE"
+				return effectiveType == "ITEM" or effectiveType == "STANCE"
 			end,
 			get = function()
 				local _, currentEntry = getEntry()
@@ -6420,6 +6496,35 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 				return currentEntry.alwaysShow ~= false
 			end,
 			set = function(_, value) setAlwaysShowLike(value) end,
+		},
+		{
+			name = L["CooldownPanelOverwritePanelCDMAuraAlwaysShow"] or "Overwrite panel tracked aura display",
+			kind = SettingType.Checkbox,
+			parentId = "cooldownPanelStandaloneDisplay",
+			isShown = function() return getEffectiveType() == "CDM_AURA" end,
+			get = function()
+				local _, currentEntry = getEntry()
+				return currentEntry and currentEntry.cdmAuraAlwaysShowUseGlobal == false or false
+			end,
+			set = function(_, value) setCDMAuraAlwaysShowOverrideEnabled(value) end,
+		},
+		{
+			name = L["CooldownPanelCDMAuraAlwaysShowMode"] or "Tracked aura display",
+			kind = SettingType.Dropdown,
+			parentId = "cooldownPanelStandaloneDisplay",
+			height = 180,
+			isShown = function() return getEffectiveType() == "CDM_AURA" end,
+			disabled = function()
+				local _, currentEntry = getEntry()
+				return not (currentEntry and currentEntry.cdmAuraAlwaysShowUseGlobal == false)
+			end,
+			get = function() return getResolvedCDMAuraAlwaysShowMode() end,
+			set = function(_, value) setCDMAuraAlwaysShowMode(nil, value) end,
+			generator = function(_, root)
+				for _, option in ipairs(CooldownPanels:GetCDMAuraAlwaysShowOptions()) do
+					root:CreateRadio(option.label, function() return getResolvedCDMAuraAlwaysShowMode() == option.value end, function() setCDMAuraAlwaysShowMode(nil, option.value) end)
+				end
+			end,
 		},
 		{
 			name = L["CooldownPanelShowItemCount"] or "Show item count",
@@ -8360,6 +8465,25 @@ function CooldownPanels:OpenLayoutPanelStandaloneMenu(panelId, anchorFrame)
 			set = function(_, value) setPanelLayout("showOnCooldown", value) end,
 		},
 		{
+			name = L["CooldownPanelCDMAuraAlwaysShowMode"] or "Tracked aura display",
+			kind = SettingType.Dropdown,
+			parentId = "cooldownPanelStandalonePanelDisplay",
+			height = 180,
+			get = function()
+				local layout = getLayout()
+				return CooldownPanels:ResolveEntryCDMAuraAlwaysShowMode(layout, nil)
+			end,
+			set = function(_, value) setPanelLayout("cdmAuraAlwaysShowMode", value) end,
+			generator = function(_, root)
+				for _, option in ipairs(CooldownPanels:GetCDMAuraAlwaysShowOptions()) do
+					root:CreateRadio(option.label, function()
+						local layout = getLayout()
+						return CooldownPanels:ResolveEntryCDMAuraAlwaysShowMode(layout, nil) == option.value
+					end, function() setPanelLayout("cdmAuraAlwaysShowMode", option.value) end)
+				end
+			end,
+		},
+		{
 			name = L["CooldownPanelOverlaysHeader"] or "Overlays",
 			kind = SettingType.Collapsible,
 			id = "cooldownPanelStandalonePanelOverlays",
@@ -9316,6 +9440,7 @@ function CooldownPanels:SyncEditModeDataFromPanel(panelId, editModeId)
 	data.rangeOverlayEnabled = layout.rangeOverlayEnabled == true
 	data.rangeOverlayColor = layout.rangeOverlayColor or Helper.PANEL_LAYOUT_DEFAULTS.rangeOverlayColor
 	data.noDesaturation = layout.noDesaturation == true
+	data.cdmAuraAlwaysShowMode = CooldownPanels:ResolveEntryCDMAuraAlwaysShowMode(layout, nil)
 	data.hideGlowOutOfCombat = layout.hideGlowOutOfCombat == true
 	data.readyGlowCheckPower = layout.readyGlowCheckPower == true
 	data.checkPower = layout.checkPower == true
@@ -10033,6 +10158,15 @@ local function ensureEditor()
 		if not entry then return end
 		if entry.type == "STANCE" then
 			entry.showWhenMissing = self:GetChecked() and true or false
+		elseif entry.type == "CDM_AURA" then
+			local layout = panel and panel.layout or nil
+			local mode = self:GetChecked() and (CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE and CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE.SHOW or "SHOW")
+				or (CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE and CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE.HIDE or "HIDE")
+			local resolvedMode = CooldownPanels:ResolveEntryCDMAuraAlwaysShowMode(layout, entry)
+			if entry.cdmAuraAlwaysShowUseGlobal == false and resolvedMode == mode then return end
+			entry.cdmAuraAlwaysShowUseGlobal = false
+			entry.cdmAuraAlwaysShowMode = mode
+			entry.alwaysShow = self:GetChecked() and true or false
 		else
 			entry.alwaysShow = self:GetChecked() and true or false
 		end
@@ -11487,7 +11621,12 @@ local function refreshInspector(editor, panel, entry)
 		if effectiveType == "STANCE" then
 			inspector.cbAlwaysShow:SetChecked(entry.showWhenMissing == true)
 		else
-			inspector.cbAlwaysShow:SetChecked((effectiveType == "ITEM" or effectiveType == "CDM_AURA") and entry.alwaysShow ~= false)
+			local alwaysShowChecked = effectiveType == "ITEM" and entry.alwaysShow ~= false
+			if effectiveType == "CDM_AURA" then
+				alwaysShowChecked = CooldownPanels:ResolveEntryCDMAuraAlwaysShowMode(panel and panel.layout or nil, entry)
+					~= (CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE and CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE.HIDE or "HIDE")
+			end
+			inspector.cbAlwaysShow:SetChecked(alwaysShowChecked)
 		end
 		inspector.cbCharges:SetChecked(entry.showCharges and true or false)
 		inspector.cbStacks:SetChecked(entry.showStacks and true or false)
@@ -12230,6 +12369,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			local showWhenNoCooldown = resolvedType == "SLOT" and entry.showWhenNoCooldown == true
 			local showWhenMissing = resolvedType == "STANCE" and entry.showWhenMissing == true
 			local alwaysShow = entry.alwaysShow ~= false
+			local cdmAuraAlwaysShowMode = resolvedType == "CDM_AURA" and CooldownPanels:ResolveEntryCDMAuraAlwaysShowMode(layout, entry) or nil
 			local entryHideOnCooldown = hideOnCooldown and resolvedType ~= "CDM_AURA"
 			local entryShowOnCooldown = showOnCooldown and resolvedType ~= "CDM_AURA"
 			local showEntryIconTexture = self:ResolveEntryShowIconTexture(layout, entry)
@@ -12575,6 +12715,8 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				data.cooldownRate = cooldownRate or 1
 				data.cooldownGCD = cooldownGCD == true
 				data.cdmAuraActive = cdmAuraData and cdmAuraData.active == true
+				data.cdmAuraInactiveDesaturate = cdmAuraData and cdmAuraData.inactiveDesaturate == true
+					or cdmAuraAlwaysShowMode == (CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE and CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE.DESATURATE or "DESATURATE")
 				data.cdmAuraDurationActive = cdmAuraData and cdmAuraData.durationActive == true
 				data.cdmAuraDurationObject = cdmAuraData and cdmAuraData.cooldownDurationObject or nil
 				data.cdmAuraUsesExpirationTime = cdmAuraData and cdmAuraData.cooldownUsesExpirationTime == true
@@ -12803,6 +12945,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			end
 
 			if data.emptyItem then desaturate = true end
+			if data.resolvedType == "CDM_AURA" and data.cdmAuraInactiveDesaturate == true and not cdmAuraActive and not cdmAuraDurationActive then desaturate = true end
 
 			if not isSafeNumber(cooldownRate) then cooldownRate = 1 end
 			setIconDesaturated(icon.texture, desaturate, entryNoDesaturation)
@@ -13572,6 +13715,8 @@ applyEditLayout = function(panelId, field, value, skipRefresh)
 		CooldownPanels:RebuildPowerIndex()
 	elseif field == "noDesaturation" then
 		layout.noDesaturation = value == true
+	elseif field == "cdmAuraAlwaysShowMode" then
+		layout.cdmAuraAlwaysShowMode = CooldownPanels:NormalizeCDMAuraAlwaysShowMode(value, layout.cdmAuraAlwaysShowMode or Helper.PANEL_LAYOUT_DEFAULTS.cdmAuraAlwaysShowMode)
 	elseif field == "checkPower" then
 		layout.checkPower = value == true
 		CooldownPanels:RebuildPowerIndex()
@@ -13768,6 +13913,7 @@ function CooldownPanels:ApplyEditMode(panelId, data)
 	applyEditLayout(panelId, "rangeOverlayEnabled", data.rangeOverlayEnabled, true)
 	applyEditLayout(panelId, "rangeOverlayColor", data.rangeOverlayColor, true)
 	applyEditLayout(panelId, "noDesaturation", data.noDesaturation, true)
+	applyEditLayout(panelId, "cdmAuraAlwaysShowMode", data.cdmAuraAlwaysShowMode, true)
 	applyEditLayout(panelId, "hideGlowOutOfCombat", data.hideGlowOutOfCombat, true)
 	applyEditLayout(panelId, "readyGlowCheckPower", data.readyGlowCheckPower, true)
 	applyEditLayout(panelId, "checkPower", data.checkPower, true)
@@ -13883,6 +14029,13 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 	local function fontOptions() return Helper.GetFontOptions(countFontPath) end
 	local function chargesFontOptions() return Helper.GetFontOptions(chargesFontPath) end
 	local function hasStaticTextEntries() return panel and panel.entries and next(panel.entries) ~= nil end
+	local function hasCDMAuraEntries()
+		if not (panel and panel.entries) then return false end
+		for _, entry in pairs(panel.entries) do
+			if entry and entry.type == "CDM_AURA" then return true end
+		end
+		return false
+	end
 	local function setStaticTextEntryId(entryId)
 		local runtimePanel = getRuntime(panelId)
 		if runtimePanel then runtimePanel.editModeEntryId = normalizeId(entryId) end
@@ -14700,6 +14853,26 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 				set = function(_, value) applyEditLayout(panelId, "showOnCooldown", value) end,
 			},
 			{
+				name = L["CooldownPanelCDMAuraAlwaysShowMode"] or "Tracked aura display",
+				kind = SettingType.Dropdown,
+				field = "cdmAuraAlwaysShowMode",
+				parentId = "cooldownPanelDisplay",
+				height = 180,
+				isShown = function() return hasCDMAuraEntries() end,
+				default = CooldownPanels:ResolveEntryCDMAuraAlwaysShowMode(layout, nil),
+				get = function() return CooldownPanels:ResolveEntryCDMAuraAlwaysShowMode(layout, nil) end,
+				set = function(_, value) applyEditLayout(panelId, "cdmAuraAlwaysShowMode", value) end,
+				generator = function(_, root)
+					for _, option in ipairs(CooldownPanels:GetCDMAuraAlwaysShowOptions()) do
+						root:CreateRadio(
+							option.label,
+							function() return CooldownPanels:ResolveEntryCDMAuraAlwaysShowMode(layout, nil) == option.value end,
+							function() applyEditLayout(panelId, "cdmAuraAlwaysShowMode", option.value) end
+						)
+					end
+				end,
+			},
+			{
 				name = L["Show when"] or "Show when",
 				kind = SettingType.MultiDropdown,
 				field = "visibility",
@@ -15346,6 +15519,19 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 				formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
 			},
 			{
+				name = _G.COLOR or "Color",
+				kind = SettingType.Color,
+				field = "stackColor",
+				parentId = "cooldownPanelStacks",
+				hasOpacity = true,
+				default = Helper.NormalizeColor(layout.stackColor, Helper.PANEL_LAYOUT_DEFAULTS.stackColor or { 1, 1, 1, 1 }),
+				get = function()
+					local color = Helper.NormalizeColor(layout.stackColor, Helper.PANEL_LAYOUT_DEFAULTS.stackColor or { 1, 1, 1, 1 })
+					return { r = color[1], g = color[2], b = color[3], a = color[4] }
+				end,
+				set = function(_, value) applyEditLayout(panelId, "stackColor", value) end,
+			},
+			{
 				name = L["CooldownPanelChargesHeader"] or "Charges",
 				kind = SettingType.Collapsible,
 				id = "cooldownPanelCharges",
@@ -15443,6 +15629,19 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 				get = function() return layout.chargesFontSize or chargesFontSize or 12 end,
 				set = function(_, value) applyEditLayout(panelId, "chargesFontSize", value) end,
 				formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
+			},
+			{
+				name = _G.COLOR or "Color",
+				kind = SettingType.Color,
+				field = "chargesColor",
+				parentId = "cooldownPanelCharges",
+				hasOpacity = true,
+				default = Helper.NormalizeColor(layout.chargesColor, Helper.PANEL_LAYOUT_DEFAULTS.chargesColor or { 1, 1, 1, 1 }),
+				get = function()
+					local color = Helper.NormalizeColor(layout.chargesColor, Helper.PANEL_LAYOUT_DEFAULTS.chargesColor or { 1, 1, 1, 1 })
+					return { r = color[1], g = color[2], b = color[3], a = color[4] }
+				end,
+				set = function(_, value) applyEditLayout(panelId, "chargesColor", value) end,
 			},
 			{
 				name = L["CooldownPanelHideWhenZero"] or "Hide when 0",
@@ -15673,6 +15872,7 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 			rangeOverlayEnabled = layout.rangeOverlayEnabled == true,
 			rangeOverlayColor = layout.rangeOverlayColor or Helper.PANEL_LAYOUT_DEFAULTS.rangeOverlayColor,
 			noDesaturation = layout.noDesaturation == true,
+			cdmAuraAlwaysShowMode = CooldownPanels:ResolveEntryCDMAuraAlwaysShowMode(layout, nil),
 			hideGlowOutOfCombat = layout.hideGlowOutOfCombat == true,
 			readyGlowCheckPower = layout.readyGlowCheckPower == true,
 			checkPower = layout.checkPower == true,
@@ -15684,12 +15884,14 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 			stackFont = layout.stackFont or countFontPath,
 			stackFontSize = layout.stackFontSize or countFontSize or 12,
 			stackFontStyle = Helper.NormalizeFontStyleChoice(layout.stackFontStyle, countFontStyle),
+			stackColor = Helper.NormalizeColor(layout.stackColor, Helper.PANEL_LAYOUT_DEFAULTS.stackColor or { 1, 1, 1, 1 }),
 			chargesAnchor = Helper.NormalizeAnchor(layout.chargesAnchor, Helper.PANEL_LAYOUT_DEFAULTS.chargesAnchor),
 			chargesX = layout.chargesX or Helper.PANEL_LAYOUT_DEFAULTS.chargesX,
 			chargesY = layout.chargesY or Helper.PANEL_LAYOUT_DEFAULTS.chargesY,
 			chargesFont = layout.chargesFont or chargesFontPath,
 			chargesFontSize = layout.chargesFontSize or chargesFontSize or 12,
 			chargesFontStyle = Helper.NormalizeFontStyleChoice(layout.chargesFontStyle, chargesFontStyle),
+			chargesColor = Helper.NormalizeColor(layout.chargesColor, Helper.PANEL_LAYOUT_DEFAULTS.chargesColor or { 1, 1, 1, 1 }),
 			chargesHideWhenZero = layout.chargesHideWhenZero == true,
 			keybindsEnabled = layout.keybindsEnabled == true,
 			keybindsIgnoreItems = layout.keybindsIgnoreItems == true,

@@ -5247,13 +5247,14 @@ function UF.SetSampleCast(unit)
 	updateCastBar(unit)
 end
 
-local function shouldIgnoreCastFail(unit, castGUID, spellId)
+local function shouldIgnoreCastFail(unit, castGUID, spellId, castBarID)
 	if UnitChannelInfo then
 		local channelName = UnitChannelInfo(unit)
 		if channelName then return true end
 	end
 	local st = states[unit]
 	if not st or not st.castInfo then return false end
+	if st.castInfo.castBarID and castBarID and st.castInfo.castBarID ~= castBarID then return true end
 	if st.castInfo.castGUID and castGUID then
 		if not (issecretvalue and (issecretvalue(st.castInfo.castGUID) or issecretvalue(castGUID))) and st.castInfo.castGUID ~= castGUID then return true end
 	end
@@ -5452,11 +5453,11 @@ local function setCastInfoFromUnit(unit)
 		stopCast(unit)
 		return
 	end
-	local name, text, texture, startTimeMS, endTimeMS, _, notInterruptible, spellId, isEmpowered, numEmpowerStages = UnitChannelInfo(unit)
+	local name, text, texture, startTimeMS, endTimeMS, _, notInterruptible, spellId, isEmpowered, numEmpowerStages, castBarID = UnitChannelInfo(unit)
 	local isChannel = true
 	local castGUID
 	if not name then
-		name, text, texture, startTimeMS, endTimeMS, _, castGUID, notInterruptible, spellId = UnitCastingInfo(unit)
+		name, text, texture, startTimeMS, endTimeMS, _, castGUID, notInterruptible, spellId, castBarID = UnitCastingInfo(unit)
 		isChannel = false
 		isEmpowered = nil
 		numEmpowerStages = nil
@@ -5622,6 +5623,7 @@ local function setCastInfoFromUnit(unit)
 		isEmpowered = isEmpowered,
 		numEmpowerStages = numEmpowerStages,
 		castGUID = castGUID,
+		castBarID = castBarID,
 		spellId = spellId,
 	}
 	configureCastStatic(unit, resolvedCfg, defc)
@@ -9406,17 +9408,40 @@ onEvent = function(self, event, unit, ...)
 		or event == "UNIT_SPELLCAST_EMPOWER_UPDATE"
 		or event == "UNIT_SPELLCAST_DELAYED"
 	then
+		if event == "UNIT_SPELLCAST_CHANNEL_UPDATE" or event == "UNIT_SPELLCAST_EMPOWER_UPDATE" or event == "UNIT_SPELLCAST_DELAYED" then
+			local _, _, castBarID = ...
+			if unit == UNIT.PLAYER or unit == UNIT.TARGET or unit == UNIT.FOCUS or isBossUnit(unit) then
+				local st = states[unit]
+				if not (st and st.castBar and st.castBar:IsShown()) then return end
+				if st.castInfo and st.castInfo.castBarID and castBarID and st.castInfo.castBarID ~= castBarID then return end
+			end
+		end
 		if unit == UNIT.PLAYER then setCastInfoFromUnit(UNIT.PLAYER) end
 		if unit == UNIT.TARGET then setCastInfoFromUnit(UNIT.TARGET) end
 		if unit == UNIT.FOCUS then setCastInfoFromUnit(UNIT.FOCUS) end
 		if isBossUnit(unit) then setCastInfoFromUnit(unit) end
 	elseif event == "UNIT_SPELLCAST_INTERRUPTED" or event == "UNIT_SPELLCAST_FAILED" then
-		local castGUID, spellId = ...
-		if unit == UNIT.PLAYER and not shouldIgnoreCastFail(UNIT.PLAYER, castGUID, spellId) then UF.ShowCastInterrupt(UNIT.PLAYER, event) end
-		if unit == UNIT.TARGET and not shouldIgnoreCastFail(UNIT.TARGET, castGUID, spellId) then UF.ShowCastInterrupt(UNIT.TARGET, event) end
-		if unit == UNIT.FOCUS and not shouldIgnoreCastFail(UNIT.FOCUS, castGUID, spellId) then UF.ShowCastInterrupt(UNIT.FOCUS, event) end
-		if isBossUnit(unit) and not shouldIgnoreCastFail(unit, castGUID, spellId) then UF.ShowCastInterrupt(unit, event) end
+		local castGUID, spellId, castBarID
+		if event == "UNIT_SPELLCAST_INTERRUPTED" then
+			castGUID, spellId, _, castBarID = ...
+		else
+			castGUID, spellId, castBarID = ...
+		end
+		if unit == UNIT.PLAYER and not shouldIgnoreCastFail(UNIT.PLAYER, castGUID, spellId, castBarID) then UF.ShowCastInterrupt(UNIT.PLAYER, event) end
+		if unit == UNIT.TARGET and not shouldIgnoreCastFail(UNIT.TARGET, castGUID, spellId, castBarID) then UF.ShowCastInterrupt(UNIT.TARGET, event) end
+		if unit == UNIT.FOCUS and not shouldIgnoreCastFail(UNIT.FOCUS, castGUID, spellId, castBarID) then UF.ShowCastInterrupt(UNIT.FOCUS, event) end
+		if isBossUnit(unit) and not shouldIgnoreCastFail(unit, castGUID, spellId, castBarID) then UF.ShowCastInterrupt(unit, event) end
 	elseif event == "UNIT_SPELLCAST_STOP" or event == "UNIT_SPELLCAST_CHANNEL_STOP" or event == "UNIT_SPELLCAST_EMPOWER_STOP" then
+		local castBarID, _
+		if event == "UNIT_SPELLCAST_CHANNEL_STOP" then
+			_, _, _, castBarID = ...
+		elseif event == "UNIT_SPELLCAST_EMPOWER_STOP" then
+			_, _, _, _, castBarID = ...
+		else
+			_, _, castBarID = ...
+		end
+		local st = states[unit]
+		if st and not st.castInterruptActive and st.castInfo and st.castInfo.castBarID and castBarID and st.castInfo.castBarID ~= castBarID then return end
 		if unit == UNIT.PLAYER then
 			if not (states[UNIT.PLAYER] and states[UNIT.PLAYER].castInterruptActive) then
 				stopCast(UNIT.PLAYER)

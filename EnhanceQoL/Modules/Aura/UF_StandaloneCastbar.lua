@@ -1221,13 +1221,14 @@ local function setSampleCast()
 	updateCastBar()
 end
 
-local function shouldIgnoreCastFail(castGUID, spellId)
+local function shouldIgnoreCastFail(castGUID, spellId, castBarID)
 	if UnitChannelInfo then
 		local channelName = UnitChannelInfo(UNIT)
 		if channelName then return true end
 	end
 	local info = state.castInfo
 	if not info then return false end
+	if info.castBarID and castBarID and info.castBarID ~= castBarID then return true end
 	if info.castGUID and castGUID then
 		if not (issecretvalue and (issecretvalue(info.castGUID) or issecretvalue(castGUID))) and info.castGUID ~= castGUID then return true end
 	end
@@ -1416,11 +1417,11 @@ local function setCastInfoFromUnit()
 		return
 	end
 
-	local name, text, texture, startTimeMS, endTimeMS, _, notInterruptible, spellId, isEmpowered, numEmpowerStages = UnitChannelInfo(UNIT)
+	local name, text, texture, startTimeMS, endTimeMS, _, notInterruptible, spellId, isEmpowered, numEmpowerStages, castBarID = UnitChannelInfo(UNIT)
 	local isChannel = true
 	local castGUID
 	if not name then
-		name, text, texture, startTimeMS, endTimeMS, _, castGUID, notInterruptible, spellId = UnitCastingInfo(UNIT)
+		name, text, texture, startTimeMS, endTimeMS, _, castGUID, notInterruptible, spellId, castBarID = UnitCastingInfo(UNIT)
 		isChannel = false
 		isEmpowered = nil
 		numEmpowerStages = nil
@@ -1468,6 +1469,7 @@ local function setCastInfoFromUnit()
 		isEmpowered = isEmpowered,
 		numEmpowerStages = numEmpowerStages,
 		castGUID = castGUID,
+		castBarID = castBarID,
 		spellId = spellId,
 	}
 	configureCastStatic(castCfg, castDefaults)
@@ -1567,12 +1569,31 @@ Castbar._onEvent = function(_, event, unit, ...)
 		or event == "UNIT_SPELLCAST_EMPOWER_UPDATE"
 		or event == "UNIT_SPELLCAST_DELAYED"
 	then
+		if event == "UNIT_SPELLCAST_CHANNEL_UPDATE" or event == "UNIT_SPELLCAST_EMPOWER_UPDATE" or event == "UNIT_SPELLCAST_DELAYED" then
+			local _, _, castBarID = ...
+			if not state.castBar or not state.castBar:IsShown() then return end
+			if state.castInfo and state.castInfo.castBarID and castBarID and state.castInfo.castBarID ~= castBarID then return end
+		end
 		setCastInfoFromUnit()
 	elseif event == "UNIT_SPELLCAST_INTERRUPTED" or event == "UNIT_SPELLCAST_FAILED" then
-		local castGUID, spellId = ...
-		if not shouldIgnoreCastFail(castGUID, spellId) then showCastInterrupt(event) end
+		local castGUID, spellId, castBarID
+		if event == "UNIT_SPELLCAST_INTERRUPTED" then
+			castGUID, spellId, _, castBarID = ...
+		else
+			castGUID, spellId, castBarID = ...
+		end
+		if not shouldIgnoreCastFail(castGUID, spellId, castBarID) then showCastInterrupt(event) end
 	elseif event == "UNIT_SPELLCAST_STOP" or event == "UNIT_SPELLCAST_CHANNEL_STOP" or event == "UNIT_SPELLCAST_EMPOWER_STOP" then
+		local castBarID
+		if event == "UNIT_SPELLCAST_CHANNEL_STOP" then
+			_, _, _, castBarID = ...
+		elseif event == "UNIT_SPELLCAST_EMPOWER_STOP" then
+			_, _, _, _, castBarID = ...
+		else
+			_, _, castBarID = ...
+		end
 		if not state.castInterruptActive then
+			if state.castInfo and state.castInfo.castBarID and castBarID and state.castInfo.castBarID ~= castBarID then return end
 			stopCast()
 			if shouldShowSampleCast() then setSampleCast() end
 		end

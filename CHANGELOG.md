@@ -1,5 +1,13 @@
 # Changelog
 
+## [9.6.2] - 2026-03-18
+
+### 🐛 Fixed
+
+- Castbars: Fixed a bug with ghost casts
+
+---
+
 ## [9.6.1] - 2026-03-18
 
 ### 🐛 Fixed

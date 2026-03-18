@@ -1,13 +1,5 @@
 # Changelog
 
-## [9.6.1] - 2026-03-18
-
-### 🐛 Fixed
-
-- Unit Frames: Aura cooldown was missing when Cooldowntext was hidden
-
----
-
 ## [9.6.0] - 2026-03-18
 
 ### ✨ Added
@@ -18,6 +10,10 @@
 
 - Cooldown Panels (Panel Settings): Improved the panel-wide text styling for stacks and charges. Shared colors can now be adjusted more cleanly at panel level, which makes it easier to keep whole layouts visually consistent.
 - Cooldown Panels: Removed old legacy panel settings code that was no longer part of the active panel setup. This cleans up the feature and reduces duplicate behavior.
+
+### 🐛 Fixed
+
+- Unit Frames: Aura cooldown was missing when Cooldowntext was hidden
 
 ---
 

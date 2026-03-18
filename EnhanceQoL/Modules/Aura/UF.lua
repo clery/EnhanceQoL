@@ -3214,7 +3214,7 @@ function AuraUtil.applyAuraToButton(btn, aura, ac, isDebuff, unitToken)
 	local showCooldown = ac.showCooldown ~= false
 	local showCooldownText = ac.showCooldownText
 	if showCooldownText == nil then showCooldownText = showCooldown end
-	if showCooldownText and aura.auraInstanceID and aura.auraInstanceID > 0 then
+	if aura.auraInstanceID and aura.auraInstanceID > 0 then
 		local durObj = C_UnitAuras.GetAuraDuration(unitToken, aura.auraInstanceID)
 		if durObj then btn.cd:SetCooldownFromDurationObject(durObj) end
 	end

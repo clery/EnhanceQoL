@@ -5,10 +5,12 @@
 ### ✨ Added
 
 - Private Auras (Standalone): Added a new standalone private aura anchor that can be enabled independently from unit and group frames.
+- Character Panel / Inventory (Upgrade Tracks): Added upgrade track text for equipped items and equippable bag items, including localized track abbreviations, `current/max` progress display, configurable placement, and bag-filter support for `Explorer`, `Adventurer`, `Veteran`, `Champion`, `Hero`, and `Myth`.
 
 ### 🔄 Changed
 
 - Character Panel (Enchant Display): Reworked the enchant display dropdown into combined applied/missing/icon modes. The old separate missing-enchant overlay checkbox was removed, and overlay behavior is now selected directly from the dropdown.
+- Character Panel / Inventory (Upgrade Tracks): Switched upgrade track detection from tooltip parsing to `C_Item.GetItemUpgradeInfo()`, so track IDs, labels, and upgrade progress now come directly from the API instead of tooltip scans.
 
 ---
 

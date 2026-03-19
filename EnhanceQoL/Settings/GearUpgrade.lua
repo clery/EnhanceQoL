@@ -35,6 +35,7 @@ local function isCharDisplaySelected(key)
 	ensureDisplayOptions()
 	local t = addon.db.charDisplayOptions
 	if key == "ilvl" then return t.ilvl == true end
+	if key == "tracks" then return t.tracks == true end
 	if key == "gems" then return t.gems == true end
 	if key == "enchants" then return t.enchants == true end
 	if key == "gemtip" then return t.gemtip == true end
@@ -48,7 +49,7 @@ end
 local function setCharDisplayOption(key, value)
 	ensureDisplayOptions()
 	local enabled = value and true or false
-	if key == "ilvl" or key == "gems" or key == "enchants" or key == "gemtip" then
+	if key == "ilvl" or key == "tracks" or key == "gems" or key == "enchants" or key == "gemtip" then
 		addon.db.charDisplayOptions[key] = enabled
 		addon.functions.setCharFrame()
 	elseif key == "durability" then
@@ -73,6 +74,7 @@ local function applyCharDisplaySelection(selection)
 	selection = selection or {}
 	ensureDisplayOptions()
 	addon.db.charDisplayOptions.ilvl = selection.ilvl == true
+	addon.db.charDisplayOptions.tracks = selection.tracks == true
 	addon.db.charDisplayOptions.gems = selection.gems == true
 	addon.db.charDisplayOptions.enchants = selection.enchants == true
 	addon.db.charDisplayOptions.gemtip = selection.gemtip == true
@@ -129,12 +131,7 @@ local enchantDisplayModeOptions = {
 }
 
 local function normalizeEnchantDisplayMode(mode, showMissingOverlay)
-	if mode == ENCHANT_DISPLAY_MODE_FULL_ICON
-		or mode == ENCHANT_DISPLAY_MODE_BADGE_ICON
-		or mode == ENCHANT_DISPLAY_MODE_WARNING_ICON
-		or mode == ENCHANT_DISPLAY_MODE_APPLIED_ICON then
-		return mode
-	end
+	if mode == ENCHANT_DISPLAY_MODE_FULL_ICON or mode == ENCHANT_DISPLAY_MODE_BADGE_ICON or mode == ENCHANT_DISPLAY_MODE_WARNING_ICON or mode == ENCHANT_DISPLAY_MODE_APPLIED_ICON then return mode end
 
 	local overlayEnabled = showMissingOverlay ~= false
 	if mode == ENCHANT_DISPLAY_MODE_BADGE then return overlayEnabled and ENCHANT_DISPLAY_MODE_BADGE_ICON or ENCHANT_DISPLAY_MODE_BADGE end
@@ -144,10 +141,7 @@ local function normalizeEnchantDisplayMode(mode, showMissingOverlay)
 end
 
 local function modeShowsMissingOverlay(mode)
-	return mode == ENCHANT_DISPLAY_MODE_FULL_ICON
-		or mode == ENCHANT_DISPLAY_MODE_BADGE_ICON
-		or mode == ENCHANT_DISPLAY_MODE_WARNING_ICON
-		or mode == ENCHANT_DISPLAY_MODE_APPLIED_ICON
+	return mode == ENCHANT_DISPLAY_MODE_FULL_ICON or mode == ENCHANT_DISPLAY_MODE_BADGE_ICON or mode == ENCHANT_DISPLAY_MODE_WARNING_ICON or mode == ENCHANT_DISPLAY_MODE_APPLIED_ICON
 end
 
 local function getCachedFontMedia()
@@ -184,6 +178,7 @@ local charDisplayDropdown = addon.functions.SettingsCreateMultiDropdown(cGearUpg
 	text = L["gearDisplayElements"] or "Elements",
 	options = {
 		{ value = "ilvl", text = STAT_AVERAGE_ITEM_LEVEL, tooltip = L["gearDisplayOptionItemLevelDesc"] },
+		{ value = "tracks", text = L["gearDisplayOptionTracks"] or "Upgrade tracks", tooltip = L["gearDisplayOptionTracksDesc"] or "Show the upgrade track abbreviation on equipped gear slots." },
 		{ value = "gems", text = AUCTION_CATEGORY_GEMS, tooltip = L["gearDisplayOptionGemsDesc"] },
 		{ value = "enchants", text = ENCHANTS, tooltip = L["gearDisplayOptionEnchantsDesc"] },
 		{ value = "gemtip", text = L["Gem slot tooltip"], tooltip = L["gearDisplayOptionGemTooltipDesc"] },
@@ -201,14 +196,11 @@ local charDisplayDropdown = addon.functions.SettingsCreateMultiDropdown(cGearUpg
 local enchantDisplayDropdown = addon.functions.SettingsCreateDropdown(cGearUpgrade, {
 	var = "charEnchantDisplayMode",
 	text = L["gearEnchantDisplayMode"] or "Enchant display",
-	desc = L["gearEnchantDisplayModeDesc"]
-		or "Choose whether applied enchants, missing enchants, and the missing enchant icon should be shown.",
+	desc = L["gearEnchantDisplayModeDesc"] or "Choose whether applied enchants, missing enchants, and the missing enchant icon should be shown.",
 	list = enchantDisplayModeOptions,
 	order = enchantDisplayModeOrder,
 	default = ENCHANT_DISPLAY_MODE_FULL_ICON,
-	get = function()
-		return normalizeEnchantDisplayMode(addon.db["charEnchantDisplayMode"], addon.db["showMissingEnchantOverlayOnCharframe"])
-	end,
+	get = function() return normalizeEnchantDisplayMode(addon.db["charEnchantDisplayMode"], addon.db["showMissingEnchantOverlayOnCharframe"]) end,
 	set = function(key)
 		addon.db["charEnchantDisplayMode"] = key
 		addon.db["showMissingEnchantOverlayOnCharframe"] = modeShowsMissingOverlay(key)
@@ -228,6 +220,28 @@ addon.functions.SettingsCreateColorPicker(cGearUpgrade, {
 		local mode = normalizeEnchantDisplayMode(addon.db["charEnchantDisplayMode"], addon.db["showMissingEnchantOverlayOnCharframe"])
 		return isCharDisplaySelected("enchants") and modeShowsMissingOverlay(mode)
 	end,
+	parentSection = expandable,
+})
+
+addon.functions.SettingsCreateDropdown(cGearUpgrade, {
+	list = {
+		LEFT = L["left"],
+		TOP = L["top"],
+		RIGHT = L["right"],
+		BOTTOM = L["bottom"],
+		OUTSIDE = L["outsideNearGems"] or "Outside (next to gems)",
+	},
+	text = L["charTrackPosition"] or "Upgrade track position",
+	get = function() return addon.db["charTrackPosition"] or "LEFT" end,
+	set = function(key)
+		addon.db["charTrackPosition"] = key
+		refreshItemLevelDisplays()
+	end,
+	parent = charDisplayDropdown,
+	parentCheck = function() return isCharDisplaySelected("tracks") end,
+	default = "LEFT",
+	var = "charTrackPosition",
+	type = Settings.VarType.String,
 	parentSection = expandable,
 })
 
@@ -450,6 +464,7 @@ addon.functions.SettingsCreateCheckboxes(cGearUpgrade, data)
 function addon.functions.initGearUpgrade()
 	addon.functions.InitDBValue("charDisplayOptions", {})
 	addon.functions.InitDBValue("inspectDisplayOptions", {})
+	addon.functions.InitDBValue("charTrackPosition", "LEFT")
 	addon.functions.InitDBValue("charEnchantDisplayMode", "FULL")
 	addon.functions.InitDBValue("missingEnchantOverlayColor", { r = 1, g = 0, b = 0, a = 0.6 })
 	addon.functions.InitDBValue("ilvlUseItemQualityColor", true)

@@ -87,6 +87,103 @@ local function AnyInspectEnabled()
 	return t.ilvl or t.gems or t.enchants or t.gemtip
 end
 
+local upgradeTrackLocaleKeys = {
+	explorer = true,
+	adventurer = true,
+	veteran = "upgradeLevelVeteran",
+	champion = "upgradeLevelChampion",
+	hero = "upgradeLevelHero",
+	myth = "upgradeLevelMythic",
+	mythic = "upgradeLevelMythic",
+}
+
+local upgradeTrackQualityMap = {
+	explorer = (Enum and Enum.ItemQuality and Enum.ItemQuality.Poor) or 0,
+	adventurer = (Enum and Enum.ItemQuality and Enum.ItemQuality.Common) or 1,
+	veteran = (Enum and Enum.ItemQuality and Enum.ItemQuality.Uncommon) or 2,
+	champion = (Enum and Enum.ItemQuality and Enum.ItemQuality.Rare) or 3,
+	hero = (Enum and Enum.ItemQuality and Enum.ItemQuality.Epic) or 4,
+	myth = (Enum and Enum.ItemQuality and Enum.ItemQuality.Legendary) or 5,
+}
+
+local function normalizeUpgradeTrackKey(trackKey)
+	if type(trackKey) ~= "string" then return nil end
+	trackKey = strlower(trackKey)
+	if trackKey == "mythic" then return "myth" end
+	return upgradeTrackLocaleKeys[trackKey] and trackKey or nil
+end
+
+local function getUpgradeTrackInfoFromLink(itemLink)
+	if not itemLink or not (C_Item and C_Item.GetItemUpgradeInfo) then return nil, nil end
+	local info = C_Item.GetItemUpgradeInfo(itemLink)
+	if type(info) ~= "table" then return nil, nil end
+
+	local trackKey = nil
+	if addon.functions and addon.functions.GetUpgradeTrackKeyFromItemLink then trackKey = normalizeUpgradeTrackKey(addon.functions.GetUpgradeTrackKeyFromItemLink(itemLink)) end
+	if not trackKey and type(info.trackString) == "string" then trackKey = normalizeUpgradeTrackKey(info.trackString) end
+	if not trackKey then return info, nil end
+	return info, trackKey
+end
+
+local function getUpgradeTrackKeyFromLink(itemLink)
+	local _, trackKey = getUpgradeTrackInfoFromLink(itemLink)
+	return trackKey
+end
+
+local function getUpgradeTrackShortLabel(trackKey)
+	if addon.functions and addon.functions.GetUpgradeTrackAbbreviation then return addon.functions.GetUpgradeTrackAbbreviation(trackKey) end
+	trackKey = normalizeUpgradeTrackKey(trackKey)
+	local localeKey = trackKey and upgradeTrackLocaleKeys[trackKey]
+	local label = nil
+	if type(localeKey) == "string" then label = L[localeKey] end
+	if not label and trackKey == "explorer" then label = "Explorer" end
+	if not label and trackKey == "adventurer" then label = "Adventurer" end
+	if type(label) ~= "string" or label == "" then return nil end
+	return label:match("[%z\1-\127\194-\244][\128-\191]*")
+end
+
+local function getUpgradeTrackDisplayText(itemLink)
+	local upgradeInfo, trackKey = getUpgradeTrackInfoFromLink(itemLink)
+	if not trackKey then return nil, nil end
+	local shortLabel = getUpgradeTrackShortLabel(trackKey)
+	if not shortLabel then return trackKey, nil end
+
+	local currentLevel = tonumber(upgradeInfo and upgradeInfo.currentLevel)
+	local maxLevel = tonumber(upgradeInfo and upgradeInfo.maxLevel)
+	if currentLevel and maxLevel and currentLevel >= 0 and maxLevel > 0 then return trackKey, string.format("%s(%d/%d)", shortLabel, currentLevel, maxLevel) end
+
+	return trackKey, shortLabel
+end
+
+local function applyUpgradeTrackTextStyle(fontString)
+	if not fontString then return end
+	if addon.functions and addon.functions.ApplyItemLevelTextStyle then addon.functions.ApplyItemLevelTextStyle(fontString) end
+	local face, _, flags = fontString:GetFont()
+	local size = tonumber(addon.db and addon.db["ilvlFontSize"]) or 14
+	size = math.max(8, math.floor(size - 3))
+	if face then fontString:SetFont(face, size, flags) end
+	fontString:SetShadowOffset(1, -1)
+	fontString:SetShadowColor(0, 0, 0, 1)
+end
+
+local function applyUpgradeTrackTextColor(fontString, trackKey)
+	if not fontString then return end
+	if addon.functions and addon.functions.GetUpgradeTrackColor then
+		fontString:SetTextColor(addon.functions.GetUpgradeTrackColor(trackKey))
+		return
+	end
+	trackKey = normalizeUpgradeTrackKey(trackKey)
+	local quality = trackKey and upgradeTrackQualityMap[trackKey]
+	if quality then
+		local r, g, b = C_Item.GetItemQualityColor(quality)
+		if r and g and b then
+			fontString:SetTextColor(r, g, b, 1)
+			return
+		end
+	end
+	fontString:SetTextColor(1, 1, 1, 1)
+end
+
 local charIlvlAnchors = {
 	TOPLEFT = { bgPoint = "TOPLEFT", bgX = -1, bgY = 1, textPoint = "TOPLEFT", textX = 1, textY = -2 },
 	TOP = { bgPoint = "TOP", bgX = 0, bgY = 1, textPoint = "TOP", textX = 0, textY = -2 },
@@ -133,29 +230,78 @@ local function applyCharIlvlPosition(element, slot)
 	hideIlvlBackground(element)
 end
 
+local function applyCharTrackPosition(element, slot)
+	if not element or not element.trackLabel or not element.ilvlBackground then return end
+	local pos = addon.db["charTrackPosition"] or "LEFT"
+	element.trackLabel:ClearAllPoints()
+
+	if pos == "OUTSIDE" then
+		local side = addon.variables.itemSlotSide and addon.variables.itemSlotSide[slot] or 0
+		if side == 1 then
+			element.trackLabel:SetPoint("RIGHT", element, "LEFT", -4, 0)
+		elseif side == 2 then
+			element.trackLabel:SetPoint("BOTTOM", element, "TOPLEFT", -1, 5)
+		else
+			element.trackLabel:SetPoint("LEFT", element, "RIGHT", 4, 0)
+		end
+		return
+	end
+
+	if pos == "RIGHT" then
+		element.trackLabel:SetPoint("LEFT", element.ilvlBackground, "RIGHT", 2, 0)
+	elseif pos == "TOP" then
+		element.trackLabel:SetPoint("BOTTOM", element.ilvlBackground, "TOP", 0, 1)
+	elseif pos == "BOTTOM" then
+		element.trackLabel:SetPoint("TOP", element.ilvlBackground, "BOTTOM", 0, -1)
+	else
+		element.trackLabel:SetPoint("RIGHT", element.ilvlBackground, "LEFT", -2, 0)
+	end
+end
+
+local function getTrackGemPadding(element, slot, outsideWithIlvl)
+	if not element or not element.trackLabel or not element.trackLabel:IsShown() then return 0 end
+	local side = addon.variables.itemSlotSide and addon.variables.itemSlotSide[slot] or 0
+	local pos = addon.db["charTrackPosition"] or "LEFT"
+	local padding = math.ceil((element.trackLabel:GetStringWidth() or 0) + 6)
+	if padding <= 6 then return 0 end
+
+	if outsideWithIlvl then
+		if side == 0 and (pos == "RIGHT" or pos == "OUTSIDE") then return padding end
+		if side == 1 and (pos == "LEFT" or pos == "OUTSIDE") then return padding end
+		if side == 2 and (pos == "TOP" or pos == "OUTSIDE") then return padding end
+		return 0
+	end
+
+	if side == 0 and (pos == "RIGHT" or pos == "OUTSIDE") then return padding end
+	if side == 1 and (pos == "LEFT" or pos == "OUTSIDE") then return padding end
+	if side == 2 and (pos == "TOP" or pos == "OUTSIDE") then return padding end
+	return 0
+end
+
 local function positionGemFrame(element, slot, gemIndex, outsideWithIlvl)
 	if not element or not element.gems or not element.gems[gemIndex] then return end
 	local gemFrame = element.gems[gemIndex]
 	local side = addon.variables.itemSlotSide and addon.variables.itemSlotSide[slot] or 0
+	local trackPadding = getTrackGemPadding(element, slot, outsideWithIlvl)
 	gemFrame:ClearAllPoints()
 
 	if outsideWithIlvl and element.ilvlBackground then
 		if side == 1 then
-			gemFrame:SetPoint("TOPRIGHT", element.ilvlBackground, "TOPLEFT", -2 - (gemIndex - 1) * 16, -1)
+			gemFrame:SetPoint("TOPRIGHT", element.ilvlBackground, "TOPLEFT", -2 - trackPadding - (gemIndex - 1) * 16, -1)
 		elseif side == 2 then
-			gemFrame:SetPoint("BOTTOM", element.ilvlBackground, "TOP", 0, 2 + (gemIndex - 1) * 16)
+			gemFrame:SetPoint("BOTTOM", element.ilvlBackground, "TOP", 0, 2 + trackPadding + (gemIndex - 1) * 16)
 		else
-			gemFrame:SetPoint("TOPLEFT", element.ilvlBackground, "TOPRIGHT", 2 + (gemIndex - 1) * 16, -1)
+			gemFrame:SetPoint("TOPLEFT", element.ilvlBackground, "TOPRIGHT", 2 + trackPadding + (gemIndex - 1) * 16, -1)
 		end
 		return
 	end
 
 	if side == 0 then
-		gemFrame:SetPoint("TOPLEFT", element, "TOPRIGHT", 5 + (gemIndex - 1) * 16, -1)
+		gemFrame:SetPoint("TOPLEFT", element, "TOPRIGHT", 5 + trackPadding + (gemIndex - 1) * 16, -1)
 	elseif side == 1 then
-		gemFrame:SetPoint("TOPRIGHT", element, "TOPLEFT", -5 - (gemIndex - 1) * 16, -1)
+		gemFrame:SetPoint("TOPRIGHT", element, "TOPLEFT", -5 - trackPadding - (gemIndex - 1) * 16, -1)
 	else
-		gemFrame:SetPoint("BOTTOM", element, "TOPLEFT", -1, 5 + (gemIndex - 1) * 16)
+		gemFrame:SetPoint("BOTTOM", element, "TOPLEFT", -1, 5 + trackPadding + (gemIndex - 1) * 16)
 	end
 end
 
@@ -221,6 +367,11 @@ end
 local function refreshCharacterFrameElementFonts()
 	if addon.general and addon.general.iconFrame and addon.general.iconFrame.count then applyCharacterFrameElementTextStyle(addon.general.iconFrame.count, 14) end
 	if addon.general and addon.general.durabilityIconFrame and addon.general.durabilityIconFrame.count then applyCharacterFrameElementTextStyle(addon.general.durabilityIconFrame.count, 12) end
+	if addon.variables and addon.variables.itemSlots then
+		for _, value in pairs(addon.variables.itemSlots) do
+			if value and value.trackLabel then applyUpgradeTrackTextStyle(value.trackLabel) end
+		end
+	end
 end
 
 addon.functions.refreshCharacterFrameElementFonts = refreshCharacterFrameElementFonts
@@ -781,7 +932,11 @@ local function setIlvlText(element, slot)
 		end
 
 		if element.borderGradient then element.borderGradient:Hide() end
-		if not (CharOpt("gems") or CharOpt("ilvl") or CharOpt("enchants")) then
+		if element.trackLabel then
+			element.trackLabel:SetText("")
+			element.trackLabel:Hide()
+		end
+		if not (CharOpt("gems") or CharOpt("ilvl") or CharOpt("enchants") or CharOpt("tracks")) then
 			element.ilvl:SetFormattedText("")
 			element.enchant:SetText("")
 			element.ilvlBackground:Hide()
@@ -835,14 +990,20 @@ local function setIlvlText(element, slot)
 				end
 
 				local enchantText = getTooltipInfoFromLink(link)
+				local trackKey, trackDisplayText = nil, nil
+				if CharOpt("tracks") then
+					trackKey, trackDisplayText = getUpgradeTrackDisplayText(link)
+				end
+
+				if CharOpt("ilvl") or CharOpt("tracks") then
+					applyCharIlvlPosition(element, slot)
+					hideIlvlBackground(element)
+				end
 
 				if CharOpt("ilvl") then
 					local color = eItem:GetItemQualityColor()
 					local itemLevelText = eItem:GetCurrentItemLevel()
 					addon.functions.ApplyItemLevelTextStyle(element.ilvl)
-
-					applyCharIlvlPosition(element, slot)
-					hideIlvlBackground(element)
 
 					element.ilvl:SetFormattedText(itemLevelText)
 					addon.functions.ApplyItemLevelTextColor(element.ilvl, color)
@@ -853,6 +1014,21 @@ local function setIlvlText(element, slot)
 				else
 					element.ilvl:SetFormattedText("")
 					element.ilvlBackground:Hide()
+				end
+				if CharOpt("tracks") then
+					if trackKey and trackDisplayText then
+						applyUpgradeTrackTextStyle(element.trackLabel)
+						applyCharTrackPosition(element, slot)
+						element.trackLabel:SetText(trackDisplayText)
+						applyUpgradeTrackTextColor(element.trackLabel, trackKey)
+						element.trackLabel:Show()
+					else
+						element.trackLabel:SetText("")
+						element.trackLabel:Hide()
+					end
+				else
+					element.trackLabel:SetText("")
+					element.trackLabel:Hide()
 				end
 				if CharOpt("gems") and displayCount > 0 then
 					local outsideWithIlvl = isCharIlvlOutsidePosition() and CharOpt("ilvl")
@@ -889,6 +1065,10 @@ local function setIlvlText(element, slot)
 			element.ilvl:SetFormattedText("")
 			element.ilvlBackground:Hide()
 			element.enchant:SetText("")
+			if element.trackLabel then
+				element.trackLabel:SetText("")
+				element.trackLabel:Hide()
+			end
 			if element.borderGradient then element.borderGradient:Hide() end
 			updateCharRarityGlow(element, nil)
 		end
@@ -1742,9 +1922,12 @@ function addon.functions.initItemInventory()
 	addon.functions.InitDBValue("bagFilterDockFrame", true)
 	addon.functions.InitDBValue("showBindOnBagItems", false)
 	addon.functions.InitDBValue("showUpgradeArrowOnBagItems", false)
+	addon.functions.InitDBValue("showUpgradeTrackOnBagItems", false)
 	addon.functions.InitDBValue("bagIlvlPosition", "TOPRIGHT")
 	addon.functions.InitDBValue("bagUpgradeIconPosition", "BOTTOMRIGHT")
 	addon.functions.InitDBValue("charIlvlPosition", "TOPRIGHT")
+	addon.functions.InitDBValue("bagTrackPosition", "OUTSIDE")
+	addon.functions.InitDBValue("charTrackPosition", "LEFT")
 	addon.functions.InitDBValue("ilvlUseItemQualityColor", true)
 	addon.functions.InitDBValue("ilvlTextColor", { r = 1, g = 1, b = 1, a = 1 })
 	addon.functions.InitDBValue("ilvlFontFace", addon.functions.GetGlobalFontConfigKey and addon.functions.GetGlobalFontConfigKey() or "__EQOL_GLOBAL_FONT__")
@@ -1847,6 +2030,10 @@ function addon.functions.initItemInventory()
 		addon.functions.ApplyItemLevelTextStyle(value.ilvl)
 		applyCharIlvlPosition(value, key)
 
+		value.trackLabel = value:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
+		applyUpgradeTrackTextStyle(value.trackLabel)
+		value.trackLabel:Hide()
+
 		value.enchant = value:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
 		if addon.variables.itemSlotSide[key] == 0 then
 			value.enchant:SetPoint("BOTTOMLEFT", value, "BOTTOMRIGHT", 2, 1)
@@ -1941,6 +2128,7 @@ addon.functions.refreshItemLevelDisplays = refreshItemLevelDisplays
 local function isBagDisplaySelected(key)
 	if key == "ilvl" then return addon.db["showIlvlOnBagItems"] == true end
 	if key == "upgrade" then return addon.db["showUpgradeArrowOnBagItems"] == true end
+	if key == "track" then return addon.db["showUpgradeTrackOnBagItems"] == true end
 	if key == "bind" then return addon.db["showBindOnBagItems"] == true end
 	return false
 end
@@ -1954,6 +2142,9 @@ local function setBagDisplayOption(key, value)
 		addon.db["showUpgradeArrowOnBagItems"] = enabled
 		refreshBagFrames(true)
 		refreshBaganatorCornerWidgets()
+	elseif key == "track" then
+		addon.db["showUpgradeTrackOnBagItems"] = enabled
+		refreshBagFrames(true)
 	elseif key == "bind" then
 		addon.db["showBindOnBagItems"] = enabled
 		refreshBagFrames(false)
@@ -1964,6 +2155,7 @@ local function applyBagDisplaySelection(selection)
 	selection = selection or {}
 	addon.db["showIlvlOnBagItems"] = selection.ilvl == true
 	addon.db["showUpgradeArrowOnBagItems"] = selection.upgrade == true
+	addon.db["showUpgradeTrackOnBagItems"] = selection.track == true
 	addon.db["showBindOnBagItems"] = selection.bind == true
 	refreshBagFrames(true)
 	refreshBaganatorCornerWidgets()
@@ -1978,6 +2170,7 @@ local bagDisplayDropdown = addon.functions.SettingsCreateMultiDropdown(cInventor
 	options = {
 		{ value = "ilvl", text = L["showIlvlOnBagItems"], tooltip = L["showIlvlOnBagItemsDesc"] },
 		{ value = "upgrade", text = L["showUpgradeArrowOnBagItems"], tooltip = L["showUpgradeArrowOnBagItemsDesc"] },
+		{ value = "track", text = L["showUpgradeTrackOnBagItems"] or "Upgrade track", tooltip = L["showUpgradeTrackOnBagItemsDesc"] or "Show the upgrade track abbreviation on equippable bag items." },
 		{ value = "bind", text = L["showBindOnBagItems"], tooltip = bindDesc },
 	},
 	isSelectedFunc = function(key) return isBagDisplaySelected(key) end,
@@ -2009,6 +2202,28 @@ addon.functions.SettingsCreateDropdown(cInventory, {
 	parentCheck = function() return isBagDisplaySelected("ilvl") end,
 	default = "BOTTOMLEFT",
 	var = "bagIlvlPosition",
+	type = Settings.VarType.String,
+	parentSection = expandable,
+})
+
+addon.functions.SettingsCreateDropdown(cInventory, {
+	list = {
+		LEFT = L["left"],
+		TOP = L["top"],
+		RIGHT = L["right"],
+		BOTTOM = L["bottom"],
+		OUTSIDE = L["outside"] or "Outside",
+	},
+	text = L["bagTrackPosition"] or "Upgrade track position",
+	get = function() return addon.db["bagTrackPosition"] or "OUTSIDE" end,
+	set = function(key)
+		addon.db["bagTrackPosition"] = key
+		refreshItemLevelDisplays()
+	end,
+	parent = bagDisplayDropdown,
+	parentCheck = function() return isBagDisplaySelected("track") end,
+	default = "OUTSIDE",
+	var = "bagTrackPosition",
 	type = Settings.VarType.String,
 	parentSection = expandable,
 })

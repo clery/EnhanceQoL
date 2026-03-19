@@ -274,14 +274,15 @@ end
 
 local questingData = {
 	{
-		var = "autoChooseQuest",
-		text = L["autoChooseQuest"],
-		desc = L["autoChooseQuestDesc"] or L["interruptWithShift"],
-		func = function(key) addon.db["autoChooseQuest"] = key end,
+		var = "autoAcceptQuest",
+		newTagID = "QuestAutoAccept",
+		text = L["autoAcceptQuest"] or "Automatically accept quests",
+		desc = L["autoAcceptQuestDesc"] or L["interruptWithShift"],
+		func = function(key) addon.db["autoAcceptQuest"] = key end,
 		default = false,
 		children = {
 			{
-				var = "autoChooseQuestModifier",
+				var = "autoAcceptQuestModifier",
 				text = L["questAutomationModifier"] or "Quest automation modifier",
 				desc = L["questAutomationModifierDesc"],
 				listFunc = function()
@@ -292,57 +293,89 @@ local questingData = {
 						ALT = L["modifierAlt"] or "Alt",
 					}
 				end,
-				get = function() return addon.db and addon.db.autoChooseQuestModifier or "NONE" end,
+				get = function() return addon.db and addon.db.autoAcceptQuestModifier or "NONE" end,
 				set = function(key)
 					if not key or key == "" then key = "NONE" end
-					addon.db["autoChooseQuestModifier"] = key
+					addon.db["autoAcceptQuestModifier"] = key
 				end,
 				parentCheck = function()
-					return addon.SettingsLayout.elements["autoChooseQuest"]
-						and addon.SettingsLayout.elements["autoChooseQuest"].setting
-						and addon.SettingsLayout.elements["autoChooseQuest"].setting:GetValue() == true
+					return addon.SettingsLayout.elements["autoAcceptQuest"]
+						and addon.SettingsLayout.elements["autoAcceptQuest"].setting
+						and addon.SettingsLayout.elements["autoAcceptQuest"].setting:GetValue() == true
 				end,
 				parent = true,
 				sType = "dropdown",
 			},
 			{
-				var = "ignoreDailyQuests",
-				text = L["ignoreDailyQuests"]:format(QUESTS_LABEL),
-				func = function(key) addon.db["ignoreDailyQuests"] = key end,
-				default = false,
-				sType = "checkbox",
+				var = "questAutomationFiltersAccept",
+				text = L["questAutomationFilters"] or "Quest filters",
+				desc = L["questAutomationFiltersDesc"] or "Choose which quest types should be skipped by this automation.",
+				options = {
+					{ value = "daily", text = L["ignoreDailyQuests"]:format(QUESTS_LABEL) },
+					{ value = "warband", text = L["ignoreWarbandCompleted"]:format(ACCOUNT_COMPLETED_QUEST_LABEL, QUESTS_LABEL) },
+					{ value = "trivial", text = L["ignoreTrivialQuests"]:format(QUESTS_LABEL) },
+				},
+				customDefaultText = NONE,
 				parentCheck = function()
-					return addon.SettingsLayout.elements["autoChooseQuest"]
-						and addon.SettingsLayout.elements["autoChooseQuest"].setting
-						and addon.SettingsLayout.elements["autoChooseQuest"].setting:GetValue() == true
+					return addon.SettingsLayout.elements["autoAcceptQuest"]
+						and addon.SettingsLayout.elements["autoAcceptQuest"].setting
+						and addon.SettingsLayout.elements["autoAcceptQuest"].setting:GetValue() == true
 				end,
 				parent = true,
+				sType = "multidropdown",
+			},
+		},
+	},
+	{
+		var = "autoTurnInQuest",
+		newTagID = "QuestAutoTurnIn",
+		text = L["autoTurnInQuest"] or "Automatically turn in quests",
+		desc = L["autoTurnInQuestDesc"] or L["interruptWithShift"],
+		func = function(key) addon.db["autoTurnInQuest"] = key end,
+		default = false,
+		children = {
+			{
+				var = "autoTurnInQuestModifier",
+				text = L["questAutomationModifier"] or "Quest automation modifier",
+				desc = L["questAutomationModifierDesc"],
+				listFunc = function()
+					return {
+						NONE = L["modifierNone"] or "None",
+						SHIFT = L["modifierShift"] or "Shift",
+						CTRL = L["modifierCtrl"] or "Ctrl",
+						ALT = L["modifierAlt"] or "Alt",
+					}
+				end,
+				get = function() return addon.db and addon.db.autoTurnInQuestModifier or "NONE" end,
+				set = function(key)
+					if not key or key == "" then key = "NONE" end
+					addon.db["autoTurnInQuestModifier"] = key
+				end,
+				parentCheck = function()
+					return addon.SettingsLayout.elements["autoTurnInQuest"]
+						and addon.SettingsLayout.elements["autoTurnInQuest"].setting
+						and addon.SettingsLayout.elements["autoTurnInQuest"].setting:GetValue() == true
+				end,
+				parent = true,
+				sType = "dropdown",
 			},
 			{
-				var = "ignoreWarbandCompleted",
-				text = L["ignoreWarbandCompleted"]:format(ACCOUNT_COMPLETED_QUEST_LABEL, QUESTS_LABEL),
-				func = function(key) addon.db["ignoreWarbandCompleted"] = key end,
-				default = false,
-				sType = "checkbox",
+				var = "questAutomationFiltersTurnIn",
+				text = L["questAutomationFilters"] or "Quest filters",
+				desc = L["questAutomationFiltersDesc"] or "Choose which quest types should be skipped by this automation.",
+				options = {
+					{ value = "daily", text = L["ignoreDailyQuests"]:format(QUESTS_LABEL) },
+					{ value = "warband", text = L["ignoreWarbandCompleted"]:format(ACCOUNT_COMPLETED_QUEST_LABEL, QUESTS_LABEL) },
+					{ value = "trivial", text = L["ignoreTrivialQuests"]:format(QUESTS_LABEL) },
+				},
+				customDefaultText = NONE,
 				parentCheck = function()
-					return addon.SettingsLayout.elements["autoChooseQuest"]
-						and addon.SettingsLayout.elements["autoChooseQuest"].setting
-						and addon.SettingsLayout.elements["autoChooseQuest"].setting:GetValue() == true
+					return addon.SettingsLayout.elements["autoTurnInQuest"]
+						and addon.SettingsLayout.elements["autoTurnInQuest"].setting
+						and addon.SettingsLayout.elements["autoTurnInQuest"].setting:GetValue() == true
 				end,
 				parent = true,
-			},
-			{
-				var = "ignoreTrivialQuests",
-				text = L["ignoreTrivialQuests"]:format(QUESTS_LABEL),
-				func = function(key) addon.db["ignoreTrivialQuests"] = key end,
-				default = false,
-				sType = "checkbox",
-				parentCheck = function()
-					return addon.SettingsLayout.elements["autoChooseQuest"]
-						and addon.SettingsLayout.elements["autoChooseQuest"].setting
-						and addon.SettingsLayout.elements["autoChooseQuest"].setting:GetValue() == true
-				end,
-				parent = true,
+				sType = "multidropdown",
 			},
 			{
 				text = "|cff99e599" .. L["ignoreNPCTipp"] .. "|r",
@@ -363,12 +396,51 @@ local questingData = {
 					ShowRemoveIgnoredQuestNPCDialog(key)
 				end,
 				parentCheck = function()
-					return addon.SettingsLayout.elements["autoChooseQuest"]
-						and addon.SettingsLayout.elements["autoChooseQuest"].setting
-						and addon.SettingsLayout.elements["autoChooseQuest"].setting:GetValue() == true
+					return addon.SettingsLayout.elements["autoTurnInQuest"]
+						and addon.SettingsLayout.elements["autoTurnInQuest"].setting
+						and addon.SettingsLayout.elements["autoTurnInQuest"].setting:GetValue() == true
 				end,
 				parent = true,
 				var = "ignoredQuestNPC",
+				type = Settings.VarType.Number,
+				sType = "dropdown",
+			},
+		},
+	},
+	{
+		var = "autoGossip",
+		newTagID = "QuestAutoGossip",
+		text = L["autoGossip"] or "Automatically handle gossip",
+		desc = L["autoGossipDesc"] or "Automatically selects configured gossip options and single-option gossip prompts.",
+		func = function(key) addon.db["autoGossip"] = key end,
+		default = false,
+		children = {
+			{
+				text = "|cff99e599" .. (L["autoGossipHint"] or "Use /eqol aag <id> to add and /eqol rag <id> to remove gossip IDs.") .. "|r",
+				sType = "hint",
+			},
+			{
+				listFunc = function()
+					local tList = { [""] = "" }
+					for id in pairs(addon.db["autogossipID"] or {}) do
+						tList[id] = tostring(id)
+					end
+					return tList
+				end,
+				text = L["autoGossipIDs"] or "Configured gossip IDs",
+				get = function() return "" end,
+				set = function(key)
+					if not key or key == "" then return end
+					local id = tonumber(key) or key
+					if addon.db["autogossipID"][id] then addon.db["autogossipID"][id] = nil end
+				end,
+				parentCheck = function()
+					return addon.SettingsLayout.elements["autoGossip"]
+						and addon.SettingsLayout.elements["autoGossip"].setting
+						and addon.SettingsLayout.elements["autoGossip"].setting:GetValue() == true
+				end,
+				parent = true,
+				var = "autogossipID",
 				type = Settings.VarType.Number,
 				sType = "dropdown",
 			},
@@ -534,10 +606,51 @@ addon.functions.SettingsCreateCheckboxes(cQuest, trackerData)
 ----- REGION END
 
 function addon.functions.initQuest()
-	addon.functions.InitDBValue("autoChooseQuest", false)
-	addon.functions.InitDBValue("autoChooseQuestModifier", "NONE")
+	if addon.db then
+		if addon.db.autoChooseQuest ~= nil then
+			if addon.db.autoAcceptQuest == nil then addon.db.autoAcceptQuest = addon.db.autoChooseQuest end
+			if addon.db.autoTurnInQuest == nil then addon.db.autoTurnInQuest = addon.db.autoChooseQuest end
+			if addon.db.autoGossip == nil then addon.db.autoGossip = addon.db.autoChooseQuest end
+			addon.db.autoChooseQuest = nil
+		end
+		if addon.db.autoChooseQuestModifier ~= nil then
+			if addon.db.autoAcceptQuestModifier == nil then addon.db.autoAcceptQuestModifier = addon.db.autoChooseQuestModifier end
+			if addon.db.autoTurnInQuestModifier == nil then addon.db.autoTurnInQuestModifier = addon.db.autoChooseQuestModifier end
+			addon.db.autoChooseQuestModifier = nil
+		end
+		if type(addon.db.questAutomationFiltersAccept) ~= "table" then
+			local legacyAccept = type(addon.db.questAutomationFilters) == "table" and addon.db.questAutomationFilters.accept or nil
+			addon.db.questAutomationFiltersAccept = type(legacyAccept) == "table" and legacyAccept or {}
+		end
+		if type(addon.db.questAutomationFiltersTurnIn) ~= "table" then
+			local legacyTurnIn = type(addon.db.questAutomationFilters) == "table" and addon.db.questAutomationFilters.turnIn or nil
+			addon.db.questAutomationFiltersTurnIn = type(legacyTurnIn) == "table" and legacyTurnIn or {}
+		end
+		if addon.db.ignoreDailyQuests ~= nil or addon.db.ignoreTrivialQuests ~= nil or addon.db.ignoreWarbandCompleted ~= nil then
+			local legacyFilters = {
+				daily = addon.db.ignoreDailyQuests == true,
+				trivial = addon.db.ignoreTrivialQuests == true,
+				warband = addon.db.ignoreWarbandCompleted == true,
+			}
+			for key, enabled in pairs(legacyFilters) do
+				if enabled then
+					if addon.db.questAutomationFiltersAccept[key] == nil then addon.db.questAutomationFiltersAccept[key] = true end
+					if addon.db.questAutomationFiltersTurnIn[key] == nil then addon.db.questAutomationFiltersTurnIn[key] = true end
+				end
+			end
+		end
+	end
+
+	addon.functions.InitDBValue("autoAcceptQuest", false)
+	addon.functions.InitDBValue("autoAcceptQuestModifier", "NONE")
+	addon.functions.InitDBValue("autoTurnInQuest", false)
+	addon.functions.InitDBValue("autoTurnInQuestModifier", "NONE")
+	addon.functions.InitDBValue("autoGossip", false)
+	addon.functions.InitDBValue("questAutomationFiltersAccept", {})
+	addon.functions.InitDBValue("questAutomationFiltersTurnIn", {})
 	addon.functions.InitDBValue("ignoreTrivialQuests", false)
 	addon.functions.InitDBValue("ignoreDailyQuests", false)
+	addon.functions.InitDBValue("ignoreWarbandCompleted", false)
 	addon.functions.InitDBValue("questTrackerShowQuestCount", false)
 	addon.functions.InitDBValue("questTrackerQuestCountOffsetX", 0)
 	addon.functions.InitDBValue("questTrackerQuestCountOffsetY", 0)
@@ -638,7 +751,7 @@ function addon.functions.initQuest()
 		end
 
 		local function AddIgnoreAutoQuest(owner, root, ctx)
-			if not addon.db["autoChooseQuest"] then return end
+			if not (addon.db["autoAcceptQuest"] or addon.db["autoTurnInQuest"] or addon.db["autoGossip"]) then return end
 			if addon.functions.isRestrictedContent() then return end
 
 			if not UnitExists("target") or UnitPlayerControlled("target") then return end

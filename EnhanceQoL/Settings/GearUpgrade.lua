@@ -98,12 +98,57 @@ local ilvlOutlineOptions = {
 	THICKOUTLINE = L["fontOutlineThick"] or "Thick Outline",
 	MONOCHROMEOUTLINE = L["fontOutlineMono"] or "Monochrome Outline",
 }
-local enchantDisplayModeOrder = { "FULL", "BADGE", "WARNING" }
-local enchantDisplayModeOptions = {
-	FULL = L["gearEnchantDisplayModeFull"] or "Full",
-	BADGE = L["gearEnchantDisplayModeBadge"] or "Badge (E)",
-	WARNING = L["gearEnchantDisplayModeWarningOnly"] or "Warning only",
+local ENCHANT_DISPLAY_MODE_FULL = "FULL"
+local ENCHANT_DISPLAY_MODE_FULL_ICON = "FULL_ICON"
+local ENCHANT_DISPLAY_MODE_BADGE = "BADGE"
+local ENCHANT_DISPLAY_MODE_BADGE_ICON = "BADGE_ICON"
+local ENCHANT_DISPLAY_MODE_WARNING = "WARNING"
+local ENCHANT_DISPLAY_MODE_WARNING_ICON = "WARNING_ICON"
+local ENCHANT_DISPLAY_MODE_APPLIED = "APPLIED"
+local ENCHANT_DISPLAY_MODE_APPLIED_ICON = "APPLIED_ICON"
+
+local enchantDisplayModeOrder = {
+	ENCHANT_DISPLAY_MODE_FULL,
+	ENCHANT_DISPLAY_MODE_FULL_ICON,
+	ENCHANT_DISPLAY_MODE_BADGE,
+	ENCHANT_DISPLAY_MODE_BADGE_ICON,
+	ENCHANT_DISPLAY_MODE_WARNING,
+	ENCHANT_DISPLAY_MODE_WARNING_ICON,
+	ENCHANT_DISPLAY_MODE_APPLIED,
+	ENCHANT_DISPLAY_MODE_APPLIED_ICON,
 }
+local enchantDisplayModeOptions = {
+	[ENCHANT_DISPLAY_MODE_FULL] = L["gearEnchantDisplayModeFull"] or "Full text",
+	[ENCHANT_DISPLAY_MODE_FULL_ICON] = L["gearEnchantDisplayModeFullIcon"] or "Full text + missing icon",
+	[ENCHANT_DISPLAY_MODE_BADGE] = L["gearEnchantDisplayModeBadge"] or "Badge (E)",
+	[ENCHANT_DISPLAY_MODE_BADGE_ICON] = L["gearEnchantDisplayModeBadgeIcon"] or "Badge (E) + missing icon",
+	[ENCHANT_DISPLAY_MODE_WARNING] = L["gearEnchantDisplayModeWarningOnly"] or "Missing text only",
+	[ENCHANT_DISPLAY_MODE_WARNING_ICON] = L["gearEnchantDisplayModeWarningIcon"] or "Missing text + icon",
+	[ENCHANT_DISPLAY_MODE_APPLIED] = L["gearEnchantDisplayModeAppliedOnly"] or "Applied only",
+	[ENCHANT_DISPLAY_MODE_APPLIED_ICON] = L["gearEnchantDisplayModeAppliedIcon"] or "Applied text + missing icon",
+}
+
+local function normalizeEnchantDisplayMode(mode, showMissingOverlay)
+	if mode == ENCHANT_DISPLAY_MODE_FULL_ICON
+		or mode == ENCHANT_DISPLAY_MODE_BADGE_ICON
+		or mode == ENCHANT_DISPLAY_MODE_WARNING_ICON
+		or mode == ENCHANT_DISPLAY_MODE_APPLIED_ICON then
+		return mode
+	end
+
+	local overlayEnabled = showMissingOverlay ~= false
+	if mode == ENCHANT_DISPLAY_MODE_BADGE then return overlayEnabled and ENCHANT_DISPLAY_MODE_BADGE_ICON or ENCHANT_DISPLAY_MODE_BADGE end
+	if mode == ENCHANT_DISPLAY_MODE_WARNING then return overlayEnabled and ENCHANT_DISPLAY_MODE_WARNING_ICON or ENCHANT_DISPLAY_MODE_WARNING end
+	if mode == ENCHANT_DISPLAY_MODE_APPLIED then return overlayEnabled and ENCHANT_DISPLAY_MODE_APPLIED_ICON or ENCHANT_DISPLAY_MODE_APPLIED end
+	return overlayEnabled and ENCHANT_DISPLAY_MODE_FULL_ICON or ENCHANT_DISPLAY_MODE_FULL
+end
+
+local function modeShowsMissingOverlay(mode)
+	return mode == ENCHANT_DISPLAY_MODE_FULL_ICON
+		or mode == ENCHANT_DISPLAY_MODE_BADGE_ICON
+		or mode == ENCHANT_DISPLAY_MODE_WARNING_ICON
+		or mode == ENCHANT_DISPLAY_MODE_APPLIED_ICON
+end
 
 local function getCachedFontMedia()
 	local names = addon.functions and addon.functions.GetLSMMediaNames and addon.functions.GetLSMMediaNames("font")
@@ -151,36 +196,24 @@ local charDisplayDropdown = addon.functions.SettingsCreateMultiDropdown(cGearUpg
 	setSelectedFunc = function(key, selected) setCharDisplayOption(key, selected) end,
 	setSelection = applyCharDisplaySelection,
 	parentSection = expandable,
-	notify = "showMissingEnchantOverlayOnCharframe",
 })
 
-addon.functions.SettingsCreateDropdown(cGearUpgrade, {
+local enchantDisplayDropdown = addon.functions.SettingsCreateDropdown(cGearUpgrade, {
 	var = "charEnchantDisplayMode",
 	text = L["gearEnchantDisplayMode"] or "Enchant display",
 	desc = L["gearEnchantDisplayModeDesc"]
-		or "Full: show full enchant text.\nBadge (E): show a green E if enchanted and red E if missing.\nWarning only: hide enchant text and only show missing enchant warning.",
+		or "Choose whether applied enchants, missing enchants, and the missing enchant icon should be shown.",
 	list = enchantDisplayModeOptions,
 	order = enchantDisplayModeOrder,
-	default = "FULL",
+	default = ENCHANT_DISPLAY_MODE_FULL_ICON,
 	get = function()
-		local mode = addon.db["charEnchantDisplayMode"]
-		if mode ~= "BADGE" and mode ~= "WARNING" then mode = "FULL" end
-		return mode
+		return normalizeEnchantDisplayMode(addon.db["charEnchantDisplayMode"], addon.db["showMissingEnchantOverlayOnCharframe"])
 	end,
 	set = function(key)
 		addon.db["charEnchantDisplayMode"] = key
+		addon.db["showMissingEnchantOverlayOnCharframe"] = modeShowsMissingOverlay(key)
 		refreshItemLevelDisplays()
 	end,
-	parent = charDisplayDropdown,
-	parentCheck = function() return isCharDisplaySelected("enchants") end,
-	parentSection = expandable,
-})
-
-local missingOverlayCheckbox = addon.functions.SettingsCreateCheckbox(cGearUpgrade, {
-	var = "showMissingEnchantOverlayOnCharframe",
-	text = L["gearDisplayOptionMissingEnchantOverlay"] or "Show missing enchant overlay",
-	func = function(value) addon.db["showMissingEnchantOverlayOnCharframe"] = value and true or false end,
-	default = true,
 	parent = charDisplayDropdown,
 	parentCheck = function() return isCharDisplaySelected("enchants") end,
 	parentSection = expandable,
@@ -190,8 +223,11 @@ addon.functions.SettingsCreateColorPicker(cGearUpgrade, {
 	var = "missingEnchantOverlayColor",
 	text = L["gearDisplayOptionMissingEnchantOverlayColor"] or "Missing enchant overlay color",
 	hasOpacity = true,
-	element = missingOverlayCheckbox and missingOverlayCheckbox.element,
-	parentCheck = function() return isCharDisplaySelected("enchants") and addon.db["showMissingEnchantOverlayOnCharframe"] == true end,
+	element = enchantDisplayDropdown and enchantDisplayDropdown.element,
+	parentCheck = function()
+		local mode = normalizeEnchantDisplayMode(addon.db["charEnchantDisplayMode"], addon.db["showMissingEnchantOverlayOnCharframe"])
+		return isCharDisplaySelected("enchants") and modeShowsMissingOverlay(mode)
+	end,
 	parentSection = expandable,
 })
 

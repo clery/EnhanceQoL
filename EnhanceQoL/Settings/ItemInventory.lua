@@ -226,13 +226,40 @@ end
 addon.functions.refreshCharacterFrameElementFonts = refreshCharacterFrameElementFonts
 
 local ENCHANT_DISPLAY_MODE_FULL = "FULL"
+local ENCHANT_DISPLAY_MODE_FULL_ICON = "FULL_ICON"
 local ENCHANT_DISPLAY_MODE_BADGE = "BADGE"
+local ENCHANT_DISPLAY_MODE_BADGE_ICON = "BADGE_ICON"
 local ENCHANT_DISPLAY_MODE_WARNING = "WARNING"
+local ENCHANT_DISPLAY_MODE_WARNING_ICON = "WARNING_ICON"
+local ENCHANT_DISPLAY_MODE_APPLIED = "APPLIED"
+local ENCHANT_DISPLAY_MODE_APPLIED_ICON = "APPLIED_ICON"
+
+local function normalizeEnchantDisplayMode(mode, showMissingOverlay)
+	if mode == ENCHANT_DISPLAY_MODE_FULL_ICON or mode == ENCHANT_DISPLAY_MODE_BADGE_ICON or mode == ENCHANT_DISPLAY_MODE_WARNING_ICON or mode == ENCHANT_DISPLAY_MODE_APPLIED_ICON then return mode end
+
+	local overlayEnabled = showMissingOverlay ~= false
+	if mode == ENCHANT_DISPLAY_MODE_BADGE then return overlayEnabled and ENCHANT_DISPLAY_MODE_BADGE_ICON or ENCHANT_DISPLAY_MODE_BADGE end
+	if mode == ENCHANT_DISPLAY_MODE_WARNING then return overlayEnabled and ENCHANT_DISPLAY_MODE_WARNING_ICON or ENCHANT_DISPLAY_MODE_WARNING end
+	if mode == ENCHANT_DISPLAY_MODE_APPLIED then return overlayEnabled and ENCHANT_DISPLAY_MODE_APPLIED_ICON or ENCHANT_DISPLAY_MODE_APPLIED end
+	return overlayEnabled and ENCHANT_DISPLAY_MODE_FULL_ICON or ENCHANT_DISPLAY_MODE_FULL
+end
+
+local function getEnchantDisplayModeBase(mode)
+	if mode == ENCHANT_DISPLAY_MODE_FULL_ICON then return ENCHANT_DISPLAY_MODE_FULL end
+	if mode == ENCHANT_DISPLAY_MODE_BADGE_ICON then return ENCHANT_DISPLAY_MODE_BADGE end
+	if mode == ENCHANT_DISPLAY_MODE_WARNING_ICON then return ENCHANT_DISPLAY_MODE_WARNING end
+	if mode == ENCHANT_DISPLAY_MODE_APPLIED_ICON then return ENCHANT_DISPLAY_MODE_APPLIED end
+	return mode
+end
+
+local function shouldShowMissingEnchantOverlayForMode(mode)
+	return mode == ENCHANT_DISPLAY_MODE_FULL_ICON or mode == ENCHANT_DISPLAY_MODE_BADGE_ICON or mode == ENCHANT_DISPLAY_MODE_WARNING_ICON or mode == ENCHANT_DISPLAY_MODE_APPLIED_ICON
+end
 
 local function getEnchantDisplayMode()
 	local mode = addon.db and addon.db["charEnchantDisplayMode"]
-	if mode ~= ENCHANT_DISPLAY_MODE_BADGE and mode ~= ENCHANT_DISPLAY_MODE_WARNING then return ENCHANT_DISPLAY_MODE_FULL end
-	return mode
+	local showMissingOverlay = addon.db and addon.db["showMissingEnchantOverlayOnCharframe"]
+	return normalizeEnchantDisplayMode(mode, showMissingOverlay)
 end
 
 local function shouldShowMissingEnchant(slot, link, itemLevel)
@@ -247,7 +274,9 @@ local function shouldShowMissingEnchant(slot, link, itemLevel)
 end
 
 local function getEnchantDisplayText(mode, enchantText, missingEnchant)
+	mode = getEnchantDisplayModeBase(mode)
 	if missingEnchant then
+		if mode == ENCHANT_DISPLAY_MODE_APPLIED then return nil end
 		if mode == ENCHANT_DISPLAY_MODE_BADGE then return "|cffff4040E|r" end
 		return ("|cff%02x%02x%02x"):format(255, 0, 0) .. L["MissingEnchant"] .. "|r"
 	end
@@ -651,7 +680,7 @@ local function onInspect(arg1)
 								end
 								applyEnchantTextStyle(element.enchant)
 								local mode = getEnchantDisplayMode()
-								local showMissingOverlay = addon.db["showMissingEnchantOverlayOnCharframe"] ~= false
+								local showMissingOverlay = shouldShowMissingEnchantOverlayForMode(mode)
 								local enchantText = getTooltipInfoFromLink(itemLink)
 								local foundEnchant = enchantText ~= nil
 								local showMissingEnchant = false
@@ -833,7 +862,7 @@ local function setIlvlText(element, slot)
 				if CharOpt("enchants") then
 					applyEnchantTextStyle(element.enchant)
 					local mode = getEnchantDisplayMode()
-					local showMissingOverlay = addon.db["showMissingEnchantOverlayOnCharframe"] ~= false
+					local showMissingOverlay = shouldShowMissingEnchantOverlayForMode(mode)
 					local showMissingEnchant = false
 					if element.borderGradient then
 						applyMissingEnchantOverlayStyle(element.borderGradient)

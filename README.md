@@ -108,7 +108,7 @@ English • German • French • Spanish • Italian • Russian • Korean •
 
 ### Quest, Vendor & Loot Automation
 
-*   Auto-accept/turn-in quests with excludes (daily/weekly/trivial/account-completed).
+*   Auto-accept quests, auto-turn in quests, and separate auto-gossip handling with excludes for quest handling (daily/weekly/trivial/account-completed).
 *   Auto-repair and smart vendoring by quality, ilvl, bind type, upgrade track, crafting expansions.
 *   Auto-sell junk, drag-and-drop whitelist/blacklist.
 *   Quick loot mode.

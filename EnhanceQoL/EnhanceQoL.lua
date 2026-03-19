@@ -5899,6 +5899,59 @@ local function setAllHooks()
 	end
 end
 
+addon.variables.gossipClicked = addon.variables.gossipClicked or {}
+
+function addon.functions.isQuestAutomationModifierHeld(modifier)
+	if modifier == "SHIFT" then return IsShiftKeyDown() end
+	if modifier == "CTRL" then return IsControlKeyDown() end
+	if modifier == "ALT" then return IsAltKeyDown() end
+	return false
+end
+
+function addon.functions.shouldAutoQuestSetting(settingName, modifierName)
+	if not addon.db or not addon.db[settingName] then return false end
+	local modifier = addon.db[modifierName]
+	if modifier == "SHIFT" or modifier == "CTRL" or modifier == "ALT" then return addon.functions.isQuestAutomationModifierHeld(modifier) end
+	-- Legacy behavior: allow auto questing unless Shift is held
+	return not IsShiftKeyDown()
+end
+
+function addon.functions.shouldAutoAcceptQuest() return addon.functions.shouldAutoQuestSetting("autoAcceptQuest", "autoAcceptQuestModifier") end
+
+function addon.functions.shouldAutoTurnInQuest() return addon.functions.shouldAutoQuestSetting("autoTurnInQuest", "autoTurnInQuestModifier") end
+
+function addon.functions.shouldAutoGossip() return addon.db and addon.db["autoGossip"] == true end
+
+function addon.functions.shouldSkipQuestAutomation(questID, questInfo, mode)
+	if not addon.db then return false end
+	local filters
+	if mode == "accept" then
+		filters = addon.db["questAutomationFiltersAccept"]
+		if type(filters) ~= "table" and type(addon.db["questAutomationFilters"]) == "table" then filters = addon.db["questAutomationFilters"].accept end
+	elseif mode == "turnIn" then
+		filters = addon.db["questAutomationFiltersTurnIn"]
+		if type(filters) ~= "table" and type(addon.db["questAutomationFilters"]) == "table" then filters = addon.db["questAutomationFilters"].turnIn end
+	end
+	if type(filters) ~= "table" then filters = {} end
+	if filters.daily == true then
+		if questInfo and questInfo.frequency and questInfo.frequency > 0 then return true end
+		if questID and addon.functions.IsQuestRepeatableType and addon.functions.IsQuestRepeatableType(questID) then return true end
+	end
+	if filters.trivial == true then
+		if questInfo and questInfo.isTrivial then return true end
+		if questID and C_QuestLog and C_QuestLog.IsQuestTrivial and C_QuestLog.IsQuestTrivial(questID) then return true end
+	end
+	if filters.warband == true and questID and C_QuestLog and C_QuestLog.IsQuestFlaggedCompletedOnAccount and C_QuestLog.IsQuestFlaggedCompletedOnAccount(questID) then return true end
+	return false
+end
+
+function addon.functions.isQuestAutomationIgnoredNpc()
+	local ignored = addon.db and addon.db["ignoredQuestNPC"]
+	local npcId = addon.functions.getIDFromGUID(UnitGUID("npc"))
+	if npcId and ignored and ignored[npcId] then return true end
+	return false
+end
+
 function loadMain()
 	CreateUI()
 
@@ -5974,24 +6027,6 @@ end
 
 -- Erstelle ein Frame f��r Events
 local frameLoad = CreateFrame("Frame")
-
-local gossipClicked = {}
-
-local function isQuestAutomationModifierHeld(modifier)
-	if modifier == "SHIFT" then return IsShiftKeyDown() end
-	if modifier == "CTRL" then return IsControlKeyDown() end
-	if modifier == "ALT" then return IsAltKeyDown() end
-	return false
-end
-
-local function shouldAutoChooseQuest()
-	if not addon.db or not addon.db["autoChooseQuest"] then return false end
-	local modifier = addon.db["autoChooseQuestModifier"]
-	if modifier == "SHIFT" or modifier == "CTRL" or modifier == "ALT" then return isQuestAutomationModifierHeld(modifier) end
-	-- Legacy behavior: allow auto questing unless Shift is held
-	return not IsShiftKeyDown()
-end
-
 local COPPER_PER_GOLD = 10000
 
 function addon.functions.AutoSyncWarbandGold()
@@ -6207,52 +6242,45 @@ local eventHandlers = {
 	end,
 
 	["GOSSIP_CLOSED"] = function()
-		gossipClicked = {} -- clear all already clicked gossips
+		addon.variables.gossipClicked = {} -- clear all already clicked gossips
 	end,
 	["GOSSIP_SHOW"] = function()
-		if shouldAutoChooseQuest() then
-			local ignored = addon.db and addon.db["ignoredQuestNPC"]
-			local npcId = addon.functions.getIDFromGUID(UnitGUID("npc"))
-			if npcId and ignored and ignored[npcId] then return end
+		if addon.functions.isQuestAutomationIgnoredNpc() then return end
 
-			local options = C_GossipInfo.GetOptions()
-
-			local aQuests = C_GossipInfo.GetAvailableQuests()
-
-			if C_GossipInfo.GetNumActiveQuests() > 0 then
-				for i, quest in pairs(C_GossipInfo.GetActiveQuests()) do
-					if quest.isComplete then C_GossipInfo.SelectActiveQuest(quest.questID) end
+		if addon.functions.shouldAutoTurnInQuest() then
+			local activeQuests = C_GossipInfo.GetActiveQuests()
+			if C_GossipInfo.GetNumActiveQuests() > 0 and activeQuests then
+				for i, quest in pairs(activeQuests) do
+					if quest.isComplete and not addon.functions.shouldSkipQuestAutomation(quest.questID, quest, "turnIn") then C_GossipInfo.SelectActiveQuest(quest.questID) end
 				end
 			end
+		end
 
+		if addon.functions.shouldAutoAcceptQuest() then
+			local aQuests = C_GossipInfo.GetAvailableQuests()
 			if #aQuests > 0 then
 				for i, quest in pairs(aQuests) do
-					if addon.db["ignoreTrivialQuests"] and quest.isTrivial then
-					-- ignore trivial
-					elseif addon.db["ignoreDailyQuests"] and (quest.frequency > 0) then
-						-- ignore daily/weekly
-					elseif addon.db["ignoreWarbandCompleted"] and C_QuestLog.IsQuestFlaggedCompletedOnAccount(quest.questID) then
-						-- ignore warband completed
-					else
-						C_GossipInfo.SelectAvailableQuest(quest.questID)
-					end
+					if not addon.functions.shouldSkipQuestAutomation(quest.questID, quest, "accept") then C_GossipInfo.SelectAvailableQuest(quest.questID) end
 				end
-			else
-				if options and #options > 0 then
-					if #options > 1 then
-						for _, v in pairs(options) do
-							if v.gossipOptionID and addon.db["autogossipID"][v.gossipOptionID] then C_GossipInfo.SelectOption(v.gossipOptionID) end
-							if v.flags == 1 and v.gossipOptionID then
-								C_GossipInfo.SelectOption(v.gossipOptionID)
-								return
-							end
+			end
+		end
+
+		if addon.functions.shouldAutoGossip() then
+			local options = C_GossipInfo.GetOptions()
+			if options and #options > 0 then
+				if #options > 1 then
+					for _, v in pairs(options) do
+						if v.gossipOptionID and addon.db["autogossipID"][v.gossipOptionID] then C_GossipInfo.SelectOption(v.gossipOptionID) end
+						if v.flags == 1 and v.gossipOptionID then
+							C_GossipInfo.SelectOption(v.gossipOptionID)
+							return
 						end
-					elseif #options == 1 then
-						local onlyOption = options[1]
-						if onlyOption and onlyOption.gossipOptionID and not gossipClicked[onlyOption.gossipOptionID] then
-							gossipClicked[onlyOption.gossipOptionID] = true
-							C_GossipInfo.SelectOption(onlyOption.gossipOptionID)
-						end
+					end
+				elseif #options == 1 then
+					local onlyOption = options[1]
+					if onlyOption and onlyOption.gossipOptionID and not addon.variables.gossipClicked[onlyOption.gossipOptionID] then
+						addon.variables.gossipClicked[onlyOption.gossipOptionID] = true
+						C_GossipInfo.SelectOption(onlyOption.gossipOptionID)
 					end
 				end
 			end
@@ -6479,7 +6507,8 @@ local eventHandlers = {
 		end
 	end,
 	["QUEST_COMPLETE"] = function()
-		if shouldAutoChooseQuest() then
+		if addon.functions.shouldAutoTurnInQuest() then
+			if addon.functions.shouldSkipQuestAutomation(GetQuestID and GetQuestID() or nil, nil, "turnIn") then return end
 			local numQuestRewards = GetNumQuestChoices()
 			if numQuestRewards > 1 then
 			elseif numQuestRewards == 1 then
@@ -6490,23 +6519,17 @@ local eventHandlers = {
 		end
 	end,
 	["QUEST_DATA_LOAD_RESULT"] = function(arg1)
-		if arg1 and addon.variables.acceptQuestID[arg1] and addon.db["autoChooseQuest"] then
-			local ignored = addon.db and addon.db["ignoredQuestNPC"]
-			local npcId = addon.functions.getIDFromGUID(UnitGUID("npc"))
-			if npcId and ignored and ignored[npcId] then return end
-			if addon.db["ignoreDailyQuests"] and addon.functions.IsQuestRepeatableType(arg1) then return end
-			if addon.db["ignoreTrivialQuests"] and C_QuestLog.IsQuestTrivial(arg1) then return end
-			if addon.db["ignoreWarbandCompleted"] and C_QuestLog.IsQuestFlaggedCompletedOnAccount(arg1) then return end
+		if arg1 and addon.variables.acceptQuestID[arg1] and addon.functions.shouldAutoAcceptQuest() then
+			if addon.functions.isQuestAutomationIgnoredNpc() then return end
+			if addon.functions.shouldSkipQuestAutomation(arg1, nil, "accept") then return end
 
 			AcceptQuest()
 			if QuestFrame:IsShown() then QuestFrame:Hide() end -- Sometimes the frame is still stuck - hide it forcefully than
 		end
 	end,
 	["QUEST_DETAIL"] = function()
-		if shouldAutoChooseQuest() then
-			local ignored = addon.db and addon.db["ignoredQuestNPC"]
-			local npcId = addon.functions.getIDFromGUID(UnitGUID("npc"))
-			if npcId and ignored and ignored[npcId] then return end
+		if addon.functions.shouldAutoAcceptQuest() then
+			if addon.functions.isQuestAutomationIgnoredNpc() then return end
 
 			local id = GetQuestID()
 			addon.variables.acceptQuestID[id] = true
@@ -6514,23 +6537,41 @@ local eventHandlers = {
 		end
 	end,
 	["QUEST_GREETING"] = function()
-		if shouldAutoChooseQuest() then
-			local ignored = addon.db and addon.db["ignoredQuestNPC"]
-			local npcId = addon.functions.getIDFromGUID(UnitGUID("npc"))
-			if npcId and ignored and ignored[npcId] then return end
-			for i = 1, GetNumAvailableQuests() do
-				if addon.db["ignoreTrivialQuests"] and IsAvailableQuestTrivial(i) then
-				else
-					SelectAvailableQuest(i)
+		if addon.functions.isQuestAutomationIgnoredNpc() then return end
+		if addon.functions.shouldAutoAcceptQuest() then
+			local numAvailableQuests = GetNumAvailableQuests()
+			if numAvailableQuests and numAvailableQuests > 0 then
+				for i = 1, numAvailableQuests do
+					local isTrivial, frequency, isRepeatable, isLegendary, questID = GetAvailableQuestInfo(i)
+					if not addon.functions.shouldSkipQuestAutomation(questID, {
+						isTrivial = isTrivial == true,
+						frequency = frequency,
+					}, "accept") then
+						SelectAvailableQuest(i)
+						break
+					end
 				end
 			end
-			for i = 1, GetNumActiveQuests() do
-				if select(2, GetActiveTitle(i)) then SelectActiveQuest(i) end
+		end
+		if addon.functions.shouldAutoTurnInQuest() then
+			local numActiveQuests = GetNumActiveQuests()
+			if numActiveQuests and numActiveQuests > 0 then
+				for i = 1, numActiveQuests do
+					local _, isComplete = GetActiveTitle(i)
+					local questID = GetActiveQuestID and GetActiveQuestID(i) or nil
+					if isComplete and not addon.functions.shouldSkipQuestAutomation(questID, nil, "turnIn") then
+						SelectActiveQuest(i)
+						break
+					end
+				end
 			end
 		end
 	end,
 	["QUEST_PROGRESS"] = function()
-		if shouldAutoChooseQuest() and IsQuestCompletable() then CompleteQuest() end
+		if addon.functions.shouldAutoTurnInQuest() and IsQuestCompletable() then
+			if addon.functions.shouldSkipQuestAutomation(GetQuestID and GetQuestID() or nil, nil, "turnIn") then return end
+			CompleteQuest()
+		end
 	end,
 	["AUCTION_HOUSE_SHOW"] = function()
 		if addon.db["closeBagsOnAuctionHouse"] and not addon.functions.isRestrictedContent() then CloseAllBags() end

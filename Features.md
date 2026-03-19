@@ -84,7 +84,9 @@
 - **Sort Mythic Dungeon applicants by Mythic Score.**
 
 ### Quest & Vendor Automation
-- **Automatically accept and complete Quests.**
+- **Automatically accept Quests.**
+- **Automatically turn in Quests.**
+- **Automatically handle Gossip.**
 - **Don't automatically handle daily/weekly quests.**
 - **Don't automatically handle trivial quests.**
 - **Don't automatically handle account-completed quests.**

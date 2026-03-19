@@ -6,6 +6,10 @@
 
 - Private Auras (Standalone): Added a new standalone private aura anchor that can be enabled independently from unit and group frames.
 
+### 🔄 Changed
+
+- Character Panel (Enchant Display): Reworked the enchant display dropdown into combined applied/missing/icon modes. The old separate missing-enchant overlay checkbox was removed, and overlay behavior is now selected directly from the dropdown.
+
 ---
 
 ## [9.7.0] - 2026-03-19

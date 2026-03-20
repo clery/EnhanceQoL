@@ -6502,9 +6502,16 @@ function GF:UpdateHealthValue(self, unit, st)
 		maxForValue = maxv
 	end
 	local secretHealth = issecretvalue and (issecretvalue(cur) or issecretvalue(maxv))
+	local connected = unit and UnitIsConnected and GFH.UnsecretBool(UnitIsConnected(unit)) or nil
+	local isDead = unit and UnitIsDead and GFH.UnsecretBool(UnitIsDead(unit)) or nil
+	local isGhost = unit and UnitIsGhost and GFH.UnsecretBool(UnitIsGhost(unit)) or nil
+	local deadOrGhost = (isDead == true) or (isGhost == true)
+	local suppressAuxHealthBars = (connected == false) or deadOrGhost
 	st.health:SetMinMaxValues(0, maxForValue)
-	if UnitIsConnected and UnitIsConnected(unit) == false then
+	if connected == false then
 		st.health:SetValue(maxForValue)
+	elseif deadOrGhost then
+		st.health:SetValue(0)
 	elseif secretHealth then
 		st.health:SetValue(cur or 0)
 	else
@@ -6526,7 +6533,12 @@ function GF:UpdateHealthValue(self, unit, st)
 	local maxIsSecret = issecretvalue and issecretvalue(maxForValue)
 	local sampleMax = maxForValue
 	if (sampleIncomingHeal or sampleAbsorb or sampleHealAbsorb) and maxIsSecret then sampleMax = EDIT_MODE_SAMPLE_MAX end
-	if incomingHealEnabled and st.incomingHeal then
+	if suppressAuxHealthBars then
+		if st.incomingHeal then st.incomingHeal:Hide() end
+		if st.absorb then st.absorb:Hide() end
+		if st.absorb2 then st.absorb2:Hide() end
+		if st.healAbsorb then st.healAbsorb:Hide() end
+	elseif incomingHealEnabled and st.incomingHeal then
 		local incomingHeal = 0
 		if calc and calc.GetIncomingHeals then
 			incomingHeal = calc:GetIncomingHeals() or 0
@@ -6573,7 +6585,7 @@ function GF:UpdateHealthValue(self, unit, st)
 	elseif st.incomingHeal then
 		st.incomingHeal:Hide()
 	end
-	if absorbEnabled and st.absorb then
+	if not suppressAuxHealthBars and absorbEnabled and st.absorb then
 		local abs = 0
 		if calc and calc.GetTotalDamageAbsorbs then
 			abs = calc:GetTotalDamageAbsorbs() or 0
@@ -6636,7 +6648,7 @@ function GF:UpdateHealthValue(self, unit, st)
 		if st.absorb2 then st.absorb2:Hide() end
 	end
 
-	if healAbsorbEnabled and st.healAbsorb then
+	if not suppressAuxHealthBars and healAbsorbEnabled and st.healAbsorb then
 		local healAbs = 0
 		if UnitGetTotalHealAbsorbs then
 			healAbs = UnitGetTotalHealAbsorbs(unit) or 0
@@ -7283,7 +7295,7 @@ function GF:UnitButton_RegisterUnitEvents(self, unit)
 		reg("UNIT_EXITED_VEHICLE")
 		reg("UNIT_EXITING_VEHICLE")
 	end
-	if self._eqolUFState and self._eqolUFState._wantsStatusText then reg("UNIT_FLAGS") end
+	reg("UNIT_FLAGS")
 	local wantsLevel = self._eqolUFState and self._eqolUFState._wantsLevel
 	if not wantsLevel and UFHelper and UFHelper.textModeUsesLevel then
 		local hc = cfg and cfg.health or {}
@@ -7320,6 +7332,7 @@ end
 
 local function dispatchUnitHealth(btn, unit)
 	local st = getState(btn)
+	GF:UpdateHealthStyle(btn, unit, st)
 	GF:UpdateHealthValue(btn, unit, st)
 	GF:UpdateStatusText(btn, unit, st)
 end
@@ -7360,7 +7373,12 @@ local function dispatchUnitConnection(btn, unit)
 	GF:UpdateLevel(btn, unit, st)
 	GF:UpdateRange(btn, nil, unit, st)
 end
-local function dispatchUnitFlags(btn) GF:UpdateStatusText(btn) end
+local function dispatchUnitFlags(btn, unit)
+	local st = getState(btn)
+	GF:UpdateHealthStyle(btn, unit, st)
+	GF:UpdateHealthValue(btn, unit, st)
+	GF:UpdateStatusText(btn, unit, st)
+end
 local function dispatchUnitRange(btn, _, inRange) GF:UpdateRange(btn, inRange) end
 local function dispatchUnitAura(btn, _, updateInfo) GF:RequestAuraUpdate(btn, updateInfo) end
 local function dispatchUnitPortrait(btn, unit)
@@ -22620,7 +22638,11 @@ do
 		elseif event == "PLAYER_TARGET_CHANGED" then
 			GF:RefreshTargetHighlights()
 		elseif event == "UNIT_CONNECTION" then
-			GF:RefreshConnectionState(...)
+			local unit = ...
+			GF:RefreshConnectionState(unit)
+			if unit and C_Timer and C_Timer.After then C_Timer.After(0.25, function()
+				if isFeatureEnabled() then GF:RefreshConnectionState(unit) end
+			end) end
 		elseif event == "PLAYER_FLAGS_CHANGED" then
 			local refreshed = GF:RefreshConnectionState(...)
 			if refreshed == 0 then GF:RefreshStatusText() end

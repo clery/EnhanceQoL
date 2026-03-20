@@ -1,4 +1,4 @@
--- luacheck: globals MinimapCluster
+-- luacheck: globals MinimapCluster C_DelvesUI
 local parentAddonName = "EnhanceQoL"
 local addonName, addon = ...
 if _G[parentAddonName] then
@@ -64,6 +64,19 @@ local hcNames = {
 	[RAID_DIFFICULTY_25PLAYER_HEROIC] = true,
 }
 
+local function getActiveDelveTier()
+	if not C_DelvesUI or not C_GossipInfo then return nil end
+
+	local _, _, _, mapID = UnitPosition("player")
+	if not C_DelvesUI.HasActiveDelve(mapID) then return nil end
+
+	local gossipInfo = C_GossipInfo.GetActiveDelveGossip()
+	local orderIndex = gossipInfo and gossipInfo.orderIndex
+	if type(orderIndex) == "number" and orderIndex >= 0 then return orderIndex + 1 end
+
+	return nil
+end
+
 local function getShortLabel(difficultyID, difficultyName)
 	if difficultyID == 1 or difficultyID == 3 or difficultyID == 4 or difficultyID == 14 or difficultyID == 33 or difficultyID == 150 or nmNames[difficultyName] or difficultyID == 12 then
 		return "NM"
@@ -80,6 +93,8 @@ local function getShortLabel(difficultyID, difficultyName)
 	elseif difficultyID == 24 then
 		return "TW"
 	elseif difficultyID == 208 then
+		local tier = getActiveDelveTier()
+		if tier then return "D" .. tier end
 		return "D"
 	end
 	return difficultyName
@@ -143,6 +158,7 @@ function InstanceDifficulty:SetEnabled(value)
 		self.frame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 		self.frame:RegisterEvent("PLAYER_DIFFICULTY_CHANGED")
 		self.frame:RegisterEvent("CHALLENGE_MODE_START")
+		self.frame:RegisterEvent("ACTIVE_DELVE_DATA_UPDATE")
 		if indicator.Default then
 			indicator.Default:Hide()
 			indicator.Default:SetScript("OnShow", indicator.Default.Hide)
@@ -153,6 +169,7 @@ function InstanceDifficulty:SetEnabled(value)
 		self.frame:UnregisterEvent("ZONE_CHANGED_NEW_AREA")
 		self.frame:UnregisterEvent("PLAYER_DIFFICULTY_CHANGED")
 		self.frame:UnregisterEvent("CHALLENGE_MODE_START")
+		self.frame:UnregisterEvent("ACTIVE_DELVE_DATA_UPDATE")
 		self.text:Hide()
 		if indicator.Default then
 			indicator.Default:SetScript("OnShow", nil)

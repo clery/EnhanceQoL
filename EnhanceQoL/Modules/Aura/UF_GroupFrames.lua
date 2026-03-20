@@ -405,6 +405,10 @@ local function buildHighlightConfig(cfg, def, key)
 	offset = tonumber(offset) or 0
 	local layer = tostring(hcfg.layer or hdef.layer or "ABOVE_BORDER"):upper()
 	if layer ~= "BEHIND_BORDER" then layer = "ABOVE_BORDER" end
+	local mode = hcfg.mode
+	if mode == nil then mode = hdef.mode end
+	local sample = hcfg.sample
+	if sample == nil then sample = hdef.sample end
 	return {
 		enabled = true,
 		texture = texture,
@@ -412,6 +416,8 @@ local function buildHighlightConfig(cfg, def, key)
 		color = color,
 		offset = offset,
 		layer = layer,
+		mode = mode,
+		sample = sample == true,
 	}
 end
 
@@ -431,11 +437,14 @@ local function applyHighlightStyle(st, cfg, key)
 	if frame.SetFrameLevel and st.barGroup and st.barGroup.GetFrameLevel then
 		local baseLevel = st.barGroup:GetFrameLevel() or 0
 		local layer = tostring(cfg.layer or "ABOVE_BORDER"):upper()
+		local levelOffset
 		if layer == "BEHIND_BORDER" then
-			frame:SetFrameLevel(baseLevel + 2)
+			levelOffset = 2
 		else
-			frame:SetFrameLevel(baseLevel + 4)
+			levelOffset = 4
 		end
+		if key == "aggro" then levelOffset = levelOffset + 1 end
+		frame:SetFrameLevel(baseLevel + levelOffset)
 	end
 	local size = cfg.size or 1
 	if size < 1 then size = 1 end
@@ -771,6 +780,27 @@ local function unpackColor(color, fallback)
 	if not color then return 1, 1, 1, 1 end
 	if color.r then return color.r, color.g, color.b, color.a or 1 end
 	return color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1
+end
+
+function GF.GetUnitThreatStatus(unit)
+	if not (unit and UnitThreatSituation and UnitExists and UnitExists(unit)) then return nil end
+	local status = UnitThreatSituation(unit)
+	-- Threat state can be secret-restricted in Retail; hide the indicator instead of surfacing stale state.
+	if issecretvalue and issecretvalue(status) then return nil end
+	status = tonumber(status)
+	if not status or status <= 0 then return nil end
+	status = floor(status + 0.5)
+	if status < 1 then return nil end
+	if status > 3 then status = 3 end
+	return status
+end
+
+function GF.GetThreatHighlightColor(status, fallbackColor) return unpackColor(fallbackColor, { 1, 0.55, 0, 1 }) end
+
+function GF.NormalizeAggroHighlightMode(value)
+	local mode = tostring(value or "ALL"):upper()
+	if mode == "NON_TANK" or mode == "NON_TANKS" then return "NON_TANKS" end
+	return "ALL"
 end
 
 local function formatGroupNumber(subgroup, format)
@@ -1614,6 +1644,16 @@ local DEFAULTS = {
 			offset = 0,
 			color = { 1, 1, 1, 0.9 },
 		},
+		highlightAggro = {
+			enabled = false,
+			mode = "ALL",
+			sample = false,
+			texture = "DEFAULT",
+			size = 2,
+			offset = 0,
+			layer = "ABOVE_BORDER",
+			color = { 1, 0.55, 0, 1 },
+		},
 		highlightTarget = {
 			enabled = false,
 			texture = "DEFAULT",
@@ -2030,6 +2070,16 @@ local DEFAULTS = {
 			size = 2,
 			offset = 0,
 			color = { 1, 1, 1, 0.9 },
+		},
+		highlightAggro = {
+			enabled = false,
+			mode = "ALL",
+			sample = false,
+			texture = "DEFAULT",
+			size = 2,
+			offset = 0,
+			layer = "ABOVE_BORDER",
+			color = { 1, 0.55, 0, 1 },
 		},
 		highlightTarget = {
 			enabled = false,
@@ -3625,9 +3675,12 @@ function GF:LayoutButton(self)
 	setBackdrop(st.barGroup, cfg.border)
 
 	st._highlightHoverCfg = buildHighlightConfig(cfg, def, "highlightHover")
+	st._highlightAggroCfg = buildHighlightConfig(cfg, def, "highlightAggro")
 	st._highlightTargetCfg = buildHighlightConfig(cfg, def, "highlightTarget")
 	applyHighlightStyle(st, st._highlightHoverCfg, "hover")
+	applyHighlightStyle(st, st._highlightAggroCfg, "aggro")
 	applyHighlightStyle(st, st._highlightTargetCfg, "target")
+	st._wantsAggroHighlight = st._highlightAggroCfg and st._highlightAggroCfg.enabled == true or false
 
 	st.power:ClearAllPoints()
 	st.power:SetPoint("BOTTOMLEFT", st.barGroup, "BOTTOMLEFT", contentOffsetLeft, 0)
@@ -4641,16 +4694,19 @@ function GF:UpdateHighlightState(self)
 	if not st then return end
 	local frames = st._highlightFrames
 	local hoverFrame = frames and frames.hover
+	local aggroFrame = frames and frames.aggro
 	local targetFrame = frames and frames.target
 	local unit = getUnit(self)
 	if not unit then
 		if hoverFrame then hoverFrame:Hide() end
+		if aggroFrame then aggroFrame:Hide() end
 		if targetFrame then targetFrame:Hide() end
 		return
 	end
 
 	local targetCfg = st._highlightTargetCfg
 	local hoverCfg = st._highlightHoverCfg
+	local aggroCfg = st._highlightAggroCfg
 	local inEditMode = isEditModeActive()
 	local previewIndex = st._previewIndex or self._eqolPreviewIndex or 0
 	local isTarget = UnitIsUnit and UnitIsUnit(unit, "target")
@@ -4674,6 +4730,32 @@ function GF:UpdateHighlightState(self)
 		end
 	else
 		if targetFrame then targetFrame:Hide() end
+	end
+
+	local showAggro = false
+	local aggroStatus
+	if aggroCfg and aggroCfg.enabled then
+		local aggroMode = GF.NormalizeAggroHighlightMode(aggroCfg.mode)
+		local previewRole = st._previewRole or "DAMAGER"
+		if inEditMode and self._eqolPreview and previewIndex > 0 then
+			local sampleActive = aggroCfg.sample == true
+			local roleAllowed = aggroMode ~= "NON_TANKS" or previewRole ~= "TANK"
+			showAggro = sampleActive and roleAllowed
+			aggroStatus = showAggro and 3 or nil
+		else
+			aggroStatus = GF.GetUnitThreatStatus(unit)
+			showAggro = aggroStatus ~= nil
+			if showAggro and aggroMode == "NON_TANKS" and getUnitRoleKey(unit) == "TANK" then showAggro = false end
+		end
+	end
+	if showAggro then
+		if aggroFrame then
+			local r, g, b, a = GF.GetThreatHighlightColor(aggroStatus, aggroCfg and aggroCfg.color)
+			aggroFrame:SetBackdropBorderColor(r or 1, g or 0, b or 0, a or 1)
+			aggroFrame:Show()
+		end
+	else
+		if aggroFrame then aggroFrame:Hide() end
 	end
 
 	local showHover = false
@@ -7216,6 +7298,10 @@ function GF:UnitButton_RegisterUnitEvents(self, unit)
 
 	if self._eqolUFState and (self._eqolUFState._wantsAuras or self._eqolUFState._wantsDispelTint or self._eqolUFState._wantsHealerBuffPlacement) then reg("UNIT_AURA") end
 	if self._eqolUFState and self._eqolUFState._wantsRangeFade then reg("UNIT_IN_RANGE_UPDATE") end
+	if self._eqolUFState and self._eqolUFState._wantsAggroHighlight then
+		reg("UNIT_THREAT_SITUATION_UPDATE")
+		reg("UNIT_THREAT_LIST_UPDATE")
+	end
 	reg("INCOMING_SUMMON_CHANGED")
 	reg("INCOMING_RESURRECT_CHANGED")
 	reg("UNIT_PHASE")
@@ -7282,6 +7368,8 @@ local function dispatchUnitPortrait(btn, unit)
 	GF:UpdatePortrait(btn, unit, st)
 end
 
+function GF.DispatchUnitThreat(btn) GF:UpdateHighlightState(btn) end
+
 local UNIT_DISPATCH = {
 	UNIT_HEALTH = dispatchUnitHealth,
 	UNIT_MAXHEALTH = dispatchUnitHealth,
@@ -7306,6 +7394,8 @@ local UNIT_DISPATCH = {
 	UNIT_FLAGS = dispatchUnitFlags,
 	UNIT_IN_RANGE_UPDATE = dispatchUnitRange,
 	UNIT_AURA = dispatchUnitAura,
+	UNIT_THREAT_SITUATION_UPDATE = GF.DispatchUnitThreat,
+	UNIT_THREAT_LIST_UPDATE = GF.DispatchUnitThreat,
 	INCOMING_SUMMON_CHANGED = function(btn)
 		GF:UpdateSummonIcon(btn)
 		GF:UpdateResurrectIcon(btn)
@@ -9609,6 +9699,7 @@ GF._groupCopySectionOrder = {
 	"layout",
 	"border",
 	"hoverHighlight",
+	"aggroHighlight",
 	"targetHighlight",
 	"portrait",
 	"text",
@@ -9639,6 +9730,7 @@ GF._groupCopySectionLabels = {
 	layout = L["Layout"] or "Layout",
 	border = L["Border"] or "Border",
 	hoverHighlight = L["Hover highlight"] or "Hover highlight",
+	aggroHighlight = L["Aggro highlight"] or "Aggro highlight",
 	targetHighlight = L["Target highlight"] or "Target highlight",
 	portrait = "Portrait",
 	text = L["Name"] or "Name",
@@ -9691,6 +9783,9 @@ GF._groupCopySectionRules = {
 	},
 	hoverHighlight = {
 		{ "highlightHover" },
+	},
+	aggroHighlight = {
+		{ "highlightAggro" },
 	},
 	targetHighlight = {
 		{ "highlightTarget" },
@@ -9929,6 +10024,7 @@ function GF._buildGroupCopySectionSetForGroupKind(kind)
 		layout = true,
 		border = true,
 		hoverHighlight = true,
+		aggroHighlight = true,
 		targetHighlight = true,
 		portrait = kind ~= "raid",
 		text = true,
@@ -12245,6 +12341,238 @@ local function buildEditModeSettings(kind, editModeId)
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			isEnabled = function() return isHighlightEnabled("highlightHover") end,
+		},
+		{
+			name = L["Aggro highlight"] or "Aggro highlight",
+			kind = SettingType.Collapsible,
+			id = "aggroHighlight",
+			defaultCollapsed = true,
+		},
+		{
+			name = L["Enable aggro highlight"] or "Enable aggro highlight",
+			kind = SettingType.Checkbox,
+			field = "aggroHighlightEnabled",
+			parentId = "aggroHighlight",
+			get = function()
+				local hcfg, def = getHighlightCfg("highlightAggro")
+				if hcfg.enabled == nil then return def.enabled == true end
+				return hcfg.enabled == true
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				cfg.highlightAggro = cfg.highlightAggro or {}
+				cfg.highlightAggro.enabled = value and true or false
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "aggroHighlightEnabled", cfg.highlightAggro.enabled, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+			end,
+		},
+		{
+			name = L["Color"] or "Color",
+			kind = SettingType.Color,
+			field = "aggroHighlightColor",
+			parentId = "aggroHighlight",
+			hasOpacity = true,
+			default = (DEFAULTS[kind] and DEFAULTS[kind].highlightAggro and DEFAULTS[kind].highlightAggro.color) or { 1, 0.55, 0, 1 },
+			get = function()
+				local hcfg, def = getHighlightCfg("highlightAggro")
+				local r, g, b, a = unpackColor(hcfg.color, def.color or { 1, 0.55, 0, 1 })
+				return { r = r, g = g, b = b, a = a }
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not (cfg and value) then return end
+				cfg.highlightAggro = cfg.highlightAggro or {}
+				cfg.highlightAggro.color = { value.r or 1, value.g or 0.55, value.b or 0, value.a or 1 }
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "aggroHighlightColor", cfg.highlightAggro.color, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+			end,
+			isEnabled = function() return isHighlightEnabled("highlightAggro") end,
+		},
+		{
+			name = L["Mode"] or "Mode",
+			kind = SettingType.Dropdown,
+			field = "aggroHighlightMode",
+			parentId = "aggroHighlight",
+			default = (DEFAULTS[kind] and DEFAULTS[kind].highlightAggro and DEFAULTS[kind].highlightAggro.mode) or "ALL",
+			customDefaultText = (function()
+				local hcfg, def = getHighlightCfg("highlightAggro")
+				local mode = GF.NormalizeAggroHighlightMode(hcfg.mode or def.mode or "ALL")
+				if mode == "NON_TANKS" then return L["UFAggroHighlightModeNonTanks"] or "Only non-tanks" end
+				return L["UFAggroHighlightModeAll"] or "All"
+			end)(),
+			get = function()
+				local hcfg, def = getHighlightCfg("highlightAggro")
+				return GF.NormalizeAggroHighlightMode(hcfg.mode or def.mode or "ALL")
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				cfg.highlightAggro = cfg.highlightAggro or {}
+				cfg.highlightAggro.mode = GF.NormalizeAggroHighlightMode(value)
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "aggroHighlightMode", cfg.highlightAggro.mode, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+			end,
+			generator = function(_, root)
+				root:CreateRadio(L["UFAggroHighlightModeAll"] or "All", function()
+					local hcfg, def = getHighlightCfg("highlightAggro")
+					return GF.NormalizeAggroHighlightMode(hcfg.mode or def.mode or "ALL") == "ALL"
+				end, function()
+					local cfg = getCfg(kind)
+					if not cfg then return end
+					cfg.highlightAggro = cfg.highlightAggro or {}
+					cfg.highlightAggro.mode = "ALL"
+					if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "aggroHighlightMode", cfg.highlightAggro.mode, nil, true) end
+					GF:ApplyHeaderAttributes(kind)
+				end)
+				root:CreateRadio(L["UFAggroHighlightModeNonTanks"] or "Only non-tanks", function()
+					local hcfg, def = getHighlightCfg("highlightAggro")
+					return GF.NormalizeAggroHighlightMode(hcfg.mode or def.mode or "ALL") == "NON_TANKS"
+				end, function()
+					local cfg = getCfg(kind)
+					if not cfg then return end
+					cfg.highlightAggro = cfg.highlightAggro or {}
+					cfg.highlightAggro.mode = "NON_TANKS"
+					if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "aggroHighlightMode", cfg.highlightAggro.mode, nil, true) end
+					GF:ApplyHeaderAttributes(kind)
+				end)
+			end,
+			isEnabled = function() return isHighlightEnabled("highlightAggro") end,
+		},
+		{
+			name = L["Sample"] or "Sample",
+			kind = SettingType.Checkbox,
+			field = "aggroHighlightSample",
+			parentId = "aggroHighlight",
+			get = function()
+				local hcfg, def = getHighlightCfg("highlightAggro")
+				if hcfg.sample == nil then return def.sample == true end
+				return hcfg.sample == true
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				cfg.highlightAggro = cfg.highlightAggro or {}
+				cfg.highlightAggro.sample = value and true or false
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "aggroHighlightSample", cfg.highlightAggro.sample, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+			end,
+			isEnabled = function() return isHighlightEnabled("highlightAggro") end,
+		},
+		{
+			name = L["Texture"] or "Texture",
+			kind = SettingType.Dropdown,
+			field = "aggroHighlightTexture",
+			parentId = "aggroHighlight",
+			height = 180,
+			get = function()
+				local hcfg, def = getHighlightCfg("highlightAggro")
+				return hcfg.texture or def.texture or "DEFAULT"
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				cfg.highlightAggro = cfg.highlightAggro or {}
+				cfg.highlightAggro.texture = value or "DEFAULT"
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "aggroHighlightTexture", cfg.highlightAggro.texture, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+			end,
+			generator = function(_, root)
+				for _, option in ipairs(borderOptions()) do
+					root:CreateRadio(option.label, function()
+						local hcfg, def = getHighlightCfg("highlightAggro")
+						return (hcfg.texture or def.texture or "DEFAULT") == option.value
+					end, function()
+						local cfg = getCfg(kind)
+						if not cfg then return end
+						cfg.highlightAggro = cfg.highlightAggro or {}
+						cfg.highlightAggro.texture = option.value
+						if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "aggroHighlightTexture", option.value, nil, true) end
+						GF:ApplyHeaderAttributes(kind)
+					end)
+				end
+			end,
+			isEnabled = function() return isHighlightEnabled("highlightAggro") end,
+		},
+		{
+			name = L["UFTargetHighlightLayer"] or "Layer",
+			kind = SettingType.Dropdown,
+			field = "aggroHighlightLayer",
+			parentId = "aggroHighlight",
+			default = (DEFAULTS[kind] and DEFAULTS[kind].highlightAggro and DEFAULTS[kind].highlightAggro.layer) or "ABOVE_BORDER",
+			customDefaultText = (function()
+				local hcfg, def = getHighlightCfg("highlightAggro")
+				local layer = tostring(hcfg.layer or def.layer or "ABOVE_BORDER"):upper()
+				if layer ~= "BEHIND_BORDER" then layer = "ABOVE_BORDER" end
+				for _, option in ipairs(targetHighlightLayerOptions) do
+					if option.value == layer then return option.label end
+				end
+				return layer
+			end)(),
+			get = function()
+				local hcfg, def = getHighlightCfg("highlightAggro")
+				local layer = tostring(hcfg.layer or def.layer or "ABOVE_BORDER"):upper()
+				if layer ~= "BEHIND_BORDER" then layer = "ABOVE_BORDER" end
+				return layer
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				cfg.highlightAggro = cfg.highlightAggro or {}
+				local layer = tostring(value or "ABOVE_BORDER"):upper()
+				if layer ~= "BEHIND_BORDER" then layer = "ABOVE_BORDER" end
+				cfg.highlightAggro.layer = layer
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "aggroHighlightLayer", cfg.highlightAggro.layer, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+			end,
+			generator = targetHighlightLayerGenerator(),
+			isEnabled = function() return isHighlightEnabled("highlightAggro") end,
+		},
+		{
+			name = L["Size"] or "Size",
+			kind = SettingType.Slider,
+			allowInput = true,
+			field = "aggroHighlightSize",
+			parentId = "aggroHighlight",
+			minValue = 1,
+			maxValue = 64,
+			valueStep = 1,
+			get = function()
+				local hcfg, def = getHighlightCfg("highlightAggro")
+				return hcfg.size or def.size or 2
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				cfg.highlightAggro = cfg.highlightAggro or {}
+				cfg.highlightAggro.size = clampNumber(value, 1, 64, cfg.highlightAggro.size or 2)
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "aggroHighlightSize", cfg.highlightAggro.size, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+			end,
+			isEnabled = function() return isHighlightEnabled("highlightAggro") end,
+		},
+		{
+			name = L["Offset"] or "Offset",
+			kind = SettingType.Slider,
+			allowInput = true,
+			field = "aggroHighlightOffset",
+			parentId = "aggroHighlight",
+			minValue = -64,
+			maxValue = 64,
+			valueStep = 1,
+			get = function()
+				local hcfg, def = getHighlightCfg("highlightAggro")
+				return hcfg.offset or def.offset or 0
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				cfg.highlightAggro = cfg.highlightAggro or {}
+				cfg.highlightAggro.offset = clampNumber(value, -64, 64, cfg.highlightAggro.offset or 0)
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "aggroHighlightOffset", cfg.highlightAggro.offset, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+			end,
+			isEnabled = function() return isHighlightEnabled("highlightAggro") end,
 		},
 		{
 			name = L["Target highlight"] or "Target highlight",
@@ -20611,6 +20939,30 @@ local function applyEditModeData(kind, data)
 	if data.hoverHighlightSize ~= nil then cfg.highlightHover.size = clampNumber(data.hoverHighlightSize, 1, 64, cfg.highlightHover.size or 2) end
 	if data.hoverHighlightOffset ~= nil then cfg.highlightHover.offset = clampNumber(data.hoverHighlightOffset, -64, 64, cfg.highlightHover.offset or 0) end
 	if
+		data.aggroHighlightEnabled ~= nil
+		or data.aggroHighlightColor ~= nil
+		or data.aggroHighlightMode ~= nil
+		or data.aggroHighlightSample ~= nil
+		or data.aggroHighlightTexture ~= nil
+		or data.aggroHighlightLayer ~= nil
+		or data.aggroHighlightSize ~= nil
+		or data.aggroHighlightOffset ~= nil
+	then
+		cfg.highlightAggro = cfg.highlightAggro or {}
+	end
+	if data.aggroHighlightEnabled ~= nil then cfg.highlightAggro.enabled = data.aggroHighlightEnabled and true or false end
+	if data.aggroHighlightColor ~= nil then cfg.highlightAggro.color = data.aggroHighlightColor end
+	if data.aggroHighlightMode ~= nil then cfg.highlightAggro.mode = GF.NormalizeAggroHighlightMode(data.aggroHighlightMode) end
+	if data.aggroHighlightSample ~= nil then cfg.highlightAggro.sample = data.aggroHighlightSample and true or false end
+	if data.aggroHighlightTexture ~= nil then cfg.highlightAggro.texture = data.aggroHighlightTexture end
+	if data.aggroHighlightLayer ~= nil then
+		local layer = tostring(data.aggroHighlightLayer or cfg.highlightAggro.layer or "ABOVE_BORDER"):upper()
+		if layer ~= "BEHIND_BORDER" then layer = "ABOVE_BORDER" end
+		cfg.highlightAggro.layer = layer
+	end
+	if data.aggroHighlightSize ~= nil then cfg.highlightAggro.size = clampNumber(data.aggroHighlightSize, 1, 64, cfg.highlightAggro.size or 2) end
+	if data.aggroHighlightOffset ~= nil then cfg.highlightAggro.offset = clampNumber(data.aggroHighlightOffset, -64, 64, cfg.highlightAggro.offset or 0) end
+	if
 		data.targetHighlightEnabled ~= nil
 		or data.targetHighlightColor ~= nil
 		or data.targetHighlightTexture ~= nil
@@ -21591,6 +21943,19 @@ function GF:EnsureEditMode()
 				hoverHighlightTexture = (cfg.highlightHover and cfg.highlightHover.texture) or (def.highlightHover and def.highlightHover.texture) or "DEFAULT",
 				hoverHighlightSize = (cfg.highlightHover and cfg.highlightHover.size) or (def.highlightHover and def.highlightHover.size) or 2,
 				hoverHighlightOffset = (cfg.highlightHover and cfg.highlightHover.offset) or (def.highlightHover and def.highlightHover.offset) or 0,
+				aggroHighlightEnabled = (cfg.highlightAggro and cfg.highlightAggro.enabled) == true,
+				aggroHighlightColor = (cfg.highlightAggro and cfg.highlightAggro.color) or (def.highlightAggro and def.highlightAggro.color) or { 1, 0.55, 0, 1 },
+				aggroHighlightMode = GF.NormalizeAggroHighlightMode((cfg.highlightAggro and cfg.highlightAggro.mode) or (def.highlightAggro and def.highlightAggro.mode) or "ALL"),
+				aggroHighlightSample = (cfg.highlightAggro and cfg.highlightAggro.sample) == true
+					or ((cfg.highlightAggro == nil or cfg.highlightAggro.sample == nil) and (def.highlightAggro and def.highlightAggro.sample == true)),
+				aggroHighlightTexture = (cfg.highlightAggro and cfg.highlightAggro.texture) or (def.highlightAggro and def.highlightAggro.texture) or "DEFAULT",
+				aggroHighlightLayer = (function()
+					local layer = tostring((cfg.highlightAggro and cfg.highlightAggro.layer) or (def.highlightAggro and def.highlightAggro.layer) or "ABOVE_BORDER"):upper()
+					if layer ~= "BEHIND_BORDER" then layer = "ABOVE_BORDER" end
+					return layer
+				end)(),
+				aggroHighlightSize = (cfg.highlightAggro and cfg.highlightAggro.size) or (def.highlightAggro and def.highlightAggro.size) or 2,
+				aggroHighlightOffset = (cfg.highlightAggro and cfg.highlightAggro.offset) or (def.highlightAggro and def.highlightAggro.offset) or 0,
 				targetHighlightEnabled = (cfg.highlightTarget and cfg.highlightTarget.enabled) == true,
 				targetHighlightColor = (cfg.highlightTarget and cfg.highlightTarget.color) or (def.highlightTarget and def.highlightTarget.color) or { 1, 1, 0, 1 },
 				targetHighlightTexture = (cfg.highlightTarget and cfg.highlightTarget.texture) or (def.highlightTarget and def.highlightTarget.texture) or "DEFAULT",
@@ -22299,6 +22664,7 @@ do
 			if custom and custom.separateMeleeRanged == true and sortMethod == "NAMELIST" and GFH and GFH.QueueInspectGroup then GFH.QueueInspectGroup() end
 		elseif event == "PLAYER_ROLES_ASSIGNED" then
 			GF:RefreshRoleIcons()
+			GF:RefreshTargetHighlights()
 			GF:RefreshCustomSortNameList("raid")
 			GF:RefreshCustomSortNameList("party")
 			local cfg = getCfg("raid")

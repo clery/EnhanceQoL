@@ -148,6 +148,7 @@ Helper.PANEL_LAYOUT_DEFAULTS = {
 	noDesaturation = false,
 	cdmAuraAlwaysShowMode = "HIDE",
 	checkPower = false,
+	hideWhenNoResource = false,
 	powerTintColor = { 0.5, 0.5, 1, 1 },
 	unusableTintColor = { 0.6, 0.6, 0.6, 1 },
 	opacityOutOfCombat = 1,
@@ -249,6 +250,8 @@ Helper.ENTRY_DEFAULTS = {
 	noDesaturation = false,
 	checkPowerUseGlobal = true,
 	checkPower = false,
+	hideWhenNoResourceUseGlobal = true,
+	hideWhenNoResource = false,
 	glowReady = false,
 	readyGlowCheckPower = false,
 	pandemicGlow = false,
@@ -1058,6 +1061,8 @@ function Helper.NormalizeRoot(root)
 	root.defaults.entry.pandemicGlow = Helper.ENTRY_DEFAULTS.pandemicGlow
 	root.defaults.entry.checkPower = Helper.ENTRY_DEFAULTS.checkPower
 	root.defaults.entry.checkPowerUseGlobal = Helper.ENTRY_DEFAULTS.checkPowerUseGlobal
+	root.defaults.entry.hideWhenNoResource = Helper.ENTRY_DEFAULTS.hideWhenNoResource
+	root.defaults.entry.hideWhenNoResourceUseGlobal = Helper.ENTRY_DEFAULTS.hideWhenNoResourceUseGlobal
 	root.defaults.entry.procGlowEnabled = Helper.ENTRY_DEFAULTS.procGlowEnabled
 	root.defaults.entry.procGlowUseGlobal = Helper.ENTRY_DEFAULTS.procGlowUseGlobal
 	root.defaults.entry.glowDuration = Helper.ENTRY_DEFAULTS.glowDuration
@@ -1104,6 +1109,7 @@ function Helper.NormalizePanel(panel, defaults)
 	panel.layout.readyGlowDuration = 0
 	panel.layout.readyGlowCheckPower = panel.layout.readyGlowCheckPower == true
 	panel.layout.noDesaturation = panel.layout.noDesaturation == true
+	panel.layout.hideWhenNoResource = panel.layout.hideWhenNoResource == true
 	panel.layout.cdmAuraAlwaysShowMode =
 		normalizeCDMAuraAlwaysShowMode(panel.layout.cdmAuraAlwaysShowMode, layoutDefaults.cdmAuraAlwaysShowMode or Helper.PANEL_LAYOUT_DEFAULTS.cdmAuraAlwaysShowMode or "HIDE")
 	panel.layout.stackColor = Helper.NormalizeColor(panel.layout.stackColor, layoutDefaults.stackColor or Helper.PANEL_LAYOUT_DEFAULTS.stackColor or { 1, 1, 1, 1 })
@@ -1228,6 +1234,8 @@ function Helper.NormalizeEntry(entry, defaults)
 	if type(entry.noDesaturation) ~= "boolean" then entry.noDesaturation = Helper.ENTRY_DEFAULTS.noDesaturation end
 	if type(entry.checkPowerUseGlobal) ~= "boolean" then entry.checkPowerUseGlobal = Helper.ENTRY_DEFAULTS.checkPowerUseGlobal end
 	if type(entry.checkPower) ~= "boolean" then entry.checkPower = Helper.ENTRY_DEFAULTS.checkPower end
+	if type(entry.hideWhenNoResourceUseGlobal) ~= "boolean" then entry.hideWhenNoResourceUseGlobal = Helper.ENTRY_DEFAULTS.hideWhenNoResourceUseGlobal end
+	if type(entry.hideWhenNoResource) ~= "boolean" then entry.hideWhenNoResource = Helper.ENTRY_DEFAULTS.hideWhenNoResource end
 	if type(entry.readyGlowCheckPower) ~= "boolean" then entry.readyGlowCheckPower = Helper.ENTRY_DEFAULTS.readyGlowCheckPower end
 	if type(entry.procGlowEnabled) ~= "boolean" then entry.procGlowEnabled = Helper.ENTRY_DEFAULTS.procGlowEnabled end
 	if type(entry.procGlowUseGlobal) ~= "boolean" then

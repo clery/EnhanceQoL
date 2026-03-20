@@ -2780,7 +2780,9 @@ function CooldownPanels:RebuildPowerIndex()
 				for _, entry in pairs(panel.entries or {}) do
 					local trackEntryPower = false
 					if entry then
-						trackEntryPower = self:ResolveEntryCheckPower(layout, entry) or (entry.type == "SPELL" and entry.glowReady == true and self:ResolveEntryReadyGlowCheckPower(layout, entry))
+						trackEntryPower = self:ResolveEntryCheckPower(layout, entry)
+							or self:ResolveEntryHideWhenNoResource(layout, entry)
+							or (entry.type == "SPELL" and entry.glowReady == true and self:ResolveEntryReadyGlowCheckPower(layout, entry))
 					end
 					if entry and trackEntryPower then
 						local baseId
@@ -3959,6 +3961,19 @@ function CooldownPanels:ResolveEntryCheckPower(layout, entry)
 	local panelValue = layout and layout.checkPower == true
 	if not entry or entry.checkPowerUseGlobal ~= false then return panelValue end
 	return entry.checkPower == true
+end
+
+function CooldownPanels:ResolveEntryHideWhenNoResource(layout, entry)
+	local panelValue = layout and layout.hideWhenNoResource == true
+	if not entry then return panelValue end
+	local entryType = entry.type
+	if entryType == "MACRO" then
+		local macro = CooldownPanels.ResolveMacroEntry(entry)
+		entryType = (macro and macro.kind) or entryType
+	end
+	if entryType ~= "SPELL" then return false end
+	if entry.hideWhenNoResourceUseGlobal ~= false then return panelValue end
+	return entry.hideWhenNoResource == true
 end
 
 function CooldownPanels:ResolveEntryShowIconTexture(layout, entry)
@@ -6118,7 +6133,7 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 		if (currentEntry[field] == true) == normalized then return end
 		currentEntry[field] = normalized and true or false
 		if field == "glowReady" then CooldownPanels.ClearReadyGlowEntryState(panelId, entryId, true) end
-		if field == "glowReady" or field == "checkPower" or field == "readyGlowCheckPower" then CooldownPanels:RebuildPowerIndex() end
+		if field == "glowReady" or field == "checkPower" or field == "hideWhenNoResource" or field == "readyGlowCheckPower" then CooldownPanels:RebuildPowerIndex() end
 		if field == "showCharges" then CooldownPanels:RebuildChargesIndex() end
 		refreshEntryViews()
 	end
@@ -6354,6 +6369,16 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 		refreshEntryViews()
 	end
 
+	local function setHideWhenNoResourceOverrideEnabled(value)
+		local _, currentEntry = getEntry()
+		if not currentEntry then return end
+		local useGlobal = value ~= true
+		if currentEntry.hideWhenNoResourceUseGlobal == useGlobal then return end
+		currentEntry.hideWhenNoResourceUseGlobal = useGlobal
+		CooldownPanels:RebuildPowerIndex()
+		refreshEntryViews()
+	end
+
 	local function setCDMAuraAlwaysShowOverrideEnabled(value)
 		local layout = getLayout()
 		local _, currentEntry = getEntry()
@@ -6565,6 +6590,12 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 		local layout = getLayout()
 		local _, currentEntry = getEntry()
 		return CooldownPanels:ResolveEntryNoDesaturation(layout, currentEntry)
+	end
+
+	local function getResolvedHideWhenNoResource()
+		local layout = getLayout()
+		local _, currentEntry = getEntry()
+		return CooldownPanels:ResolveEntryHideWhenNoResource(layout, currentEntry)
 	end
 
 	local function getResolvedCDMAuraAlwaysShowMode()
@@ -7343,6 +7374,7 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 				local useGlobal = value ~= true
 				if currentEntry.checkPowerUseGlobal == useGlobal then return end
 				currentEntry.checkPowerUseGlobal = useGlobal
+				CooldownPanels:RebuildPowerIndex()
 				refreshEntryViews()
 			end,
 		},
@@ -7357,6 +7389,29 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 			end,
 			get = function() return CooldownPanels:ResolveEntryCheckPower(getLayout(), select(2, getEntry())) == true end,
 			set = function(_, value) setEntryBoolean("checkPower", value) end,
+		},
+		{
+			name = L["CooldownPanelOverwritePanelHideWhenNoResource"] or "Overwrite panel hide when no resource",
+			kind = SettingType.Checkbox,
+			parentId = "cooldownPanelStandaloneOverlays",
+			isShown = function() return getEffectiveType() == "SPELL" end,
+			get = function()
+				local _, currentEntry = getEntry()
+				return currentEntry and currentEntry.hideWhenNoResourceUseGlobal == false or false
+			end,
+			set = function(_, value) setHideWhenNoResourceOverrideEnabled(value) end,
+		},
+		{
+			name = L["CooldownPanelHideWhenNoResource"] or "Hide when no resource",
+			kind = SettingType.Checkbox,
+			parentId = "cooldownPanelStandaloneOverlays",
+			isShown = function() return getEffectiveType() == "SPELL" end,
+			disabled = function()
+				local _, currentEntry = getEntry()
+				return not (currentEntry and currentEntry.hideWhenNoResourceUseGlobal == false)
+			end,
+			get = function() return getResolvedHideWhenNoResource() == true end,
+			set = function(_, value) setEntryBoolean("hideWhenNoResource", value) end,
 		},
 		{
 			name = L["CooldownPanelCooldownText"] or "Cooldown text",
@@ -11330,12 +11385,14 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			-- end
 
 			local entryCheckPower = resolvedType == "SPELL" and self:ResolveEntryCheckPower(layout, entry)
+			local hideWhenNoResource = self:ResolveEntryHideWhenNoResource(layout, entry)
 			local readyGlowCheckPower = resolvedType == "SPELL" and glowReady and self:ResolveEntryReadyGlowCheckPower(layout, entry)
 			local procGlowEnabled = resolvedType == "SPELL" and CooldownPanels:ResolveEntryProcGlowEnabled(layout, entry)
 			local procActive = resolvedType == "SPELL" and isSpellFlagged(overlayGlowSpells, baseSpellId, effectiveSpellId)
 			local overlayGlow = procActive and procGlowEnabled
-			local readyGlowResourceBlocked = resolvedType == "SPELL" and readyGlowCheckPower and isSpellFlagged(powerInsufficientSpells, baseSpellId, effectiveSpellId)
-			local powerInsufficient = resolvedType == "SPELL" and entryCheckPower and isSpellFlagged(powerInsufficientSpells, baseSpellId, effectiveSpellId)
+			local resourceInsufficient = resolvedType == "SPELL" and isSpellFlagged(powerInsufficientSpells, baseSpellId, effectiveSpellId)
+			local readyGlowResourceBlocked = resolvedType == "SPELL" and readyGlowCheckPower and resourceInsufficient
+			local powerInsufficient = resolvedType == "SPELL" and entryCheckPower and resourceInsufficient
 			local spellUnusable = resolvedType == "SPELL" and entryCheckPower and isSpellFlagged(spellUnusableSpells, baseSpellId, effectiveSpellId)
 			local rangeOverlay = rangeOverlayEnabled and resolvedType == "SPELL" and isSpellFlagged(rangeOverlaySpells, baseSpellId, effectiveSpellId)
 			local assistedSuggested = resolvedType == "SPELL" and isAssistedSuggested(baseSpellId, effectiveSpellId)
@@ -11358,6 +11415,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			local show = false
 			local cooldownEnabledOk = true
 			local emptyItem = false
+			local hiddenByNoResource = false
 			local canTriggerReadyGlow = false
 			local spellReadyCondition
 
@@ -11510,6 +11568,10 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 					show = cdmAuraData.show == true
 				end
 			end
+			if show and hideWhenNoResource and resourceInsufficient then
+				hiddenByNoResource = true
+				show = false
+			end
 			if layoutEditActive then show = true end
 
 			if show then
@@ -11631,13 +11693,13 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				data.cdmAuraDurationObject = cdmAuraData and cdmAuraData.cooldownDurationObject or nil
 				data.cdmAuraUsesExpirationTime = cdmAuraData and cdmAuraData.cooldownUsesExpirationTime == true
 				data.cdmAuraUsesStartTime = cdmAuraData and cdmAuraData.cooldownUsesStartTime == true
-				if powerCheckSpells and resolvedType == "SPELL" and (entryCheckPower or readyGlowCheckPower) then
-					local spellId = effectiveSpellId or baseSpellId
-					if spellId and powerCheckSpells[spellId] and not visiblePowerSpellSeen[spellId] then
-						visiblePowerSpellSeen[spellId] = true
-						visiblePowerSpellCount = visiblePowerSpellCount + 1
-						visiblePowerSpells[visiblePowerSpellCount] = spellId
-					end
+			end
+			if powerCheckSpells and resolvedType == "SPELL" and (entryCheckPower or hideWhenNoResource or readyGlowCheckPower) and (show or hiddenByNoResource) then
+				local spellId = effectiveSpellId or baseSpellId
+				if spellId and powerCheckSpells[spellId] and not visiblePowerSpellSeen[spellId] then
+					visiblePowerSpellSeen[spellId] = true
+					visiblePowerSpellCount = visiblePowerSpellCount + 1
+					visiblePowerSpells[visiblePowerSpellCount] = spellId
 				end
 			end
 		end
@@ -12635,6 +12697,9 @@ applyEditLayout = function(panelId, field, value, skipRefresh)
 		CooldownPanels:RebuildPowerIndex()
 	elseif field == "noDesaturation" then
 		layout.noDesaturation = value == true
+	elseif field == "hideWhenNoResource" then
+		layout.hideWhenNoResource = value == true
+		CooldownPanels:RebuildPowerIndex()
 	elseif field == "cdmAuraAlwaysShowMode" then
 		layout.cdmAuraAlwaysShowMode = CooldownPanels:NormalizeCDMAuraAlwaysShowMode(value, layout.cdmAuraAlwaysShowMode or Helper.PANEL_LAYOUT_DEFAULTS.cdmAuraAlwaysShowMode)
 	elseif field == "checkPower" then
@@ -12837,6 +12902,7 @@ function CooldownPanels:ApplyEditMode(panelId, data)
 	applyEditLayout(panelId, "hideGlowOutOfCombat", data.hideGlowOutOfCombat, true)
 	applyEditLayout(panelId, "readyGlowCheckPower", data.readyGlowCheckPower, true)
 	applyEditLayout(panelId, "checkPower", data.checkPower, true)
+	applyEditLayout(panelId, "hideWhenNoResource", data.hideWhenNoResource, true)
 	applyEditLayout(panelId, "powerTintColor", data.powerTintColor, true)
 	applyEditLayout(panelId, "strata", data.strata, true)
 	applyEditLayout(panelId, "stackAnchor", data.stackAnchor, true)
@@ -14193,6 +14259,14 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 				colorSet = function(_, value) applyEditLayout(panelId, "powerTintColor", value) end,
 			},
 			{
+				name = L["CooldownPanelHideWhenNoResource"] or "Hide when no resource",
+				kind = SettingType.Checkbox,
+				parentId = "cooldownPanelOverlays",
+				default = layout.hideWhenNoResource == true,
+				get = function() return layout.hideWhenNoResource == true end,
+				set = function(_, value) applyEditLayout(panelId, "hideWhenNoResource", value) end,
+			},
+			{
 				name = _G.GLOW or "Glow",
 				kind = SettingType.Collapsible,
 				id = "cooldownPanelGlow",
@@ -14796,6 +14870,7 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 			hideGlowOutOfCombat = layout.hideGlowOutOfCombat == true,
 			readyGlowCheckPower = layout.readyGlowCheckPower == true,
 			checkPower = layout.checkPower == true,
+			hideWhenNoResource = layout.hideWhenNoResource == true,
 			powerTintColor = layout.powerTintColor or Helper.PANEL_LAYOUT_DEFAULTS.powerTintColor,
 			strata = Helper.NormalizeStrata(layout.strata, Helper.PANEL_LAYOUT_DEFAULTS.strata),
 			stackAnchor = Helper.NormalizeAnchor(layout.stackAnchor, Helper.PANEL_LAYOUT_DEFAULTS.stackAnchor),

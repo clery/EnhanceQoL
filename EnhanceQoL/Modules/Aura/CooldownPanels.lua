@@ -2037,6 +2037,8 @@ ensureRoot = function()
 	local needsNormalize = not normalizedRoots[root] or type(root.panels) ~= "table" or type(root.order) ~= "table" or type(root.defaults) ~= "table"
 	if needsNormalize then
 		Helper.NormalizeRoot(root)
+		root._eqolEditorGroupsReady = nil
+		root._eqolEditorGroupOrderDirty = true
 		local runtime = CooldownPanels.runtime
 		if runtime and runtime._eqolPanelIdCacheRoot == root then
 			runtime._eqolPanelIdCache = nil
@@ -2050,8 +2052,20 @@ end
 
 CooldownPanels.EnsureEditorGroupStorage = function(root)
 	if not root then return nil end
-	if type(root.editorGroups) ~= "table" then root.editorGroups = {} end
-	if type(root.editorGroupOrder) ~= "table" then root.editorGroupOrder = {} end
+	if type(root.editorGroups) ~= "table" then
+		root.editorGroups = {}
+		root._eqolEditorGroupsReady = nil
+		root._eqolEditorGroupOrderDirty = true
+	end
+	if type(root.editorGroupOrder) ~= "table" then
+		root.editorGroupOrder = {}
+		root._eqolEditorGroupsReady = nil
+		root._eqolEditorGroupOrderDirty = true
+	end
+	if root._eqolEditorGroupsReady == true then
+		if root._eqolEditorGroupOrderDirty == true then CooldownPanels:SortEditorGroupOrder(root) end
+		return root
+	end
 
 	local groups = root.editorGroups
 	local order = root.editorGroupOrder
@@ -2116,6 +2130,8 @@ CooldownPanels.EnsureEditorGroupStorage = function(root)
 	end
 
 	Helper.SyncOrder(order, groups)
+	root._eqolEditorGroupsReady = true
+	root._eqolEditorGroupOrderDirty = true
 	CooldownPanels:SortEditorGroupOrder(root)
 	return root
 end
@@ -2148,6 +2164,7 @@ function CooldownPanels:SortEditorGroupOrder(root)
 	if not root then return nil end
 	if type(root.editorGroups) ~= "table" then root.editorGroups = {} end
 	if type(root.editorGroupOrder) ~= "table" then root.editorGroupOrder = {} end
+	if root._eqolEditorGroupsReady == true and root._eqolEditorGroupOrderDirty ~= true then return root.editorGroupOrder end
 	Helper.SyncOrder(root.editorGroupOrder, root.editorGroups)
 	table.sort(root.editorGroupOrder, function(leftId, rightId)
 		local leftGroup = root.editorGroups[leftId]
@@ -2157,6 +2174,7 @@ function CooldownPanels:SortEditorGroupOrder(root)
 		if leftName == rightName then return (tonumber(leftId) or 0) < (tonumber(rightId) or 0) end
 		return CooldownPanels.IsEditorGroupNameBefore(leftName, rightName)
 	end)
+	root._eqolEditorGroupOrderDirty = nil
 	return root.editorGroupOrder
 end
 
@@ -2276,6 +2294,7 @@ function CooldownPanels:CreateEditorGroup(name, parentGroupId)
 	if parentGroupId and not groups[parentGroupId] then parentGroupId = nil end
 	groups[groupId] = { id = groupId, name = groupName, parentGroupId = parentGroupId }
 	order[#order + 1] = groupId
+	root._eqolEditorGroupOrderDirty = true
 	self:SortEditorGroupOrder(root)
 	return groupId
 end
@@ -2287,6 +2306,7 @@ function CooldownPanels:RenameEditorGroup(groupId, name)
 	name = CooldownPanels.NormalizePanelGroupName(name)
 	if not name then return false end
 	group.name = name
+	root._eqolEditorGroupOrderDirty = true
 	self:SortEditorGroupOrder(root)
 	return true
 end
@@ -2305,6 +2325,7 @@ function CooldownPanels:DeleteEditorGroup(groupId)
 	for _, panel in pairs(root.panels or {}) do
 		if panel and normalizeId(panel.editorGroupId) == groupId then panel.editorGroupId = parentGroupId end
 	end
+	root._eqolEditorGroupOrderDirty = true
 	return true
 end
 
@@ -2317,10 +2338,12 @@ function CooldownPanels:SetEditorGroupParent(groupId, parentGroupId)
 	if not group then return false end
 	if parentGroupId == nil then
 		group.parentGroupId = nil
+		root._eqolEditorGroupOrderDirty = true
 		return true
 	end
 	if not self:CanSetEditorGroupParent(root, groupId, parentGroupId) then return false end
 	group.parentGroupId = parentGroupId
+	root._eqolEditorGroupOrderDirty = true
 	return true
 end
 
@@ -2711,15 +2734,50 @@ end
 function CooldownPanels:RebuildSpellIndex()
 	self:InvalidateSpellQueryCaches()
 	local root = ensureRoot()
+	local runtime = self.runtime or {}
 	local index = {}
 	local enabledPanels = {}
+	local enabledPanelIds = {}
+	local enabledPanelsBySpec = {}
+	local enabledPanelIdsBySpec = {}
 	local itemPanels = {}
 	local itemUsesPanels = {}
 	local rangeCheckSpells = {}
+	local activeSpecId = getPlayerSpecId()
+	local classSpecs = getPlayerClassSpecMap()
+	if classSpecs then
+		for specId in pairs(classSpecs) do
+			enabledPanelsBySpec[specId] = {}
+			enabledPanelIdsBySpec[specId] = {}
+		end
+	end
+	if activeSpecId and not enabledPanelsBySpec[activeSpecId] then
+		enabledPanelsBySpec[activeSpecId] = {}
+		enabledPanelIdsBySpec[activeSpecId] = {}
+	end
 	if root and root.panels then
-		for panelId, panel in pairs(root.panels) do
+		syncRootOrderIfDirty(root)
+		for _, panelId in ipairs(CooldownPanels.GetCachedPanelIds(root)) do
+			local panel = root.panels[panelId]
+			if panel and panel.enabled ~= false then
+				if panelHasSpecFilter(panel) then
+					local filter = panel.specFilter
+					for specId, bucket in pairs(enabledPanelsBySpec) do
+						if filter and filter[specId] == true then
+							bucket[panelId] = true
+							enabledPanelIdsBySpec[specId][#enabledPanelIdsBySpec[specId] + 1] = panelId
+						end
+					end
+				else
+					for specId, bucket in pairs(enabledPanelsBySpec) do
+						bucket[panelId] = true
+						enabledPanelIdsBySpec[specId][#enabledPanelIdsBySpec[specId] + 1] = panelId
+					end
+				end
+			end
 			if panel and panel.enabled ~= false and panelAllowsSpec(panel) then
 				enabledPanels[panelId] = true
+				enabledPanelIds[#enabledPanelIds + 1] = panelId
 				local layout = panel.layout
 				local wantsRangeCheck = layout and layout.rangeOverlayEnabled == true
 				for _, entry in pairs(panel.entries or {}) do
@@ -2753,11 +2811,22 @@ function CooldownPanels:RebuildSpellIndex()
 			end
 		end
 	end
-	self.runtime = self.runtime or {}
-	self.runtime.spellIndex = index
-	self.runtime.enabledPanels = enabledPanels
-	self.runtime.itemPanels = itemPanels
-	self.runtime.itemUsesPanels = itemUsesPanels
+	self.runtime = runtime
+	runtime.disabledPanelIds = runtime.disabledPanelIds or {}
+	for i = 1, #runtime.disabledPanelIds do
+		runtime.disabledPanelIds[i] = nil
+	end
+	for panelId in pairs(runtime.enabledPanels or {}) do
+		if not enabledPanels[panelId] then runtime.disabledPanelIds[#runtime.disabledPanelIds + 1] = panelId end
+	end
+	runtime.activeSpecId = activeSpecId
+	runtime.enabledPanelsBySpec = enabledPanelsBySpec
+	runtime.enabledPanelIdsBySpec = enabledPanelIdsBySpec
+	runtime.spellIndex = index
+	runtime.enabledPanels = enabledPanels
+	runtime.enabledPanelIds = enabledPanelIds
+	runtime.itemPanels = itemPanels
+	runtime.itemUsesPanels = itemUsesPanels
 	if updateRangeCheckSpells then updateRangeCheckSpells(rangeCheckSpells) end
 	self:RebuildPowerIndex()
 	self:RebuildChargesIndex()
@@ -2769,44 +2838,95 @@ end
 
 function CooldownPanels:RebuildPowerIndex()
 	local root = ensureRoot()
+	local runtime = self.runtime
+	local enabledPanels = runtime and runtime.enabledPanels or nil
+	local enabledPanelIds = runtime and runtime.enabledPanelIds or nil
 	local powerIndex = {}
 	local powerCostNames = {}
 	local powerCheckSpells = {}
 	local powerCheckActive = false
 	if root and root.panels then
-		for _, panel in pairs(root.panels) do
-			local layout = panel.layout or {}
-			if panel.enabled ~= false and panelAllowsSpec(panel) then
-				for _, entry in pairs(panel.entries or {}) do
-					local trackEntryPower = false
-					if entry then
-						trackEntryPower = self:ResolveEntryCheckPower(layout, entry)
-							or self:ResolveEntryHideWhenNoResource(layout, entry)
-							or (entry.type == "SPELL" and entry.glowReady == true and self:ResolveEntryReadyGlowCheckPower(layout, entry))
-					end
-					if entry and trackEntryPower then
-						local baseId
-						if entry.type == "SPELL" and entry.spellID then
-							baseId = tonumber(entry.spellID)
-						elseif entry.type == "MACRO" then
-							local macro = CooldownPanels.ResolveMacroEntry(entry)
-							if macro and macro.kind == "SPELL" and macro.spellID then baseId = tonumber(macro.spellID) end
+		if enabledPanelIds then
+			for i = 1, #enabledPanelIds do
+				local panelId = enabledPanelIds[i]
+				local panel = root.panels[panelId]
+				local layout = panel and panel.layout or {}
+				if panel and (not enabledPanels or enabledPanels[panelId]) then
+					for _, entry in pairs(panel.entries or {}) do
+						local trackEntryPower = false
+						if entry then
+							trackEntryPower = self:ResolveEntryCheckPower(layout, entry)
+								or self:ResolveEntryHideWhenNoResource(layout, entry)
+								or (entry.type == "SPELL" and entry.glowReady == true and self:ResolveEntryReadyGlowCheckPower(layout, entry))
 						end
-						if baseId then
-							powerCheckActive = true
-							local effectiveId = getEffectiveSpellId(baseId) or baseId
-							if not isSpellPassiveSafe(baseId, effectiveId) then
-								powerCheckSpells[effectiveId] = true
-								local costs = Api.GetSpellPowerCost and Api.GetSpellPowerCost(effectiveId)
-								if type(costs) == "table" then
-									local names = getSpellPowerCostNamesFromCosts(costs)
-									if names then
-										powerCostNames[baseId] = names
-										for _, name in ipairs(names) do
-											local key = string.upper(name)
-											if key ~= "" then
-												powerIndex[key] = powerIndex[key] or {}
-												powerIndex[key][effectiveId] = true
+						if entry and trackEntryPower then
+							local baseId
+							if entry.type == "SPELL" and entry.spellID then
+								baseId = tonumber(entry.spellID)
+							elseif entry.type == "MACRO" then
+								local macro = CooldownPanels.ResolveMacroEntry(entry)
+								if macro and macro.kind == "SPELL" and macro.spellID then baseId = tonumber(macro.spellID) end
+							end
+							if baseId then
+								powerCheckActive = true
+								local effectiveId = getEffectiveSpellId(baseId) or baseId
+								if not isSpellPassiveSafe(baseId, effectiveId) then
+									powerCheckSpells[effectiveId] = true
+									local costs = Api.GetSpellPowerCost and Api.GetSpellPowerCost(effectiveId)
+									if type(costs) == "table" then
+										local names = getSpellPowerCostNamesFromCosts(costs)
+										if names then
+											powerCostNames[baseId] = names
+											for _, name in ipairs(names) do
+												local key = string.upper(name)
+												if key ~= "" then
+													powerIndex[key] = powerIndex[key] or {}
+													powerIndex[key][effectiveId] = true
+												end
+											end
+										end
+									end
+								end
+							end
+						end
+					end
+				end
+			end
+		else
+			for _, panel in pairs(root.panels) do
+				local layout = panel.layout or {}
+				if panel.enabled ~= false and panelAllowsSpec(panel) then
+					for _, entry in pairs(panel.entries or {}) do
+						local trackEntryPower = false
+						if entry then
+							trackEntryPower = self:ResolveEntryCheckPower(layout, entry)
+								or self:ResolveEntryHideWhenNoResource(layout, entry)
+								or (entry.type == "SPELL" and entry.glowReady == true and self:ResolveEntryReadyGlowCheckPower(layout, entry))
+						end
+						if entry and trackEntryPower then
+							local baseId
+							if entry.type == "SPELL" and entry.spellID then
+								baseId = tonumber(entry.spellID)
+							elseif entry.type == "MACRO" then
+								local macro = CooldownPanels.ResolveMacroEntry(entry)
+								if macro and macro.kind == "SPELL" and macro.spellID then baseId = tonumber(macro.spellID) end
+							end
+							if baseId then
+								powerCheckActive = true
+								local effectiveId = getEffectiveSpellId(baseId) or baseId
+								if not isSpellPassiveSafe(baseId, effectiveId) then
+									powerCheckSpells[effectiveId] = true
+									local costs = Api.GetSpellPowerCost and Api.GetSpellPowerCost(effectiveId)
+									if type(costs) == "table" then
+										local names = getSpellPowerCostNamesFromCosts(costs)
+										if names then
+											powerCostNames[baseId] = names
+											for _, name in ipairs(names) do
+												local key = string.upper(name)
+												if key ~= "" then
+													powerIndex[key] = powerIndex[key] or {}
+													powerIndex[key][effectiveId] = true
+												end
 											end
 										end
 									end
@@ -2820,7 +2940,7 @@ function CooldownPanels:RebuildPowerIndex()
 	end
 	if powerCheckActive and not next(powerCheckSpells) then powerCheckActive = false end
 	self.runtime = self.runtime or {}
-	local runtime = self.runtime
+	runtime = self.runtime
 	runtime.powerIndex = powerIndex
 	runtime.powerCostNames = powerCostNames
 	runtime.powerCheckSpells = powerCheckSpells
@@ -2841,33 +2961,73 @@ end
 
 function CooldownPanels:RebuildChargesIndex()
 	local root = ensureRoot()
+	local runtime = self.runtime
+	local enabledPanels = runtime and runtime.enabledPanels or nil
+	local enabledPanelIds = runtime and runtime.enabledPanelIds or nil
 	local chargesIndex = {}
 	local chargesPanels = {}
 	if root and root.panels then
-		for panelId, panel in pairs(root.panels) do
-			if panel and panel.enabled ~= false and panelAllowsSpec(panel) then
-				for _, entry in pairs(panel.entries or {}) do
-					local baseId
-					if entry and entry.showCharges == true then
-						if entry.type == "SPELL" and entry.spellID then
-							baseId = tonumber(entry.spellID)
-						elseif entry.type == "MACRO" then
-							local macro = CooldownPanels.ResolveMacroEntry(entry)
-							if macro and macro.kind == "SPELL" and macro.spellID then baseId = tonumber(macro.spellID) end
+		if enabledPanelIds then
+			for i = 1, #enabledPanelIds do
+				local panelId = enabledPanelIds[i]
+				local panel = root.panels[panelId]
+				if panel and (not enabledPanels or enabledPanels[panelId]) then
+					for _, entry in pairs(panel.entries or {}) do
+						local baseId
+						if entry and entry.showCharges == true then
+							if entry.type == "SPELL" and entry.spellID then
+								baseId = tonumber(entry.spellID)
+							elseif entry.type == "MACRO" then
+								local macro = CooldownPanels.ResolveMacroEntry(entry)
+								if macro and macro.kind == "SPELL" and macro.spellID then baseId = tonumber(macro.spellID) end
+							end
+						end
+						if baseId then
+							local effectiveId = getEffectiveSpellId(baseId) or baseId
+							if not isSpellPassiveSafe(baseId, effectiveId) then
+								chargesPanels[panelId] = true
+								if Api.GetSpellChargesInfo then
+									local info = Api.GetSpellChargesInfo(effectiveId)
+									if type(info) == "table" then
+										chargesIndex[effectiveId] = chargesIndex[effectiveId] or {}
+										chargesIndex[effectiveId][panelId] = true
+										if effectiveId ~= baseId then
+											chargesIndex[baseId] = chargesIndex[baseId] or {}
+											chargesIndex[baseId][panelId] = true
+										end
+									end
+								end
+							end
 						end
 					end
-					if baseId then
-						local effectiveId = getEffectiveSpellId(baseId) or baseId
-						if not isSpellPassiveSafe(baseId, effectiveId) then
-							chargesPanels[panelId] = true
-							if Api.GetSpellChargesInfo then
-								local info = Api.GetSpellChargesInfo(effectiveId)
-								if type(info) == "table" then
-									chargesIndex[effectiveId] = chargesIndex[effectiveId] or {}
-									chargesIndex[effectiveId][panelId] = true
-									if effectiveId ~= baseId then
-										chargesIndex[baseId] = chargesIndex[baseId] or {}
-										chargesIndex[baseId][panelId] = true
+				end
+			end
+		else
+			for panelId, panel in pairs(root.panels) do
+				if panel and panel.enabled ~= false and panelAllowsSpec(panel) then
+					for _, entry in pairs(panel.entries or {}) do
+						local baseId
+						if entry and entry.showCharges == true then
+							if entry.type == "SPELL" and entry.spellID then
+								baseId = tonumber(entry.spellID)
+							elseif entry.type == "MACRO" then
+								local macro = CooldownPanels.ResolveMacroEntry(entry)
+								if macro and macro.kind == "SPELL" and macro.spellID then baseId = tonumber(macro.spellID) end
+							end
+						end
+						if baseId then
+							local effectiveId = getEffectiveSpellId(baseId) or baseId
+							if not isSpellPassiveSafe(baseId, effectiveId) then
+								chargesPanels[panelId] = true
+								if Api.GetSpellChargesInfo then
+									local info = Api.GetSpellChargesInfo(effectiveId)
+									if type(info) == "table" then
+										chargesIndex[effectiveId] = chargesIndex[effectiveId] or {}
+										chargesIndex[effectiveId][panelId] = true
+										if effectiveId ~= baseId then
+											chargesIndex[baseId] = chargesIndex[baseId] or {}
+											chargesIndex[baseId][panelId] = true
+										end
 									end
 								end
 							end
@@ -2878,12 +3038,13 @@ function CooldownPanels:RebuildChargesIndex()
 		end
 	end
 	self.runtime = self.runtime or {}
-	self.runtime.chargesIndex = chargesIndex
-	self.runtime.chargesPanels = chargesPanels
-	self.runtime.chargesActive = next(chargesIndex) and true or false
-	self.runtime.chargesState = self.runtime.chargesState or {}
-	for spellId in pairs(self.runtime.chargesState) do
-		if not chargesIndex[spellId] then self.runtime.chargesState[spellId] = nil end
+	runtime = self.runtime
+	runtime.chargesIndex = chargesIndex
+	runtime.chargesPanels = chargesPanels
+	runtime.chargesActive = next(chargesIndex) and true or false
+	runtime.chargesState = runtime.chargesState or {}
+	for spellId in pairs(runtime.chargesState) do
+		if not chargesIndex[spellId] then runtime.chargesState[spellId] = nil end
 	end
 end
 
@@ -2891,6 +3052,8 @@ function CooldownPanels:NormalizeAll()
 	local root = ensureRoot()
 	if not root then return end
 	Helper.NormalizeRoot(root)
+	root._eqolEditorGroupsReady = nil
+	root._eqolEditorGroupOrderDirty = true
 	normalizedRoots[root] = true
 	Helper.SyncOrder(root.order, root.panels)
 	root._orderDirty = nil
@@ -3090,8 +3253,11 @@ function CooldownPanels:SelectPanel(panelId)
 		editor.selectedPanelId = panelId
 		editor.selectedEntryId = nil
 	end
-	if previousPanelId and previousPanelId ~= panelId and self:GetPanel(previousPanelId) then self:RefreshPanel(previousPanelId) end
-	self:RefreshPanel(panelId)
+	local needsLiveRefresh = self:IsInEditMode() == true or self:IsAnyPanelLayoutEditActive()
+	if needsLiveRefresh then
+		if previousPanelId and previousPanelId ~= panelId and self:GetPanel(previousPanelId) then self:RefreshPanel(previousPanelId) end
+		self:RefreshPanel(panelId)
+	end
 	self:UpdateCursorAnchorState()
 	self:RefreshEditor()
 end
@@ -10660,7 +10826,6 @@ function CooldownPanels:RefreshEditor()
 	if not root then return end
 	local previousLayoutPanelId = normalizeId(editor._eqolLayoutPanelId)
 
-	self:NormalizeAll()
 	Helper.SyncOrder(root.order, root.panels)
 	root._orderDirty = nil
 
@@ -10760,8 +10925,8 @@ end
 function CooldownPanels:OpenEditor()
 	local editor = ensureEditor()
 	if not editor then return end
+	self:NormalizeAll()
 	editor.frame:Show()
-	self:RefreshEditor()
 end
 
 function CooldownPanels:CloseEditor()
@@ -12571,16 +12736,28 @@ end
 function CooldownPanels:RefreshAllPanels()
 	local root = ensureRoot()
 	if not root then return end
+	local runtime = self.runtime
+	local panelIds = nil
 	if self:IsInEditMode() ~= true and not self:IsAnyPanelLayoutEditActive() then
-		local enabledPanels = self.runtime and self.runtime.enabledPanels
+		local enabledPanels = runtime and runtime.enabledPanels
 		if not enabledPanels or not next(enabledPanels) then
 			self:HideAllRuntimePanels()
 			self:UpdateCursorAnchorState()
 			return
 		end
+		panelIds = runtime and runtime.enabledPanelIds or nil
+		if runtime and runtime.disabledPanelIds then
+			for i = 1, #runtime.disabledPanelIds do
+				local panelId = runtime.disabledPanelIds[i]
+				if panelId and root.panels and root.panels[panelId] then self:RefreshPanel(panelId) end
+			end
+			for i = 1, #runtime.disabledPanelIds do
+				runtime.disabledPanelIds[i] = nil
+			end
+		end
 	end
 	syncRootOrderIfDirty(root)
-	local panelIds = CooldownPanels.GetCachedPanelIds(root)
+	panelIds = panelIds or CooldownPanels.GetCachedPanelIds(root)
 	for _, panelId in ipairs(panelIds) do
 		self:EnsurePanelFrame(panelId)
 	end
@@ -12610,6 +12787,11 @@ function CooldownPanels:RefreshPanelForCurrentEditContext(panelId, refreshEditor
 		if runtime then clearRuntimeLayoutShapeCache(runtime) end
 		CooldownPanels:ApplyLayout(panelId)
 		CooldownPanels:UpdatePreviewIcons(panelId)
+		CooldownPanels:UpdateVisibility(panelId)
+	elseif CooldownPanels:IsEditorOpen() then
+		if runtime then clearRuntimeLayoutShapeCache(runtime) end
+		CooldownPanels:ApplyLayout(panelId)
+		CooldownPanels:ApplyPanelPosition(panelId)
 		CooldownPanels:UpdateVisibility(panelId)
 	else
 		CooldownPanels:RefreshPanel(panelId)
@@ -15577,8 +15759,16 @@ CooldownPanels.RequestEnabledPanelRefreshes = function()
 	local root = ensureRoot()
 	local runtime = CooldownPanels and CooldownPanels.runtime
 	local enabledPanels = runtime and runtime.enabledPanels
+	local enabledPanelIds = runtime and runtime.enabledPanelIds
 	if not (root and root.panels and enabledPanels and next(enabledPanels)) then return false end
 	local queued = false
+	if enabledPanelIds and #enabledPanelIds > 0 then
+		for i = 1, #enabledPanelIds do
+			CooldownPanels:RefreshPanel(enabledPanelIds[i])
+			queued = true
+		end
+		return queued
+	end
 	for _, panelId in ipairs(CooldownPanels.GetCachedPanelIds(root)) do
 		if enabledPanels[panelId] then
 			CooldownPanels:RefreshPanel(panelId)

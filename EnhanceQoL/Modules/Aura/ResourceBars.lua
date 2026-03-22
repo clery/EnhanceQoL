@@ -374,9 +374,7 @@ local function formatSoulShardValue(value)
 	return text:gsub("%.0$", "")
 end
 
-function ResourceBars.ShouldUseRawPowerValues(pType)
-	return pType == "SOUL_SHARDS" and addon.variables and addon.variables.unitClass == "WARLOCK" and addon.variables.unitSpec == 3
-end
+function ResourceBars.ShouldUseRawPowerValues(pType) return pType == "SOUL_SHARDS" and addon.variables and addon.variables.unitClass == "WARLOCK" and addon.variables.unitSpec == 3 end
 
 local function formatNumber(value, useShort)
 	if value == nil then return "0" end
@@ -2178,7 +2176,17 @@ end
 
 function ResourceBars.GetThresholdColorModeAndCap(pType)
 	if pType == "VOID_METAMORPHOSIS" then return "ABSOLUTE", tonumber(RB.ABSOLUTE_THRESHOLD_COLOR_VALUE_CAP_VOID_METAMORPHOSIS) or 50, 1 end
-	if pType == "MANA" or pType == "ENERGY" or pType == "RAGE" or pType == "FURY" or pType == "FOCUS" or pType == "INSANITY" or pType == "LUNAR_POWER" then
+	if
+		pType == "MANA"
+		or pType == "ENERGY"
+		or pType == "RAGE"
+		or pType == "FURY"
+		or pType == "FOCUS"
+		or pType == "INSANITY"
+		or pType == "LUNAR_POWER"
+		or pType == "RUNIC_POWER"
+		or pType == "MAELSTROM"
+	then
 		return "PERCENT", tonumber(RB.ABSOLUTE_THRESHOLD_COLOR_VALUE_CAP_PERCENT) or 100, 0
 	end
 	if ResourceBars.separatorEligible and ResourceBars.separatorEligible[pType] then return "ABSOLUTE", tonumber(RB.ABSOLUTE_THRESHOLD_COLOR_VALUE_CAP) or 10, 1 end

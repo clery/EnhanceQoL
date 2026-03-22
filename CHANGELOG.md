@@ -14,6 +14,8 @@
 ### 🔄 Changed
 
 - GCD Bar: Lowered the minimum configurable bar height from `6` to `1`.
+- Group Frames (Party / Raid): Improved the overall performance of group-frame updates, especially for custom raid sorting. Larger roster and layout updates should now feel noticeably smoother.
+- Group Frames (Party / Raid): Made group-frame refreshes more stable during sort and roster changes, so frames keep their layout more reliably while the order updates in the background.
 
 ### 🐛 Fixed
 

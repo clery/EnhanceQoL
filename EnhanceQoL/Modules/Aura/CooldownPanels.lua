@@ -1734,7 +1734,8 @@ end
 function CooldownPanels.GetFixedGroups(panel)
 	if not panel then return {} end
 	panel.layout = panel.layout or {}
-	return Helper.NormalizeFixedGroups(panel.layout)
+	local cache = Helper.GetFixedLayoutCache and Helper.GetFixedLayoutCache(panel) or nil
+	return cache and cache.groups or Helper.NormalizeFixedGroups(panel.layout)
 end
 
 function CooldownPanels.GetFixedGroupName(group)
@@ -1764,6 +1765,11 @@ function CooldownPanels.GetFixedGroupModeLabel(group) return CooldownPanels.IsFi
 function CooldownPanels.GetFixedGroupDisplayLabel(group)
 	local name = CooldownPanels.GetFixedGroupName(group)
 	return string.format("%s [%s]", tostring(name or "Group"), CooldownPanels.GetFixedGroupModeLabel(group))
+end
+
+function CooldownPanels.BumpFixedGroupEffectiveLayoutVersion(panel)
+	if type(panel) ~= "table" then return end
+	panel._eqolFixedGroupEffectiveLayoutVersion = (panel._eqolFixedGroupEffectiveLayoutVersion or 0) + 1
 end
 
 function CooldownPanels:ClearFixedGroupEffectiveLayoutCache(panelId, groupId)
@@ -1803,7 +1809,8 @@ function CooldownPanels:GetFixedGroupEffectiveLayout(panelId, groupId, buildCach
 	if buildCache and groupId and buildCache[groupId] then return buildCache[groupId] end
 	local panel = panelId and self:GetPanel(panelId) or nil
 	local layout = panel and panel.layout or nil
-	local group = panel and groupId and CooldownPanels.GetFixedGroupById(panel, groupId) or nil
+	local fixedLayoutCache = panel and Helper.GetFixedLayoutCache and Helper.GetFixedLayoutCache(panel) or nil
+	local group = groupId and fixedLayoutCache and fixedLayoutCache.groupById and fixedLayoutCache.groupById[groupId] or (panel and groupId and CooldownPanels.GetFixedGroupById(panel, groupId) or nil)
 	if not (panelId and panel and layout and group) then return layout end
 	if buildCache and buildCache[group.id] then return buildCache[group.id] end
 	local overrides = self:GetFixedGroupLayoutOverrides(panel, group, false)
@@ -1819,6 +1826,11 @@ function CooldownPanels:GetFixedGroupEffectiveLayout(panelId, groupId, buildCach
 		effective = {}
 		runtime._eqolFixedGroupEffectiveLayouts[group.id] = effective
 	end
+	local version = panel._eqolFixedGroupEffectiveLayoutVersion or 0
+	if effective._eqolVersion == version and effective._eqolLayoutRef == layout and effective._eqolOverridesRef == overrides then
+		if buildCache then buildCache[group.id] = effective end
+		return effective
+	end
 	for key in pairs(effective) do
 		effective[key] = nil
 	end
@@ -1828,6 +1840,9 @@ function CooldownPanels:GetFixedGroupEffectiveLayout(panelId, groupId, buildCach
 	for key, value in pairs(overrides) do
 		effective[key] = value
 	end
+	effective._eqolVersion = version
+	effective._eqolLayoutRef = layout
+	effective._eqolOverridesRef = overrides
 	if buildCache then buildCache[group.id] = effective end
 	return effective
 end
@@ -1901,6 +1916,10 @@ function CooldownPanels:GetEntryAtUngroupedFixedCell(panel, column, row, skipEnt
 	column = Helper.NormalizeSlotCoordinate(column)
 	row = Helper.NormalizeSlotCoordinate(row)
 	if not (panel and column and row) then return nil end
+	local cache = Helper.GetFixedLayoutCache and Helper.GetFixedLayoutCache(panel) or nil
+	local key = tostring(column) .. ":" .. tostring(row)
+	local cachedId = cache and cache.entryAtUngroupedCell and cache.entryAtUngroupedCell[key] or nil
+	if cachedId and cachedId ~= skipEntryId then return cachedId, panel.entries and panel.entries[cachedId] or nil end
 	for _, entryId in ipairs(panel.order or {}) do
 		if entryId ~= skipEntryId then
 			local entry = panel.entries and panel.entries[entryId]
@@ -1922,6 +1941,11 @@ function CooldownPanels:GetEntryAtStaticGroupCell(panel, groupId, column, row, s
 	column = Helper.NormalizeSlotCoordinate(column)
 	row = Helper.NormalizeSlotCoordinate(row)
 	if not (panel and groupId and column and row) then return nil end
+	local cache = Helper.GetFixedLayoutCache and Helper.GetFixedLayoutCache(panel) or nil
+	local key = tostring(column) .. ":" .. tostring(row)
+	local groupCells = cache and cache.entryAtStaticGroupCell and cache.entryAtStaticGroupCell[groupId] or nil
+	local cachedId = groupCells and groupCells[key] or nil
+	if cachedId and cachedId ~= skipEntryId then return cachedId, panel.entries and panel.entries[cachedId] or nil end
 	for _, entryId in ipairs(panel.order or {}) do
 		if entryId ~= skipEntryId then
 			local entry = panel.entries and panel.entries[entryId]
@@ -2043,11 +2067,7 @@ end
 
 function CooldownPanels.GetFixedGridColumnCount(panel)
 	if not panel then return 0 end
-	local columns = Helper.NormalizeFixedGridSize(panel.layout and panel.layout.fixedGridColumns, 0)
-	if columns <= 0 then
-		local _, _, builtColumns = Helper.BuildFixedSlotEntryIds(panel, nil, false)
-		columns = builtColumns or 0
-	end
+	local columns = select(1, Helper.GetFixedGridBounds(panel, false)) or 0
 	return columns
 end
 
@@ -2078,6 +2098,15 @@ function CooldownPanels.GetFixedGroupEntriesInOrder(panel, groupId, skipEntryId)
 	local entries = {}
 	groupId = Helper.NormalizeFixedGroupId(groupId)
 	if not (panel and groupId) then return entries end
+	local cache = Helper.GetFixedLayoutCache and Helper.GetFixedLayoutCache(panel) or nil
+	local cachedEntries = cache and cache.groupEntryIds and cache.groupEntryIds[groupId] or nil
+	if cachedEntries then
+		for i = 1, #cachedEntries do
+			local candidateId = cachedEntries[i]
+			if candidateId ~= skipEntryId then entries[#entries + 1] = candidateId end
+		end
+		return entries
+	end
 	for _, candidateId in ipairs(panel.order or {}) do
 		if candidateId ~= skipEntryId then
 			local entry = panel.entries and panel.entries[candidateId]
@@ -2201,6 +2230,7 @@ function CooldownPanels:CreateFixedGroup(panelId, column, row, columns, rows, na
 		end
 	end
 
+	Helper.InvalidateFixedLayoutCache(panel)
 	Helper.EnsureFixedSlotAssignments(panel)
 	return groupId
 end
@@ -2245,6 +2275,7 @@ function CooldownPanels:DeleteFixedGroup(panelId, groupId)
 	table.remove(layout.fixedGroups, groupIndex)
 	Helper.NormalizeFixedGroups(layout)
 	self:ClearFixedGroupEffectiveLayoutCache(panelId, group.id)
+	Helper.InvalidateFixedLayoutCache(panel)
 	Helper.EnsureFixedSlotAssignments(panel)
 	return true
 end
@@ -2264,6 +2295,7 @@ function CooldownPanels:SetFixedGroupMode(panelId, groupId, mode)
 	end
 	group.mode = mode
 	Helper.NormalizeFixedGroups(panel.layout)
+	Helper.InvalidateFixedLayoutCache(panel)
 	Helper.EnsureFixedSlotAssignments(panel)
 	return true
 end
@@ -2372,6 +2404,7 @@ function CooldownPanels:SetFixedGroupLayoutOverride(panelId, groupId, field, val
 		overrides[field] = nextValue
 	end
 	group.layoutOverrides = Helper.NormalizeFixedGroupLayoutOverrides(overrides)
+	CooldownPanels.BumpFixedGroupEffectiveLayoutVersion(panel)
 	self:ClearFixedGroupEffectiveLayoutCache(panelId, group.id)
 	if field == "readyGlowCheckPower" then self:RebuildPowerIndex() end
 	return true
@@ -2425,6 +2458,7 @@ function CooldownPanels:MoveFixedGroup(panelId, groupId, column, row)
 	group.column = column
 	group.row = row
 	Helper.NormalizeFixedGroups(panel.layout)
+	Helper.InvalidateFixedLayoutCache(panel)
 	Helper.EnsureFixedSlotAssignments(panel)
 	return true, nil
 end
@@ -3465,6 +3499,7 @@ function CooldownPanels:AddEntry(panelId, entryType, idValue, overrides)
 	end
 	panel.entries[entryId] = entry
 	panel.order[#panel.order + 1] = entryId
+	Helper.InvalidateFixedLayoutCache(panel)
 	if Helper.IsFixedLayout(panel.layout) then Helper.EnsureFixedSlotAssignments(panel) end
 	if entry.type == "ITEM" and entry.itemID then
 		updateItemCountCacheForItem(entry.itemID)
@@ -3540,6 +3575,7 @@ function CooldownPanels:RemoveEntry(panelId, entryId)
 	local runtime = CooldownPanels.runtime
 	if runtime and runtime.actionDisplayCounts then runtime.actionDisplayCounts[Helper.GetEntryKey(panelId, entryId)] = nil end
 	Helper.SyncOrder(panel.order, panel.entries)
+	Helper.InvalidateFixedLayoutCache(panel)
 	self:RebuildSpellIndex()
 	local cdmAuras = CooldownPanels.CDMAuras
 	if cdmAuras and cdmAuras.HandleRootRefresh then cdmAuras:HandleRootRefresh() end
@@ -3880,6 +3916,7 @@ function CooldownPanels:NormalizeAll()
 	for panelId, panel in pairs(root.panels) do
 		if panel and panel.id == nil then panel.id = panelId end
 		Helper.NormalizePanel(panel, root.defaults)
+		Helper.InvalidateFixedLayoutCache(panel)
 		normalizedPanels[panel] = true
 		Helper.SyncOrder(panel.order, panel.entries)
 		for entryId, entry in pairs(panel.entries) do
@@ -3911,7 +3948,10 @@ function CooldownPanels:NormalizeAll()
 				end
 			end
 		end
-		if removedDuplicateVariantEntry then Helper.SyncOrder(panel.order, panel.entries) end
+		if removedDuplicateVariantEntry then
+			Helper.SyncOrder(panel.order, panel.entries)
+			Helper.InvalidateFixedLayoutCache(panel)
+		end
 		if Helper.IsFixedLayout(panel.layout) then Helper.EnsureFixedSlotAssignments(panel) end
 	end
 	self:RebuildSpellIndex()
@@ -5081,6 +5121,19 @@ function CooldownPanels:ApplyEntryIconVisualLayout(icon, layout, entry)
 	local baseSize = Helper.ClampInt(icon._eqolBaseSlotSize, 12, 128, Helper.PANEL_LAYOUT_DEFAULTS.iconSize)
 	local size, offsetX, offsetY = self:ResolveEntryIconVisualLayout(layout, entry, baseSize)
 	local currentWidth, currentHeight = icon:GetSize()
+	local previewBlingSize = icon.previewBling and (size * 1.5) or nil
+	if
+		icon._eqolVisualSize == size
+		and currentWidth == size
+		and currentHeight == size
+		and icon._eqolVisualAnchor == slotAnchor
+		and icon._eqolVisualOffsetX == offsetX
+		and icon._eqolVisualOffsetY == offsetY
+		and ((not icon.previewGlowBorder) or icon.previewGlowBorder._eqolSize == size)
+		and ((not icon.previewBling) or (icon.previewBling._eqolVisualAnchor == icon and icon.previewBling._eqolVisualSize == previewBlingSize))
+	then
+		return
+	end
 	if icon._eqolVisualSize ~= size or currentWidth ~= size or currentHeight ~= size then
 		icon:SetSize(size, size)
 		icon._eqolVisualSize = size
@@ -5106,15 +5159,14 @@ function CooldownPanels:ApplyEntryIconVisualLayout(icon, layout, entry)
 	end
 	CooldownPanels.UpdatePreviewGlowBorderLayout(icon, size)
 	if icon.previewBling then
-		local blingSize = size * 1.5
 		if icon.previewBling._eqolVisualAnchor ~= icon then
 			icon.previewBling:ClearAllPoints()
 			icon.previewBling:SetPoint("CENTER", icon, "CENTER", 0, 0)
 			icon.previewBling._eqolVisualAnchor = icon
 		end
-		if icon.previewBling._eqolVisualSize ~= blingSize then
-			icon.previewBling:SetSize(blingSize, blingSize)
-			icon.previewBling._eqolVisualSize = blingSize
+		if icon.previewBling._eqolVisualSize ~= previewBlingSize then
+			icon.previewBling:SetSize(previewBlingSize, previewBlingSize)
+			icon.previewBling._eqolVisualSize = previewBlingSize
 		end
 	end
 end
@@ -5527,10 +5579,8 @@ end
 local function setGlow(frame, enabled, glowColor, glowKey, glowCondition, glowAlphaOn, glowAlphaOff, glowStyle, glowInset)
 	if not frame then return end
 	glowKey = glowKey or "EQOL_SIMPLE"
-	local fallbackColor = (Helper and Helper.PANEL_LAYOUT_DEFAULTS and Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor) or { 1, 0.82, 0.2, 1 }
-	local normalizedGlowColor = enabled and Helper.NormalizeColor(glowColor, fallbackColor) or nil
-	local normalizedGlowStyle = Helper.NormalizeGlowStyle(glowStyle, "BLIZZARD")
-	local normalizedGlowInset = Helper.NormalizeGlowInset(glowInset, 0)
+	local alphaOn = glowAlphaOn == nil and 1 or glowAlphaOn
+	local alphaOff = glowAlphaOff == nil and 0 or glowAlphaOff
 	frame._eqolGlowState = frame._eqolGlowState or {}
 	local state = frame._eqolGlowState[glowKey]
 	if not state then
@@ -5538,31 +5588,70 @@ local function setGlow(frame, enabled, glowColor, glowKey, glowCondition, glowAl
 		frame._eqolGlowState[glowKey] = state
 	end
 	local wasEnabled = state.enabled == true
-	local colorChanged = false
-	local styleChanged = state.style ~= normalizedGlowStyle
-	local insetChanged = state.inset ~= normalizedGlowInset
-	if enabled and normalizedGlowColor then
-		local currentGlowColor = state.color
-		colorChanged = not currentGlowColor
-			or currentGlowColor[1] ~= normalizedGlowColor[1]
-			or currentGlowColor[2] ~= normalizedGlowColor[2]
-			or currentGlowColor[3] ~= normalizedGlowColor[3]
-			or currentGlowColor[4] ~= normalizedGlowColor[4]
-	end
 	if not enabled then
+		if not wasEnabled then return end
 		state.enabled = false
 		state.color = nil
 		state.style = nil
 		state.inset = nil
+		state.requestedColorR = nil
+		state.requestedColorG = nil
+		state.requestedColorB = nil
+		state.requestedColorA = nil
+		state.requestedStyle = nil
+		state.requestedInset = nil
+		state.condition = nil
+		state.alphaOn = nil
+		state.alphaOff = nil
 		if Glow then Glow.Stop(frame, glowKey) end
 		return
 	end
+	local requestedColorR = glowColor and (glowColor[1] or glowColor.r) or nil
+	local requestedColorG = glowColor and (glowColor[2] or glowColor.g) or nil
+	local requestedColorB = glowColor and (glowColor[3] or glowColor.b) or nil
+	local requestedColorA = glowColor and (glowColor[4] or glowColor.a) or nil
+	if
+		wasEnabled
+		and state.requestedColorR == requestedColorR
+		and state.requestedColorG == requestedColorG
+		and state.requestedColorB == requestedColorB
+		and state.requestedColorA == requestedColorA
+		and state.requestedStyle == glowStyle
+		and state.requestedInset == glowInset
+		and state.condition == glowCondition
+		and state.alphaOn == alphaOn
+		and state.alphaOff == alphaOff
+	then
+		return
+	end
+	local fallbackColor = (Helper and Helper.PANEL_LAYOUT_DEFAULTS and Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor) or { 1, 0.82, 0.2, 1 }
+	local normalizedGlowColor = Helper.NormalizeColor(glowColor, fallbackColor)
+	local normalizedGlowStyle = Helper.NormalizeGlowStyle(glowStyle, "BLIZZARD")
+	local normalizedGlowInset = Helper.NormalizeGlowInset(glowInset, 0)
+	local colorChanged = false
+	local styleChanged = state.style ~= normalizedGlowStyle
+	local insetChanged = state.inset ~= normalizedGlowInset
+	local currentGlowColor = state.color
+	colorChanged = not currentGlowColor
+		or currentGlowColor[1] ~= normalizedGlowColor[1]
+		or currentGlowColor[2] ~= normalizedGlowColor[2]
+		or currentGlowColor[3] ~= normalizedGlowColor[3]
+		or currentGlowColor[4] ~= normalizedGlowColor[4]
 	if Glow and (not wasEnabled or colorChanged or styleChanged or insetChanged) then
 		Glow.Start(frame, glowKey, normalizedGlowStyle, { color = normalizedGlowColor, cooldown = frame.cooldown, inset = normalizedGlowInset })
 	end
 	state.enabled = true
 	state.style = normalizedGlowStyle
 	state.inset = normalizedGlowInset
+	state.requestedColorR = requestedColorR
+	state.requestedColorG = requestedColorG
+	state.requestedColorB = requestedColorB
+	state.requestedColorA = requestedColorA
+	state.requestedStyle = glowStyle
+	state.requestedInset = glowInset
+	state.condition = glowCondition
+	state.alphaOn = alphaOn
+	state.alphaOff = alphaOff
 	if normalizedGlowColor then
 		state.color = state.color or {}
 		state.color[1] = normalizedGlowColor[1]
@@ -5574,9 +5663,9 @@ local function setGlow(frame, enabled, glowColor, glowKey, glowCondition, glowAl
 	end
 	if Glow then
 		if glowCondition ~= nil then
-			Glow.SetAlphaFromBoolean(frame, glowKey, glowCondition, glowAlphaOn == nil and 1 or glowAlphaOn, glowAlphaOff == nil and 0 or glowAlphaOff)
+			Glow.SetAlphaFromBoolean(frame, glowKey, glowCondition, alphaOn, alphaOff)
 		else
-			Glow.SetAlpha(frame, glowKey, glowAlphaOn == nil and 1 or glowAlphaOn)
+			Glow.SetAlpha(frame, glowKey, alphaOn)
 		end
 	end
 end
@@ -11743,6 +11832,7 @@ local function moveEntryInOrder(panel, entryId, targetEntryId)
 	table.remove(panel.order, fromIndex)
 	if fromIndex < toIndex then toIndex = toIndex - 1 end
 	table.insert(panel.order, toIndex, entryId)
+	Helper.InvalidateFixedLayoutCache(panel)
 	return true
 end
 
@@ -11769,6 +11859,7 @@ function CooldownPanels.MoveEntryToOrderIndex(panel, entryId, targetIndex)
 	if fromIndex < targetIndex then targetIndex = targetIndex - 1 end
 	if targetIndex > #panel.order + 1 then targetIndex = #panel.order + 1 end
 	table.insert(panel.order, targetIndex, entryId)
+	Helper.InvalidateFixedLayoutCache(panel)
 	return true
 end
 
@@ -11801,6 +11892,7 @@ function CooldownPanels:MoveEntryToFixedSlot(panelId, entryId, targetSlot)
 	if Helper.NormalizeLayoutMode(layout.layoutMode, Helper.PANEL_LAYOUT_DEFAULTS.layoutMode) == "RADIAL" then return false end
 	if not Helper.IsFixedLayout(layout) then
 		layout.layoutMode = "FIXED"
+		Helper.InvalidateFixedLayoutCache(panel)
 		local gridColumns = Helper.NormalizeFixedGridSize(layout.fixedGridColumns, 0)
 		if gridColumns <= 0 then
 			gridColumns = Helper.ClampInt(layout.wrapCount, 0, 40, Helper.PANEL_LAYOUT_DEFAULTS.wrapCount or 0)
@@ -11844,6 +11936,7 @@ function CooldownPanels:MoveEntryToFixedSlot(panelId, entryId, targetSlot)
 				row = targetRow,
 			})
 			self:SyncEntryFixedGroupState(panel, fromEntry)
+			Helper.InvalidateFixedLayoutCache(panel)
 			Helper.EnsureFixedSlotAssignments(panel)
 			return true
 		end
@@ -11871,6 +11964,7 @@ function CooldownPanels:MoveEntryToFixedSlot(panelId, entryId, targetSlot)
 			end
 			if CooldownPanels.MoveEntryToOrderIndex(panel, entryId, (lastIndex or #panel.order) + 1) then changed = true end
 		end
+		if changed then Helper.InvalidateFixedLayoutCache(panel) end
 		Helper.EnsureFixedSlotAssignments(panel)
 		return changed
 	end
@@ -11896,6 +11990,7 @@ function CooldownPanels:MoveEntryToFixedSlot(panelId, entryId, targetSlot)
 		row = targetRow,
 	})
 	self:SyncEntryFixedGroupState(panel, fromEntry)
+	Helper.InvalidateFixedLayoutCache(panel)
 	Helper.EnsureFixedSlotAssignments(panel)
 	return true
 end
@@ -13403,16 +13498,35 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 	local fixedSlotCount = 0
 	local fixedGridColumns = 0
 	local fixedGridRows = 0
-	local fixedGroups = fixedLayout and CooldownPanels.GetFixedGroups(panel) or nil
-	local fixedGroupById = fixedLayout and {} or nil
-	local fixedGroupVisibleEntries = fixedLayout and {} or nil
+	local fixedLayoutCache = fixedLayout and Helper.GetFixedLayoutCache and Helper.GetFixedLayoutCache(panel) or nil
+	local fixedGroups = fixedLayout and (fixedLayoutCache and fixedLayoutCache.groups or CooldownPanels.GetFixedGroups(panel)) or nil
+	local fixedGroupById = fixedLayout and (fixedLayoutCache and fixedLayoutCache.groupById or {}) or nil
+	local fixedGroupVisibleCounts = fixedLayout and {} or nil
 	local effectiveLayoutCache = {}
 	if fixedLayout then
-		_, fixedSlotCount, fixedGridColumns, fixedGridRows = Helper.BuildFixedSlotEntryIds(panel, nil, false)
-		if fixedGroups then
+		if fixedLayoutCache then
+			fixedSlotCount = fixedLayoutCache.slotCount or 0
+			fixedGridColumns = fixedLayoutCache.boundsColumns or 0
+			fixedGridRows = fixedLayoutCache.boundsRows or 0
+		else
+			_, fixedSlotCount, fixedGridColumns, fixedGridRows = Helper.BuildFixedSlotEntryIds(panel, nil, false)
+		end
+		if fixedGroups and fixedGroupById and not fixedLayoutCache then
 			for i = 1, #fixedGroups do
 				local fixedGroup = fixedGroups[i]
 				if fixedGroup then fixedGroupById[fixedGroup.id] = fixedGroup end
+			end
+		end
+		if fixedGroups then
+			for i = 1, #fixedGroups do
+				local fixedGroup = fixedGroups[i]
+				if fixedGroup then
+					if fixedGroup.layoutOverrides then
+						effectiveLayoutCache[fixedGroup.id] = self:GetFixedGroupEffectiveLayout(panelId, fixedGroup.id, effectiveLayoutCache) or layout
+					else
+						effectiveLayoutCache[fixedGroup.id] = layout
+					end
+				end
 			end
 		end
 	end
@@ -13435,7 +13549,13 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 	for _, entryId in ipairs(order) do
 		local entry = panel.entries and panel.entries[entryId]
 		if entry then
-			local entryLayout = self:GetEntryEffectiveLayout(panelId, entry, effectiveLayoutCache, panel) or layout
+			local entryLayout = layout
+			if fixedLayout then
+				local groupId = Helper.NormalizeFixedGroupId(entry.fixedGroupId)
+				if groupId and fixedGroupById and fixedGroupById[groupId] then entryLayout = effectiveLayoutCache[groupId] or layout end
+			else
+				entryLayout = self:GetEntryEffectiveLayout(panelId, entry, effectiveLayoutCache, panel) or layout
+			end
 			local macro = entry.type == "MACRO" and CooldownPanels.ResolveMacroEntry(entry) or nil
 			local resolvedType = (macro and macro.kind) or entry.type
 			local resolvedBaseItemId = resolvedType == "ITEM" and ((macro and macro.itemID) or entry.itemID) or nil
@@ -13693,7 +13813,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				if fixedLayout then
 					local fixedGroup = entry.fixedGroupId and fixedGroupById and fixedGroupById[entry.fixedGroupId] or nil
 					if fixedGroup then
-						if CooldownPanels.IsFixedGroupStatic(fixedGroup) then
+						if fixedGroup._eqolIsStatic == true then
 							local slotColumn = Helper.NormalizeSlotCoordinate(entry.slotColumn)
 							local slotRow = Helper.NormalizeSlotCoordinate(entry.slotRow)
 							if
@@ -13712,15 +13832,14 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 								targetIndex = nil
 							end
 						else
-							local list = fixedGroupVisibleEntries[fixedGroup.id]
-							if not list then
-								list = {}
-								fixedGroupVisibleEntries[fixedGroup.id] = list
+							local groupVisibleCount = (fixedGroupVisibleCounts[fixedGroup.id] or 0) + 1
+							fixedGroupVisibleCounts[fixedGroup.id] = groupVisibleCount
+							targetIndex = fixedGroup._eqolDynamicTargetIndices and fixedGroup._eqolDynamicTargetIndices[groupVisibleCount] or nil
+							if targetIndex and targetIndex <= fixedSlotCount then
+								visibleSlotsUsed[targetIndex] = true
+							else
+								targetIndex = nil
 							end
-							data = {}
-							list[#list + 1] = data
-							targetIndex = nil
-							data._eqolFixedGroupId = fixedGroup.id
 						end
 					else
 						local slotColumn = Helper.NormalizeSlotCoordinate(entry.slotColumn)
@@ -13857,27 +13976,6 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 		end
 	end
 
-	if fixedLayout and fixedGroups then
-		for i = 1, #fixedGroups do
-			local group = fixedGroups[i]
-			local list = group and not CooldownPanels.IsFixedGroupStatic(group) and fixedGroupVisibleEntries and fixedGroupVisibleEntries[group.id] or nil
-			if list then
-				local capacity = Helper.GetFixedGroupCapacity(group)
-				local limit = math.min(capacity, #list)
-				for groupIndex = 1, limit do
-					local column = group.column + ((groupIndex - 1) % group.columns)
-					local row = group.row + math.floor((groupIndex - 1) / group.columns)
-					if fixedGridColumns > 0 and fixedGridRows > 0 and column <= fixedGridColumns and row <= fixedGridRows then
-						local targetIndex = ((row - 1) * fixedGridColumns) + column
-						visible[targetIndex] = list[groupIndex]
-						visibleSlotsUsed[targetIndex] = true
-						if targetIndex > fixedSlotCount then fixedSlotCount = targetIndex end
-					end
-				end
-			end
-		end
-	end
-
 	if fixedLayout then
 		for i = 1, fixedSlotCount do
 			if not visibleSlotsUsed[i] then visible[i] = nil end
@@ -13916,47 +14014,53 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 		end
 		if not data then
 			icon.entryId = nil
-			CooldownPanels:ApplyEntryIconVisualLayout(icon, nil, nil)
-			CooldownPanels:HideEditorGhostIcon(icon)
-			clearPreviewCooldown(icon.cooldown)
-			icon.cooldown:Clear()
-			icon.cooldown._eqolPanelId = nil
-			icon.cooldown._eqolEntryId = nil
-			icon.cooldown._eqolCooldownIsGCD = nil
-			icon.cooldown._eqolSoundReady = nil
-			icon.cooldown._eqolSoundName = nil
-			icon.cooldown._eqolGlowReady = nil
-			icon.cooldown._eqolGlowDuration = nil
-			if icon.cooldown.SetScript then icon.cooldown:SetScript("OnCooldownDone", nil) end
-			if icon.cooldown.Resume then icon.cooldown:Resume() end
-			icon.count:Hide()
-			icon.charges:Hide()
-			if icon.rangeOverlay then icon.rangeOverlay:Hide() end
-			if icon.keybind then icon.keybind:Hide() end
-			if icon.staticText then icon.staticText:Hide() end
-			if icon.stateTexture then icon.stateTexture:Hide() end
-			if icon.stateTextureSecond then icon.stateTextureSecond:Hide() end
-			CooldownPanels.HidePreviewGlowBorder(icon)
-			if icon.previewBling then icon.previewBling:Hide() end
-			if icon.previewSoundBorder then icon.previewSoundBorder:Hide() end
-			icon._eqolLayoutDragRangePreview = nil
-			icon.texture:SetDesaturated(false)
-			icon.texture:SetAlpha(1)
-			CooldownPanels.ApplyIconTooltip(icon, nil, false)
-			setAssistedHighlight(icon, false)
-			CooldownPanels.StopAllIconGlows(icon)
-			if layoutEditActive and fixedLayout then
-				icon:Show()
-				icon:SetAlpha(1)
-				icon._eqolPreviewCellColumn = slotColumn
-				icon._eqolPreviewCellRow = slotRow
-				icon.texture:SetTexture(Helper.PREVIEW_ICON)
-				icon.texture:SetShown(false)
-				icon.texture:SetAlpha(0)
-			else
+			if not layoutEditActive and icon._eqolRuntimeEmpty == true then
 				icon:Hide()
+			else
+				CooldownPanels:ApplyEntryIconVisualLayout(icon, nil, nil)
+				CooldownPanels:HideEditorGhostIcon(icon)
+				clearPreviewCooldown(icon.cooldown)
+				icon.cooldown:Clear()
+				icon.cooldown._eqolPanelId = nil
+				icon.cooldown._eqolEntryId = nil
+				icon.cooldown._eqolCooldownIsGCD = nil
+				icon.cooldown._eqolSoundReady = nil
+				icon.cooldown._eqolSoundName = nil
+				icon.cooldown._eqolGlowReady = nil
+				icon.cooldown._eqolGlowDuration = nil
+				if icon.cooldown.SetScript then icon.cooldown:SetScript("OnCooldownDone", nil) end
+				if icon.cooldown.Resume then icon.cooldown:Resume() end
+				icon.count:Hide()
+				icon.charges:Hide()
+				if icon.rangeOverlay then icon.rangeOverlay:Hide() end
+				if icon.keybind then icon.keybind:Hide() end
+				if icon.staticText then icon.staticText:Hide() end
+				if icon.stateTexture then icon.stateTexture:Hide() end
+				if icon.stateTextureSecond then icon.stateTextureSecond:Hide() end
+				CooldownPanels.HidePreviewGlowBorder(icon)
+				if icon.previewBling then icon.previewBling:Hide() end
+				if icon.previewSoundBorder then icon.previewSoundBorder:Hide() end
+				icon._eqolLayoutDragRangePreview = nil
+				icon.texture:SetDesaturated(false)
+				icon.texture:SetAlpha(1)
+				CooldownPanels.ApplyIconTooltip(icon, nil, false)
+				setAssistedHighlight(icon, false)
+				CooldownPanels.StopAllIconGlows(icon)
+				if layoutEditActive and fixedLayout then
+					icon:Show()
+					icon:SetAlpha(1)
+					icon._eqolPreviewCellColumn = slotColumn
+					icon._eqolPreviewCellRow = slotRow
+					icon.texture:SetTexture(Helper.PREVIEW_ICON)
+					icon.texture:SetShown(false)
+					icon.texture:SetAlpha(0)
+				else
+					icon:Hide()
+				end
 			end
+			icon._eqolRuntimeEmpty = not layoutEditActive
 		else
+			icon._eqolRuntimeEmpty = nil
 			icon:Show()
 			icon.entryId = data.entryId
 			icon._eqolPreviewCellColumn = slotColumn
@@ -14822,6 +14926,7 @@ applyEditLayout = function(panelId, field, value, skipRefresh)
 		layout.spacing = Helper.ClampInt(value, 0, Helper.SPACING_RANGE or 200, layout.spacing)
 	elseif field == "layoutMode" then
 		layout.layoutMode = Helper.NormalizeLayoutMode(value, layout.layoutMode or Helper.PANEL_LAYOUT_DEFAULTS.layoutMode)
+		Helper.InvalidateFixedLayoutCache(panel)
 		if Helper.IsFixedLayout(layout) then
 			local maxColumn, maxRow = Helper.EnsureFixedSlotAssignments(panel)
 			if Helper.NormalizeFixedGridSize(layout.fixedGridColumns, 0) <= 0 then layout.fixedGridColumns = math.max(maxColumn or 0, 1) end
@@ -14829,6 +14934,7 @@ applyEditLayout = function(panelId, field, value, skipRefresh)
 		end
 	elseif field == "fixedSlotCount" then
 		local minimum = 0
+		Helper.InvalidateFixedLayoutCache(panel)
 		if Helper.IsFixedLayout(layout) then
 			local maxColumn = Helper.EnsureFixedSlotAssignments(panel)
 			minimum = maxColumn or 0
@@ -14836,6 +14942,7 @@ applyEditLayout = function(panelId, field, value, skipRefresh)
 		layout.fixedGridColumns = math.max(Helper.NormalizeFixedGridSize(value, layout.fixedGridColumns or Helper.PANEL_LAYOUT_DEFAULTS.fixedGridColumns or 0), minimum)
 	elseif field == "fixedGridRows" then
 		local minimum = 0
+		Helper.InvalidateFixedLayoutCache(panel)
 		if Helper.IsFixedLayout(layout) then
 			local _, maxRow = Helper.EnsureFixedSlotAssignments(panel)
 			minimum = maxRow or 0
@@ -14845,6 +14952,7 @@ applyEditLayout = function(panelId, field, value, skipRefresh)
 		layout.direction = Helper.NormalizeDirection(value, layout.direction)
 	elseif field == "wrapCount" then
 		layout.wrapCount = Helper.ClampInt(value, 0, 40, layout.wrapCount)
+		if Helper.IsFixedLayout(layout) then Helper.InvalidateFixedLayoutCache(panel) end
 	elseif field == "wrapDirection" then
 		layout.wrapDirection = Helper.NormalizeDirection(value, layout.wrapDirection)
 	elseif field == "growthPoint" then
@@ -15060,6 +15168,7 @@ applyEditLayout = function(panelId, field, value, skipRefresh)
 			if not layout.rowSizes or layout.rowSizes[i] == nil then syncEditModeValue(panelId, "rowSize" .. i, base) end
 		end
 	end
+	if Helper.IsFixedLayout(layout) then CooldownPanels.BumpFixedGroupEffectiveLayoutVersion(panel) end
 
 	if not skipRefresh then CooldownPanels:RefreshPanelForCurrentEditContext(panelId, false) end
 	if field == "layoutMode" and not skipRefresh then refreshEditModeSettings() end

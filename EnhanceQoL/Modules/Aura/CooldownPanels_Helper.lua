@@ -524,10 +524,6 @@ end
 function Helper.NormalizeFixedGroupLayoutOverrides(value)
 	if type(value) ~= "table" then return nil end
 	local normalized = {}
-	local iconOffsetX = Helper.ClampInt(value.iconOffsetX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0)
-	local iconOffsetY = Helper.ClampInt(value.iconOffsetY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0)
-	if iconOffsetX ~= 0 then normalized.iconOffsetX = iconOffsetX end
-	if iconOffsetY ~= 0 then normalized.iconOffsetY = iconOffsetY end
 	if type(value.procGlowEnabled) == "boolean" then normalized.procGlowEnabled = value.procGlowEnabled == true end
 	if type(value.hideGlowOutOfCombat) == "boolean" then normalized.hideGlowOutOfCombat = value.hideGlowOutOfCombat == true end
 	if value.procGlowStyle ~= nil then normalized.procGlowStyle = Helper.NormalizeGlowStyle(value.procGlowStyle, Helper.PANEL_LAYOUT_DEFAULTS.readyGlowStyle) end
@@ -562,6 +558,46 @@ local function getFixedGridDefaultColumns(panel)
 end
 
 local function getFixedCellKey(column, row) return tostring(column) .. ":" .. tostring(row) end
+
+local function fixedLayoutCacheHasMissingDynamicTargets(candidate)
+	local groups = candidate and candidate.groups or nil
+	if type(groups) ~= "table" then return false end
+	for i = 1, #groups do
+		local group = groups[i]
+		if group and Helper.FixedGroupUsesStaticSlots(group) ~= true and type(group._eqolDynamicTargetIndices) ~= "table" then return true end
+	end
+	return false
+end
+
+local function isWithinConfiguredFixedGrid(column, row, configuredColumns, configuredRows)
+	if not (column and row) then return false end
+	if configuredColumns > 0 and column > configuredColumns then return false end
+	if configuredRows > 0 and row > configuredRows then return false end
+	return true
+end
+
+local function claimNextFreeFixedCell(nextIndex, columns, configuredColumns, configuredRows, used)
+	while true do
+		local column = ((nextIndex - 1) % columns) + 1
+		local row = math.floor((nextIndex - 1) / columns) + 1
+		if configuredRows > 0 and row > configuredRows then return nil, nil, nextIndex end
+		nextIndex = nextIndex + 1
+		local key = getFixedCellKey(column, row)
+		if isWithinConfiguredFixedGrid(column, row, configuredColumns, configuredRows) and not used[key] then return column, row, nextIndex end
+	end
+end
+
+local function claimNextFreeFixedGroupCell(groupState, configuredColumns, configuredRows)
+	local group = groupState and groupState.group or nil
+	if not group then return nil end
+	for groupRow = group.row, group.row + group.rows - 1 do
+		for groupColumn = group.column, group.column + group.columns - 1 do
+			local key = getFixedCellKey(groupColumn, groupRow)
+			if isWithinConfiguredFixedGrid(groupColumn, groupRow, configuredColumns, configuredRows) and not groupState.used[key] then return groupColumn, groupRow end
+		end
+	end
+	return nil
+end
 
 function Helper.NormalizeFixedGroupId(value)
 	if type(value) == "number" then value = tostring(math.floor(value)) end
@@ -622,7 +658,6 @@ function Helper.NormalizeFixedGroups(layout)
 				group._eqolCapacity = columns * rows
 				group.iconSize = Helper.NormalizeFixedGroupIconSize(group.iconSize)
 				group.layoutOverrides = Helper.NormalizeFixedGroupLayoutOverrides(group.layoutOverrides)
-				group._eqolDynamicTargetIndices = nil
 				seen[id] = true
 				writeIndex = writeIndex + 1
 			end
@@ -763,6 +798,7 @@ function Helper.GetFixedLayoutCache(panel)
 		and cache.fixedGridColumns == layout.fixedGridColumns
 		and cache.fixedGridRows == layout.fixedGridRows
 		and cache.wrapCount == layout.wrapCount
+		and not fixedLayoutCacheHasMissingDynamicTargets(cache)
 	then
 		return cache
 	end
@@ -784,36 +820,6 @@ function Helper.GetFixedLayoutCache(panel)
 	local nextIndex = 1
 	local maxColumn = 0
 	local maxRow = 0
-
-	local function isWithinGrid(column, row)
-		if not (column and row) then return false end
-		if configuredColumns > 0 and column > configuredColumns then return false end
-		if configuredRows > 0 and row > configuredRows then return false end
-		return true
-	end
-
-	local function claimNextFreeCell()
-		while true do
-			local column = ((nextIndex - 1) % columns) + 1
-			local row = math.floor((nextIndex - 1) / columns) + 1
-			if configuredRows > 0 and row > configuredRows then return nil end
-			nextIndex = nextIndex + 1
-			local key = getFixedCellKey(column, row)
-			if isWithinGrid(column, row) and not used[key] then return column, row end
-		end
-	end
-
-	local function claimNextFreeGroupCell(groupState)
-		local group = groupState and groupState.group or nil
-		if not group then return nil end
-		for groupRow = group.row, group.row + group.rows - 1 do
-			for groupColumn = group.column, group.column + group.columns - 1 do
-				local key = getFixedCellKey(groupColumn, groupRow)
-				if isWithinGrid(groupColumn, groupRow) and not groupState.used[key] then return groupColumn, groupRow end
-			end
-		end
-		return nil
-	end
 
 	for i = 1, #fixedGroups do
 		local group = fixedGroups[i]
@@ -860,7 +866,7 @@ function Helper.GetFixedLayoutCache(panel)
 						and column <= (group.column + group.columns - 1)
 						and row >= group.row
 						and row <= (group.row + group.rows - 1)
-						and isWithinGrid(column, row)
+						and isWithinConfiguredFixedGrid(column, row, configuredColumns, configuredRows)
 						and not groupState.used[key]
 					if not withinGroup then
 						column = nil
@@ -868,7 +874,7 @@ function Helper.GetFixedLayoutCache(panel)
 						key = nil
 					end
 					if not (column and row) then
-						column, row = claimNextFreeGroupCell(groupState)
+						column, row = claimNextFreeFixedGroupCell(groupState, configuredColumns, configuredRows)
 						key = (column and row) and getFixedCellKey(column, row) or nil
 					end
 					if key then
@@ -902,7 +908,7 @@ function Helper.GetFixedLayoutCache(panel)
 				local column = Helper.NormalizeSlotCoordinate(entry.slotColumn)
 				local row = Helper.NormalizeSlotCoordinate(entry.slotRow)
 				local key = (column and row) and getFixedCellKey(column, row) or nil
-				if key and (used[key] or not isWithinGrid(column, row)) then
+				if key and (used[key] or not isWithinConfiguredFixedGrid(column, row, configuredColumns, configuredRows)) then
 					column = nil
 					row = nil
 					key = nil
@@ -913,7 +919,7 @@ function Helper.GetFixedLayoutCache(panel)
 						local derivedColumn = ((slot - 1) % columns) + 1
 						local derivedRow = math.floor((slot - 1) / columns) + 1
 						local derivedKey = getFixedCellKey(derivedColumn, derivedRow)
-						if isWithinGrid(derivedColumn, derivedRow) and not used[derivedKey] then
+						if isWithinConfiguredFixedGrid(derivedColumn, derivedRow, configuredColumns, configuredRows) and not used[derivedKey] then
 							column = derivedColumn
 							row = derivedRow
 							key = derivedKey
@@ -921,7 +927,7 @@ function Helper.GetFixedLayoutCache(panel)
 					end
 				end
 				if not (column and row) then
-					column, row = claimNextFreeCell()
+					column, row, nextIndex = claimNextFreeFixedCell(nextIndex, columns, configuredColumns, configuredRows, used)
 					key = (column and row) and getFixedCellKey(column, row) or nil
 				end
 				if key then
@@ -951,6 +957,7 @@ function Helper.GetFixedLayoutCache(panel)
 	local boundsRows = configuredRows > 0 and configuredRows or maxRow
 	local slotCount = 0
 	local slotEntryIds = {}
+	local staticTargetIndexByEntryId = {}
 	if not (boundsColumns <= 0 and boundsRows <= 0) then
 		if boundsColumns <= 0 then boundsColumns = 1 end
 		if boundsRows <= 0 then boundsRows = 1 end
@@ -981,7 +988,11 @@ function Helper.GetFixedLayoutCache(panel)
 			local placed = placedEntries[i]
 			local column = placed.column
 			local row = placed.row
-			if column and row and column <= boundsColumns and row <= boundsRows then slotEntryIds[((row - 1) * boundsColumns) + column] = placed.entryId end
+			if column and row and column <= boundsColumns and row <= boundsRows then
+				local targetIndex = ((row - 1) * boundsColumns) + column
+				slotEntryIds[targetIndex] = placed.entryId
+				staticTargetIndexByEntryId[placed.entryId] = targetIndex
+			end
 		end
 		for i = 1, #fixedGroups do
 			local group = fixedGroups[i]
@@ -1022,6 +1033,7 @@ function Helper.GetFixedLayoutCache(panel)
 		boundsRows = boundsRows,
 		slotCount = slotCount,
 		slotEntryIds = slotEntryIds,
+		staticTargetIndexByEntryId = staticTargetIndexByEntryId,
 	}
 	panel._eqolFixedLayoutCache = cache
 	return cache
@@ -1081,13 +1093,19 @@ end
 
 function Helper.BuildFixedSlotEntryIds(panel, filterFn, includePreviewPadding)
 	if type(panel) ~= "table" or type(panel.entries) ~= "table" or type(panel.order) ~= "table" then return nil, 0, 0, 0 end
+	local previewPadding = includePreviewPadding == true
 	local cache = Helper.GetFixedLayoutCache(panel)
-	local columns, rows = Helper.GetFixedGridBounds(panel, includePreviewPadding == true)
+	if type(filterFn) ~= "function" and not previewPadding and cache then
+		return cache.slotEntryIds or {}, cache.slotCount or 0, cache.boundsColumns or 0, cache.boundsRows or 0
+	end
+	local columns = cache and cache.boundsColumns or 0
+	local rows = cache and cache.boundsRows or 0
+	if previewPadding or not cache then columns, rows = Helper.GetFixedGridBounds(panel, previewPadding) end
 	local count = columns * rows
+	if count <= 0 then return {}, 0, columns, rows end
 	local slotEntryIds = {}
-	if count <= 0 then return slotEntryIds, 0, columns, rows end
-	if type(filterFn) ~= "function" and includePreviewPadding ~= true and cache and cache.boundsColumns == columns and cache.boundsRows == rows then return cache.slotEntryIds, cache.slotCount, columns, rows end
 	local groups = cache and cache.groups or Helper.NormalizeFixedGroups(panel.layout)
+	local groupById = cache and cache.groupById or nil
 	local dynamicGroupEntries = {}
 	if type(filterFn) ~= "function" and cache and cache.dynamicGroupEntries then
 		dynamicGroupEntries = cache.dynamicGroupEntries
@@ -1102,7 +1120,7 @@ function Helper.BuildFixedSlotEntryIds(panel, filterFn, includePreviewPadding)
 		local entry = panel.entries[entryId]
 		if entry and (type(filterFn) ~= "function" or filterFn(entry, entryId) ~= false) then
 			local groupId = Helper.NormalizeFixedGroupId(entry.fixedGroupId)
-			local group = groupId and Helper.GetFixedGroupById(panel, groupId) or nil
+			local group = groupId and ((groupById and groupById[groupId]) or Helper.GetFixedGroupById(panel, groupId)) or nil
 			if group then
 				if Helper.FixedGroupUsesStaticSlots(group) then
 					local column = Helper.NormalizeSlotCoordinate(entry.slotColumn)
@@ -1598,6 +1616,7 @@ function Helper.NormalizePanel(panel, defaults)
 	defaults = defaults or {}
 	local layoutDefaults = defaults.layout or Helper.PANEL_LAYOUT_DEFAULTS
 	if type(panel.layout) ~= "table" then panel.layout = {} end
+	Helper.InvalidateFixedLayoutCache(panel)
 	local hadKeybindsEnabled = panel.layout.keybindsEnabled
 	local hadChargesCooldown = panel.layout.showChargesCooldown
 	for key, value in pairs(layoutDefaults) do

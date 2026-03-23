@@ -85,6 +85,38 @@ local function getRuntime()
 	return runtime
 end
 
+function CDMAuras:BeginRuntimePass()
+	local runtime = getRuntime()
+	local depth = (runtime.runtimePassDepth or 0) + 1
+	runtime.runtimePassDepth = depth
+	if depth == 1 then runtime.runtimePass = (runtime.runtimePass or 0) + 1 end
+	return runtime.runtimePass
+end
+
+function CDMAuras:EndRuntimePass()
+	local runtime = getRuntime()
+	local depth = tonumber(runtime.runtimePassDepth) or 0
+	if depth <= 1 then
+		runtime.runtimePassDepth = nil
+	else
+		runtime.runtimePassDepth = depth - 1
+	end
+end
+
+local function getRuntimePassCacheTable(field)
+	local runtime = getRuntime()
+	local pass = runtime.runtimePass
+	if not pass then return nil, runtime end
+	local passField = field .. "Pass"
+	local cache = runtime[field]
+	if runtime[passField] ~= pass or type(cache) ~= "table" then
+		cache = setmetatable({}, { __mode = "k" })
+		runtime[field] = cache
+		runtime[passField] = pass
+	end
+	return cache, runtime
+end
+
 local function getEntryKey(panelId, entryId) return Helper.GetEntryKey(panelId, entryId) end
 
 local function requestPanelRefresh(panelId)
@@ -260,6 +292,11 @@ local function getTotemSlot(frame)
 end
 
 local function getTotemCooldownInfo(frame)
+	local passCache = frame and getRuntimePassCacheTable("runtimePassTotemCooldownByFrame") or nil
+	if passCache then
+		local cached = passCache[frame]
+		if cached then return cached.startTime, cached.duration, cached.modRate end
+	end
 	if not (frame and frame.totemData ~= nil and GetTotemInfo) then return nil, nil, nil end
 	local slot = getTotemSlot(frame)
 	if not slot then return nil, nil, nil end
@@ -268,6 +305,12 @@ local function getTotemCooldownInfo(frame)
 	local modRate = 1
 	local okMod, rawModRate = pcall(function() return frame.totemData and frame.totemData.modRate end)
 	if okMod and rawModRate then modRate = rawModRate end
+	if passCache then
+		passCache[frame] = passCache[frame] or {}
+		passCache[frame].startTime = startTime
+		passCache[frame].duration = duration
+		passCache[frame].modRate = modRate
+	end
 	return startTime, duration, modRate
 end
 
@@ -291,6 +334,41 @@ local function getCooldownViewerInfo(cooldownID)
 	local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cooldownID)
 	runtime.cooldownViewerInfoByID[key] = info or false
 	return info
+end
+
+local function frameTrackedSpellMatchesCandidate(candidateSpellID, source, trackedSpellID, sawAssociatedSpellID, sawSecretLinkedSpellID)
+	if not candidateSpellID then return false, sawAssociatedSpellID, sawSecretLinkedSpellID end
+	sawAssociatedSpellID = true
+	local ok, matches = pcall(function() return candidateSpellID == trackedSpellID end)
+	if ok then return matches, sawAssociatedSpellID, sawSecretLinkedSpellID end
+	if source == "linkedSpellID" then sawSecretLinkedSpellID = true end
+	return false, sawAssociatedSpellID, sawSecretLinkedSpellID
+end
+
+local function frameTrackedSpellMatchesCooldownInfo(info, trackedSpellID, sawAssociatedSpellID, sawSecretLinkedSpellID)
+	if not info then return false, sawAssociatedSpellID, sawSecretLinkedSpellID end
+	local matched = false
+	matched, sawAssociatedSpellID, sawSecretLinkedSpellID =
+		frameTrackedSpellMatchesCandidate(info.linkedSpellID, "linkedSpellID", trackedSpellID, sawAssociatedSpellID, sawSecretLinkedSpellID)
+	if matched then return true, sawAssociatedSpellID, sawSecretLinkedSpellID end
+	matched, sawAssociatedSpellID, sawSecretLinkedSpellID =
+		frameTrackedSpellMatchesCandidate(info.overrideTooltipSpellID, "overrideTooltipSpellID", trackedSpellID, sawAssociatedSpellID, sawSecretLinkedSpellID)
+	if matched then return true, sawAssociatedSpellID, sawSecretLinkedSpellID end
+	matched, sawAssociatedSpellID, sawSecretLinkedSpellID =
+		frameTrackedSpellMatchesCandidate(info.overrideSpellID, "overrideSpellID", trackedSpellID, sawAssociatedSpellID, sawSecretLinkedSpellID)
+	if matched then return true, sawAssociatedSpellID, sawSecretLinkedSpellID end
+	matched, sawAssociatedSpellID, sawSecretLinkedSpellID =
+		frameTrackedSpellMatchesCandidate(info.spellID, "spellID", trackedSpellID, sawAssociatedSpellID, sawSecretLinkedSpellID)
+	if matched then return true, sawAssociatedSpellID, sawSecretLinkedSpellID end
+	local linkedSpellIDs = info.linkedSpellIDs
+	if type(linkedSpellIDs) == "table" then
+		for i = 1, #linkedSpellIDs do
+			matched, sawAssociatedSpellID, sawSecretLinkedSpellID =
+				frameTrackedSpellMatchesCandidate(linkedSpellIDs[i], "linkedSpellIDs", trackedSpellID, sawAssociatedSpellID, sawSecretLinkedSpellID)
+			if matched then return true, sawAssociatedSpellID, sawSecretLinkedSpellID end
+		end
+	end
+	return false, sawAssociatedSpellID, sawSecretLinkedSpellID
 end
 
 local function resolveSpellFromCooldownID(cooldownID, frame)
@@ -837,44 +915,61 @@ local function isFrameShowingTrackedSpell(frame, entry, trackedUnit)
 	local trackedCooldownID = entry and (entry.signatureCooldownID or entry.cooldownID)
 	if not (frame and trackedSpellID) then return true end
 	local strictMatch = normalizeTrackedUnit(trackedUnit) == "target"
+	local framePassCache = getRuntimePassCacheTable("runtimePassFrameSpellMatches")
+	local frameCache
+	local matchKey
+	if framePassCache then
+		frameCache = framePassCache[frame]
+		if not frameCache then
+			frameCache = {}
+			framePassCache[frame] = frameCache
+		end
+		matchKey = tostring(normalizeTrackedUnit(trackedUnit) or "")
+			.. "\031"
+			.. tostring(trackedSpellID or "")
+			.. "\031"
+			.. tostring(trackedCooldownID or "")
+		if frameCache[matchKey] ~= nil then return frameCache[matchKey] end
+	end
 	if type(frame.SpellIDMatchesAnyAssociatedSpellIDs) == "function" then
 		local ok, matches = pcall(frame.SpellIDMatchesAnyAssociatedSpellIDs, frame, trackedSpellID)
-		if ok then return matches == true end
+		if ok then
+			local result = matches == true
+			if frameCache and matchKey then frameCache[matchKey] = result end
+			return result
+		end
 	end
 	local sawAssociatedSpellID = false
 	local sawSecretLinkedSpellID = false
-
-	local function matchesSpellID(candidateSpellID, source)
-		if not candidateSpellID then return false end
-		sawAssociatedSpellID = true
-		local ok, matches = pcall(function() return candidateSpellID == trackedSpellID end)
-		if ok then return matches end
-		if source == "linkedSpellID" then sawSecretLinkedSpellID = true end
-		return false
+	local matched
+	matched, sawAssociatedSpellID, sawSecretLinkedSpellID =
+		frameTrackedSpellMatchesCandidate(frame.auraSpellID, "auraSpellID", trackedSpellID, sawAssociatedSpellID, sawSecretLinkedSpellID)
+	if matched then
+		if frameCache and matchKey then frameCache[matchKey] = true end
+		return true
 	end
-
-	if matchesSpellID(frame.auraSpellID, "auraSpellID") then return true end
-
-	local function checkCooldownInfo(info)
-		if not info then return false end
-		if matchesSpellID(info.linkedSpellID, "linkedSpellID") then return true end
-		if matchesSpellID(info.overrideTooltipSpellID, "overrideTooltipSpellID") then return true end
-		if matchesSpellID(info.overrideSpellID, "overrideSpellID") then return true end
-		if matchesSpellID(info.spellID, "spellID") then return true end
-		local linkedSpellIDs = info.linkedSpellIDs
-		if type(linkedSpellIDs) == "table" then
-			for i = 1, #linkedSpellIDs do
-				if matchesSpellID(linkedSpellIDs[i], "linkedSpellIDs") then return true end
-			end
-		end
-		return false
+	matched, sawAssociatedSpellID, sawSecretLinkedSpellID =
+		frameTrackedSpellMatchesCooldownInfo(frame.cooldownInfo, trackedSpellID, sawAssociatedSpellID, sawSecretLinkedSpellID)
+	if matched then
+		if frameCache and matchKey then frameCache[matchKey] = true end
+		return true
 	end
-
-	if checkCooldownInfo(frame.cooldownInfo) then return true end
-	if checkCooldownInfo(getCooldownViewerInfo(trackedCooldownID)) then return true end
-	if sawSecretLinkedSpellID then return true end
-	if strictMatch then return false end
-	return not sawAssociatedSpellID
+	matched, sawAssociatedSpellID, sawSecretLinkedSpellID =
+		frameTrackedSpellMatchesCooldownInfo(getCooldownViewerInfo(trackedCooldownID), trackedSpellID, sawAssociatedSpellID, sawSecretLinkedSpellID)
+	if matched then
+		if frameCache and matchKey then frameCache[matchKey] = true end
+		return true
+	end
+	local result
+	if sawSecretLinkedSpellID then
+		result = true
+	elseif strictMatch then
+		result = false
+	else
+		result = not sawAssociatedSpellID
+	end
+	if frameCache and matchKey then frameCache[matchKey] = result end
+	return result
 end
 
 local function getFrameAuraUnit(frame)
@@ -888,12 +983,28 @@ local function getFrameAuraUnit(frame)
 end
 
 local function getFrameAuraData(frame)
+	local passCache = frame and getRuntimePassCacheTable("runtimePassFrameAuraData") or nil
+	if passCache then
+		local cached = passCache[frame]
+		if cached then return cached.auraData, cached.auraUnit, cached.auraInstanceID end
+	end
 	if not frame then return nil, nil, nil end
 	local auraUnit = getFrameAuraUnit(frame)
 	local auraInstanceID = hasAuraInstanceID(frame.auraInstanceID) and frame.auraInstanceID or nil
 	if auraUnit and auraInstanceID and C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID then
 		local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(auraUnit, auraInstanceID)
+		if passCache then
+			passCache[frame] = passCache[frame] or {}
+			passCache[frame].auraData = auraData
+			passCache[frame].auraUnit = auraUnit
+			passCache[frame].auraInstanceID = auraInstanceID
+		end
 		if auraData then return auraData, auraUnit, auraInstanceID end
+	elseif passCache then
+		passCache[frame] = passCache[frame] or {}
+		passCache[frame].auraData = nil
+		passCache[frame].auraUnit = auraUnit
+		passCache[frame].auraInstanceID = auraInstanceID
 	end
 	return nil, auraUnit, auraInstanceID
 end
@@ -1307,12 +1418,30 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry)
 		runtime.entryStates[key] = state
 	end
 
-	local _, byCooldownID, bySpellID = self:ScanTrackedBuffs(false)
-	local scanInfo, resolvedCooldownID = resolveEntryScanInfo(entry, byCooldownID, bySpellID)
-	if not scanInfo then
-		self:InvalidateScan()
-		local _, rescanned, rescannedBySpellID = self:ScanTrackedBuffs(true)
-		scanInfo, resolvedCooldownID = resolveEntryScanInfo(entry, rescanned, rescannedBySpellID)
+	local scanInfo
+	local resolvedCooldownID
+	local scanCache = getRuntimePassCacheTable("runtimePassScanInfoByEntry")
+	local cachedScan = scanCache and scanCache[entry] or nil
+	if cachedScan and cachedScan.cooldownID == entry.cooldownID and cachedScan.spellID == entry.spellID and cachedScan.sourceType == entry.sourceType then
+		scanInfo = cachedScan.scanInfo
+		resolvedCooldownID = cachedScan.resolvedCooldownID
+	else
+		local _, byCooldownID, bySpellID = self:ScanTrackedBuffs(false)
+		scanInfo, resolvedCooldownID = resolveEntryScanInfo(entry, byCooldownID, bySpellID)
+		if not scanInfo then
+			self:InvalidateScan()
+			local _, rescanned, rescannedBySpellID = self:ScanTrackedBuffs(true)
+			scanInfo, resolvedCooldownID = resolveEntryScanInfo(entry, rescanned, rescannedBySpellID)
+		end
+		if scanCache then
+			scanCache[entry] = {
+				cooldownID = entry.cooldownID,
+				spellID = entry.spellID,
+				sourceType = entry.sourceType,
+				scanInfo = scanInfo,
+				resolvedCooldownID = resolvedCooldownID,
+			}
+		end
 	end
 	if not isValidCooldownID(resolvedCooldownID) then resolvedCooldownID = entry.cooldownID end
 

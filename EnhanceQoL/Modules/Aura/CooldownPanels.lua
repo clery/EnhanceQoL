@@ -1134,6 +1134,8 @@ CooldownPanels._styleCacheRoots = CooldownPanels._styleCacheRoots
 		chargesTextEntry = setmetatable({}, { __mode = "k" }),
 		glowPanel = setmetatable({}, { __mode = "k" }),
 		glowEntry = setmetatable({}, { __mode = "k" }),
+		pandemicGlowPanel = setmetatable({}, { __mode = "k" }),
+		pandemicGlowEntry = setmetatable({}, { __mode = "k" }),
 		procGlowPanel = setmetatable({}, { __mode = "k" }),
 		procGlowEntry = setmetatable({}, { __mode = "k" }),
 		iconLayoutEntry = setmetatable({}, { __mode = "k" }),
@@ -4436,6 +4438,7 @@ end
 function CooldownPanels.ApplyIconTooltip(icon, entry, enabled)
 	if not icon then return end
 	local tooltipEnabled = enabled == true and entry ~= nil
+	if icon._eqolTooltipEntry == entry and icon._eqolTooltipEnabled == tooltipEnabled then return end
 	icon._eqolTooltipEntry = entry
 	icon._eqolTooltipEnabled = tooltipEnabled
 	CooldownPanels.SetIconTooltipMouseState(icon, tooltipEnabled)
@@ -4551,32 +4554,35 @@ function CooldownPanels:ApplyEntryCooldownTextStyle(icon, layout, entry)
 	local defaults = icon.cooldown._eqolCooldownTextDefaults
 	local fontPath, fontSize, fontStyle, fontColor, fontX, fontY =
 		self:ResolveEntryCooldownTextStyle(layout, entry, defaults and defaults.font, defaults and defaults.size, defaults and defaults.style)
-	local issecretvalue = Api.issecretvalue
-	local currentFontPath, currentFontSize, currentFontStyle = fontString:GetFont()
-	local fontNeedsApply = true
-	if not (issecretvalue and (issecretvalue(currentFontPath) or issecretvalue(currentFontSize) or issecretvalue(currentFontStyle))) then
-		fontNeedsApply = currentFontPath ~= fontPath or currentFontSize ~= fontSize or currentFontStyle ~= fontStyle
+	if fontString._eqolCooldownFont ~= fontPath or fontString._eqolCooldownFontSize ~= fontSize or fontString._eqolCooldownFontStyle ~= fontStyle then
+		fontString:SetFont(fontPath, fontSize, fontStyle)
+		fontString._eqolCooldownFont = fontPath
+		fontString._eqolCooldownFontSize = fontSize
+		fontString._eqolCooldownFontStyle = fontStyle
 	end
-	if fontNeedsApply then fontString:SetFont(fontPath, fontSize, fontStyle) end
-	local point, _, relPoint, currentX, currentY = fontString:GetPoint()
-	local pointNeedsApply = true
-	if point and relPoint and not (issecretvalue and (issecretvalue(point) or issecretvalue(relPoint) or issecretvalue(currentX) or issecretvalue(currentY))) then
-		pointNeedsApply = point ~= "CENTER" or relPoint ~= "CENTER" or currentX ~= fontX or currentY ~= fontY
-	end
-	if pointNeedsApply then
+	if fontString._eqolCooldownAnchor ~= "CENTER" or fontString._eqolCooldownX ~= fontX or fontString._eqolCooldownY ~= fontY then
 		fontString:ClearAllPoints()
 		fontString:SetPoint("CENTER", icon.cooldown, "CENTER", fontX, fontY)
+		fontString._eqolCooldownAnchor = "CENTER"
+		fontString._eqolCooldownX = fontX
+		fontString._eqolCooldownY = fontY
 	end
 	local r = fontColor[1] or 1
 	local g = fontColor[2] or 1
 	local b = fontColor[3] or 1
 	local a = fontColor[4] or 1
-	local currentR, currentG, currentB, currentA = fontString:GetTextColor()
-	local colorNeedsApply = true
-	if not (issecretvalue and (issecretvalue(currentR) or issecretvalue(currentG) or issecretvalue(currentB) or issecretvalue(currentA))) then
-		colorNeedsApply = currentR ~= r or currentG ~= g or currentB ~= b or currentA ~= a
+	if
+		fontString._eqolCooldownColorR ~= r
+		or fontString._eqolCooldownColorG ~= g
+		or fontString._eqolCooldownColorB ~= b
+		or fontString._eqolCooldownColorA ~= a
+	then
+		fontString:SetTextColor(r, g, b, a)
+		fontString._eqolCooldownColorR = r
+		fontString._eqolCooldownColorG = g
+		fontString._eqolCooldownColorB = b
+		fontString._eqolCooldownColorA = a
 	end
-	if colorNeedsApply then fontString:SetTextColor(r, g, b, a) end
 end
 
 function CooldownPanels:ResolveEntryStackTextStyle(layout, entry, fallbackFontPath, fallbackFontSize, fallbackFontStyle)
@@ -4872,14 +4878,54 @@ end
 
 function CooldownPanels:ResolveEntryPandemicGlowVisual(layout, entry)
 	local _, panelReadyColor, panelReadyStyle, panelReadyInset = self:ResolveEntryGlowStyle(layout, nil)
-	local panelPandemicColor = Helper.NormalizeColor(layout and layout.pandemicGlowColor, panelReadyColor)
-	local panelPandemicStyle = Helper.NormalizeGlowStyle(layout and layout.pandemicGlowStyle, panelReadyStyle)
-	local panelPandemicInset = Helper.NormalizeGlowInset(layout and layout.pandemicGlowInset, panelReadyInset)
-	if not entry or entry.glowUseGlobal ~= false then return panelPandemicColor, panelPandemicStyle, panelPandemicInset end
-	local color = Helper.NormalizeColor(entry.pandemicGlowColor, panelPandemicColor)
-	local style = Helper.NormalizeGlowStyle(entry.pandemicGlowStyle, panelPandemicStyle)
-	local inset = Helper.NormalizeGlowInset(entry.pandemicGlowInset, panelPandemicInset)
-	return color, style, inset
+	local panelCache = CooldownPanels._styleCacheRoots.pandemicGlowPanel[layout]
+	local srcColor = layout and layout.pandemicGlowColor or nil
+	local srcStyle = layout and layout.pandemicGlowStyle or nil
+	local srcInset = layout and layout.pandemicGlowInset or nil
+	if
+		not panelCache
+		or panelCache.srcColor ~= srcColor
+		or panelCache.srcStyle ~= srcStyle
+		or panelCache.srcInset ~= srcInset
+		or panelCache.readyColor ~= panelReadyColor
+		or panelCache.readyStyle ~= panelReadyStyle
+		or panelCache.readyInset ~= panelReadyInset
+	then
+		panelCache = panelCache or {}
+		panelCache.srcColor = srcColor
+		panelCache.srcStyle = srcStyle
+		panelCache.srcInset = srcInset
+		panelCache.readyColor = panelReadyColor
+		panelCache.readyStyle = panelReadyStyle
+		panelCache.readyInset = panelReadyInset
+		local r, g, b, a = Helper.ResolveColor(srcColor, panelReadyColor)
+		panelCache.color = CooldownPanels.FillCachedColor(panelCache.color, r, g, b, a)
+		panelCache.style = Helper.NormalizeGlowStyle(srcStyle, panelReadyStyle)
+		panelCache.inset = Helper.NormalizeGlowInset(srcInset, panelReadyInset)
+		panelCache.version = (panelCache.version or 0) + 1
+		CooldownPanels._styleCacheRoots.pandemicGlowPanel[layout] = panelCache
+	end
+	if not entry or entry.glowUseGlobal ~= false then return panelCache.color, panelCache.style, panelCache.inset end
+	local cache = CooldownPanels._styleCacheRoots.pandemicGlowEntry[entry]
+	if
+		not cache
+		or cache.panelVersion ~= panelCache.version
+		or cache.srcColor ~= entry.pandemicGlowColor
+		or cache.srcStyle ~= entry.pandemicGlowStyle
+		or cache.srcInset ~= entry.pandemicGlowInset
+	then
+		cache = cache or {}
+		cache.panelVersion = panelCache.version
+		cache.srcColor = entry.pandemicGlowColor
+		cache.srcStyle = entry.pandemicGlowStyle
+		cache.srcInset = entry.pandemicGlowInset
+		local r, g, b, a = Helper.ResolveColor(entry.pandemicGlowColor, panelCache.color)
+		cache.color = CooldownPanels.FillCachedColor(cache.color, r, g, b, a)
+		cache.style = Helper.NormalizeGlowStyle(entry.pandemicGlowStyle, panelCache.style)
+		cache.inset = Helper.NormalizeGlowInset(entry.pandemicGlowInset, panelCache.inset)
+		CooldownPanels._styleCacheRoots.pandemicGlowEntry[entry] = cache
+	end
+	return cache.color, cache.style, cache.inset
 end
 
 function CooldownPanels:ResolveEntryProcGlowVisual(layout, entry)
@@ -5180,13 +5226,16 @@ function CooldownPanels:ApplyEditorGhostIcon(icon)
 	texture:SetShown(true)
 	texture:SetDesaturated(true)
 	texture:SetAlpha(0.32)
+	texture._eqolGhostShown = true
 end
 
 function CooldownPanels:HideEditorGhostIcon(icon)
 	local texture = icon and icon.editorGhostTexture or nil
 	if not texture then return end
+	if texture._eqolGhostShown ~= true then return end
 	texture:SetTexture(nil)
 	texture:Hide()
+	texture._eqolGhostShown = false
 end
 
 local function applyStaticText(icon, layout, entry, defaultFontPath, defaultFontSize, defaultFontStyle, cooldownActive)
@@ -5463,13 +5512,21 @@ end
 
 local function ensureIconCount(frame, count)
 	frame.icons = frame.icons or {}
+	local icons = frame.icons
+	local previousCount = tonumber(frame._eqolEnsuredIconCount) or 0
 	for i = 1, count do
-		if not frame.icons[i] then frame.icons[i] = createIconFrame(frame) end
-		frame.icons[i]:Show()
+		if not icons[i] then
+			icons[i] = createIconFrame(frame)
+			icons[i]:Hide()
+		end
 	end
-	for i = count + 1, #frame.icons do
-		frame.icons[i]:Hide()
+	if count < previousCount then
+		for i = count + 1, previousCount do
+			local icon = icons[i]
+			if icon then icon:Hide() end
+		end
 	end
+	frame._eqolEnsuredIconCount = count
 end
 
 local ASSISTED_HIGHLIGHT_CONFIG = {
@@ -5610,6 +5667,8 @@ local function setGlow(frame, enabled, glowColor, glowKey, glowCondition, glowAl
 	local requestedColorG = glowColor and (glowColor[2] or glowColor.g) or nil
 	local requestedColorB = glowColor and (glowColor[3] or glowColor.b) or nil
 	local requestedColorA = glowColor and (glowColor[4] or glowColor.a) or nil
+	local issecretvalue = Api and Api.issecretvalue
+	local hasSecretCondition = issecretvalue and ((glowCondition ~= nil and issecretvalue(glowCondition)) or (state.condition ~= nil and issecretvalue(state.condition)))
 	if
 		wasEnabled
 		and state.requestedColorR == requestedColorR
@@ -5618,6 +5677,7 @@ local function setGlow(frame, enabled, glowColor, glowKey, glowCondition, glowAl
 		and state.requestedColorA == requestedColorA
 		and state.requestedStyle == glowStyle
 		and state.requestedInset == glowInset
+		and not hasSecretCondition
 		and state.condition == glowCondition
 		and state.alphaOn == alphaOn
 		and state.alphaOff == alphaOff
@@ -5778,13 +5838,76 @@ function CooldownPanels:EnsureSpellQueryCaches()
 	runtime.spellCooldownDurationCache = runtime.spellCooldownDurationCache or {}
 	runtime.spellCooldownInfoCache = runtime.spellCooldownInfoCache or {}
 	runtime.spellChargesInfoCache = runtime.spellChargesInfoCache or {}
+	runtime.spellPassStateCache = runtime.spellPassStateCache or {}
 	return runtime
 end
 
-function CooldownPanels:BeginSpellQueryPass()
+function CooldownPanels:BeginSpellQueryBatch()
 	local runtime = self:EnsureSpellQueryCaches()
-	runtime.spellQueryPass = (runtime.spellQueryPass or 0) + 1
+	local depth = (runtime.spellQueryBatchDepth or 0) + 1
+	runtime.spellQueryBatchDepth = depth
+	if depth == 1 then runtime.spellQueryPass = (runtime.spellQueryPass or 0) + 1 end
 	return runtime.spellQueryPass
+end
+
+function CooldownPanels:EndSpellQueryBatch()
+	local runtime = self.runtime
+	if not runtime then return end
+	local depth = tonumber(runtime.spellQueryBatchDepth) or 0
+	if depth <= 1 then
+		runtime.spellQueryBatchDepth = nil
+	else
+		runtime.spellQueryBatchDepth = depth - 1
+	end
+end
+
+function CooldownPanels:EnsureSpellQueryPass()
+	local runtime = self:EnsureSpellQueryCaches()
+	if (runtime.spellQueryBatchDepth or 0) <= 0 then runtime.spellQueryPass = (runtime.spellQueryPass or 0) + 1 end
+	return runtime.spellQueryPass
+end
+
+function CooldownPanels:BeginSpellQueryPass() return self:EnsureSpellQueryPass() end
+
+function CooldownPanels:GetSpellPassState(spellId)
+	if not spellId then return nil end
+	local runtime = self:EnsureSpellQueryCaches()
+	local pass = runtime.spellQueryPass
+	if not pass then return nil end
+	local cache = runtime.spellPassStateCache
+	local state = cache[spellId]
+	if state and state.pass == pass then return state end
+	state = state or {}
+	state.pass = pass
+	state.infoLoaded = nil
+	state.durationLoaded = nil
+	state.chargesLoaded = nil
+	state.cooldownStart = nil
+	state.cooldownDuration = nil
+	state.cooldownEnabled = nil
+	state.cooldownRate = nil
+	state.cooldownGCD = nil
+	state.cooldownDurationObject = nil
+	state.chargesInfo = nil
+	cache[spellId] = state
+	return state
+end
+
+function CooldownPanels:BeginRuntimeQueryBatch()
+	self:BeginSpellQueryBatch()
+	local cdmAuras = self.CDMAuras
+	if cdmAuras and cdmAuras.BeginRuntimePass then cdmAuras:BeginRuntimePass() end
+end
+
+function CooldownPanels:EndRuntimeQueryBatch()
+	local cdmAuras = self.CDMAuras
+	if cdmAuras and cdmAuras.EndRuntimePass then cdmAuras:EndRuntimePass() end
+	self:EndSpellQueryBatch()
+end
+
+function CooldownPanels:IsRuntimeQueryBatchActive()
+	local runtime = self.runtime
+	return runtime and (runtime.spellQueryBatchDepth or 0) > 0 or false
 end
 
 function CooldownPanels:InvalidateSpellQueryCaches(kind, spellId)
@@ -5812,6 +5935,13 @@ function CooldownPanels:InvalidateSpellQueryCaches(kind, spellId)
 			runtime.spellChargesInfoCache[spellId] = nil
 		else
 			runtime.spellChargesInfoCache = {}
+		end
+	end
+	if runtime.spellPassStateCache then
+		if spellId ~= nil then
+			runtime.spellPassStateCache[spellId] = nil
+		elseif kind == nil then
+			runtime.spellPassStateCache = {}
 		end
 	end
 end
@@ -6281,7 +6411,8 @@ function CooldownPanels:UpdateLayoutEditGrid(panelId, slotCount)
 	end
 	grid:Show()
 	grid.cells = grid.cells or {}
-	local _, _, gridColumns = Helper.BuildFixedSlotEntryIds(panel, nil, false)
+	local fixedLayoutCache = Helper.GetFixedLayoutCache and Helper.GetFixedLayoutCache(panel) or nil
+	local gridColumns = fixedLayoutCache and fixedLayoutCache.boundsColumns or select(1, Helper.GetFixedGridBounds(panel, false))
 	local groups = CooldownPanels.GetFixedGroups(panel)
 	for i = 1, slotCount do
 		local icon = frame.icons and frame.icons[i]
@@ -9901,42 +10032,6 @@ function CooldownPanels:BuildLayoutFixedGroupStandaloneSettings(panelId, groupId
 			formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
 		},
 		{
-			name = L["CooldownPanelIconHeader"] or "Icon",
-			kind = SettingType.Collapsible,
-			id = "cooldownPanelStandaloneFixedGroupIcon",
-			defaultCollapsed = true,
-		},
-		{
-			name = L["CooldownPanelIconOffsetX"] or "Icon X",
-			kind = SettingType.Slider,
-			parentId = "cooldownPanelStandaloneFixedGroupIcon",
-			minValue = -Helper.OFFSET_RANGE,
-			maxValue = Helper.OFFSET_RANGE,
-			valueStep = 1,
-			allowInput = true,
-			get = function()
-				local layout = getLayout()
-				return Helper.ClampInt(layout and layout.iconOffsetX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0)
-			end,
-			set = function(_, value) setOverride("iconOffsetX", value) end,
-			formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
-		},
-		{
-			name = L["CooldownPanelIconOffsetY"] or "Icon Y",
-			kind = SettingType.Slider,
-			parentId = "cooldownPanelStandaloneFixedGroupIcon",
-			minValue = -Helper.OFFSET_RANGE,
-			maxValue = Helper.OFFSET_RANGE,
-			valueStep = 1,
-			allowInput = true,
-			get = function()
-				local layout = getLayout()
-				return Helper.ClampInt(layout and layout.iconOffsetY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0)
-			end,
-			set = function(_, value) setOverride("iconOffsetY", value) end,
-			formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
-		},
-		{
 			name = _G.GLOW or "Glow",
 			kind = SettingType.Collapsible,
 			id = "cooldownPanelStandaloneFixedGroupGlow",
@@ -13327,6 +13422,29 @@ local function isSpellFlagged(map, baseId, effectiveId)
 	return (effectiveId and map[effectiveId]) or (baseId and map[baseId]) or false
 end
 
+CooldownPanels.SetIconDesaturatedRuntime = function(texture, enabled, skipDesaturation)
+	if skipDesaturation then
+		texture:SetDesaturated(false)
+	else
+		texture:SetDesaturated(enabled == true)
+	end
+end
+
+CooldownPanels.SetIconDesaturationRuntime = function(texture, value, skipDesaturation)
+	if skipDesaturation then
+		texture:SetDesaturation(0)
+	else
+		texture:SetDesaturation(value or 0)
+	end
+end
+
+CooldownPanels.IsAssistedSuggestedSpell = function(assistedSuggestedSpellId, assistedSuggestedBaseId, assistedSuggestedEffectiveId, baseSpellId, effectiveSpellId)
+	if not (assistedSuggestedSpellId and baseSpellId) then return false end
+	if baseSpellId == assistedSuggestedSpellId or baseSpellId == assistedSuggestedBaseId or baseSpellId == assistedSuggestedEffectiveId then return true end
+	if effectiveSpellId and (effectiveSpellId == assistedSuggestedSpellId or effectiveSpellId == assistedSuggestedBaseId or effectiveSpellId == assistedSuggestedEffectiveId) then return true end
+	return false
+end
+
 local function updateItemCountCache()
 	CooldownPanels.runtime = CooldownPanels.runtime or {}
 	local runtime = CooldownPanels.runtime
@@ -13450,35 +13568,25 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 	local assistedSuggestedSpellId = assistedHighlightEnabled and Api.GetAssistedCombatNextSpell and tonumber(Api.GetAssistedCombatNextSpell()) or nil
 	local assistedSuggestedBaseId = assistedSuggestedSpellId and getBaseSpellId(assistedSuggestedSpellId) or nil
 	local assistedSuggestedEffectiveId = assistedSuggestedSpellId and getEffectiveSpellId(assistedSuggestedSpellId) or nil
-	local function setIconDesaturated(texture, enabled, skipDesaturation)
-		if skipDesaturation then
-			texture:SetDesaturated(false)
-		else
-			texture:SetDesaturated(enabled == true)
-		end
-	end
-	local function setIconDesaturation(texture, value, skipDesaturation)
-		if skipDesaturation then
-			texture:SetDesaturation(0)
-		else
-			texture:SetDesaturation(value or 0)
-		end
-	end
-	local function isAssistedSuggested(baseSpellId, effectiveSpellId)
-		if not (assistedSuggestedSpellId and baseSpellId) then return false end
-		if baseSpellId == assistedSuggestedSpellId or baseSpellId == assistedSuggestedBaseId or baseSpellId == assistedSuggestedEffectiveId then return true end
-		if effectiveSpellId and (effectiveSpellId == assistedSuggestedSpellId or effectiveSpellId == assistedSuggestedBaseId or effectiveSpellId == assistedSuggestedEffectiveId) then return true end
-		return false
-	end
 
 	local visible = runtime.visibleEntries
 	if not visible then
 		visible = {}
 		runtime.visibleEntries = visible
 	end
-	self:BeginSpellQueryPass()
+	local lastLayoutEditActive = runtime._eqolLastLayoutEditActive == true
+	self:EnsureSpellQueryPass()
 	local visibleCount = 0
-	local visibleSlotsUsed = fixedLayout and {} or nil
+	local previousOccupiedSlots = fixedLayout and runtime._eqolOccupiedSlots or nil
+	local previousOccupiedSlotIndices = fixedLayout and runtime._eqolOccupiedSlotIndices or nil
+	local visibleSlotsUsed = fixedLayout and (runtime._eqolScratchOccupiedSlots or {}) or nil
+	if visibleSlotsUsed then
+		for slotIndex in pairs(visibleSlotsUsed) do
+			visibleSlotsUsed[slotIndex] = nil
+		end
+	end
+	local visibleSlotIndices = fixedLayout and (runtime._eqolScratchOccupiedSlotIndices or {}) or nil
+	local visibleSlotCount = 0
 	local visiblePowerSpells = runtime.visiblePowerSpells
 	if not visiblePowerSpells then
 		visiblePowerSpells = {}
@@ -13501,6 +13609,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 	local fixedLayoutCache = fixedLayout and Helper.GetFixedLayoutCache and Helper.GetFixedLayoutCache(panel) or nil
 	local fixedGroups = fixedLayout and (fixedLayoutCache and fixedLayoutCache.groups or CooldownPanels.GetFixedGroups(panel)) or nil
 	local fixedGroupById = fixedLayout and (fixedLayoutCache and fixedLayoutCache.groupById or {}) or nil
+	local fixedStaticTargetIndices = fixedLayout and fixedLayoutCache and fixedLayoutCache.staticTargetIndexByEntryId or nil
 	local fixedGroupVisibleCounts = fixedLayout and {} or nil
 	local effectiveLayoutCache = {}
 	if fixedLayout then
@@ -13535,7 +13644,12 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 		editGridColumns = Helper.ClampInt(layout.wrapCount, 0, 40, Helper.PANEL_LAYOUT_DEFAULTS.wrapCount or 0)
 		if editGridColumns <= 0 then editGridColumns = math.min(math.max(type(panel.order) == "table" and #panel.order or 0, 4), 12) end
 	end
-	self:UpdateLayoutEditGrid(panelId, layoutEditActive and fixedLayout and fixedSlotCount or 0)
+	local layoutEditGridCount = layoutEditActive and fixedLayout and fixedSlotCount or 0
+	if runtime._eqolLayoutEditGridCount ~= layoutEditGridCount or runtime._eqolLayoutEditGridActive ~= (layoutEditActive == true) then
+		self:UpdateLayoutEditGrid(panelId, layoutEditGridCount)
+		runtime._eqolLayoutEditGridCount = layoutEditGridCount
+		runtime._eqolLayoutEditGridActive = layoutEditActive == true
+	end
 	runtime.readyAt = runtime.readyAt or {}
 	runtime.glowTimers = runtime.glowTimers or {}
 	local readyGlowPrimed = CooldownPanels.GetReadyGlowPrimedState(runtime)
@@ -13551,7 +13665,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 		if entry then
 			local entryLayout = layout
 			if fixedLayout then
-				local groupId = Helper.NormalizeFixedGroupId(entry.fixedGroupId)
+				local groupId = entry.fixedGroupId
 				if groupId and fixedGroupById and fixedGroupById[groupId] then entryLayout = effectiveLayoutCache[groupId] or layout end
 			else
 				entryLayout = self:GetEntryEffectiveLayout(panelId, entry, effectiveLayoutCache, panel) or layout
@@ -13627,7 +13741,8 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			local powerInsufficient = resolvedType == "SPELL" and entryCheckPower and resourceInsufficient
 			local spellUnusable = resolvedType == "SPELL" and entryCheckPower and isSpellFlagged(spellUnusableSpells, baseSpellId, effectiveSpellId)
 			local rangeOverlay = rangeOverlayEnabled and resolvedType == "SPELL" and isSpellFlagged(rangeOverlaySpells, baseSpellId, effectiveSpellId)
-			local assistedSuggested = resolvedType == "SPELL" and isAssistedSuggested(baseSpellId, effectiveSpellId)
+			local assistedSuggested = resolvedType == "SPELL"
+				and CooldownPanels.IsAssistedSuggestedSpell(assistedSuggestedSpellId, assistedSuggestedBaseId, assistedSuggestedEffectiveId, baseSpellId, effectiveSpellId)
 			if rangeOverlay and Api.IsSpellUsableFn then
 				local checkId = effectiveSpellId or baseSpellId
 				if checkId then
@@ -13653,15 +13768,26 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 
 			if resolvedType == "SPELL" and baseSpellId then
 				local spellId = effectiveSpellId or baseSpellId
+				local spellPassState = self:GetSpellPassState(spellId)
 				if spellPassive then
 					show = false
 				elseif Api.IsSpellKnown and not Api.IsSpellKnown(spellId) then
 					show = false
 				else
 					canTriggerReadyGlow = true
-					if showCharges then chargesInfo = self:GetCachedSpellChargesInfo(spellId) end
+					if showCharges then
+						if spellPassState and spellPassState.chargesLoaded == nil then
+							spellPassState.chargesInfo = self:GetCachedSpellChargesInfo(spellId)
+							spellPassState.chargesLoaded = true
+						end
+						chargesInfo = spellPassState and spellPassState.chargesInfo or self:GetCachedSpellChargesInfo(spellId)
+					end
 					if trackCooldown then
-						cooldownDurationObject = self:GetCachedSpellCooldownDurationObject(spellId)
+						if spellPassState and spellPassState.durationLoaded == nil then
+							spellPassState.cooldownDurationObject = self:GetCachedSpellCooldownDurationObject(spellId)
+							spellPassState.durationLoaded = true
+						end
+						cooldownDurationObject = spellPassState and spellPassState.cooldownDurationObject or self:GetCachedSpellCooldownDurationObject(spellId)
 						cooldownRemaining = getDurationRemaining(cooldownDurationObject)
 						if cooldownRemaining ~= nil and cooldownRemaining <= 0 then
 							cooldownDurationObject = nil
@@ -13669,12 +13795,37 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 						end
 					end
 					if (trackCooldown or (showCharges and chargesInfo)) and not cooldownDurationObject then
-						cooldownStart, cooldownDuration, cooldownEnabled, cooldownRate, cooldownGCD = self:GetCachedSpellCooldownInfo(spellId)
+						if spellPassState and spellPassState.infoLoaded == nil then
+							spellPassState.cooldownStart, spellPassState.cooldownDuration, spellPassState.cooldownEnabled, spellPassState.cooldownRate, spellPassState.cooldownGCD =
+								self:GetCachedSpellCooldownInfo(spellId)
+							spellPassState.infoLoaded = true
+						end
+						if spellPassState then
+							cooldownStart = spellPassState.cooldownStart
+							cooldownDuration = spellPassState.cooldownDuration
+							cooldownEnabled = spellPassState.cooldownEnabled
+							cooldownRate = spellPassState.cooldownRate
+							cooldownGCD = spellPassState.cooldownGCD
+						else
+							cooldownStart, cooldownDuration, cooldownEnabled, cooldownRate, cooldownGCD = self:GetCachedSpellCooldownInfo(spellId)
+						end
 					elseif cooldownDurationObject then
-						cooldownGCD = select(5, self:GetCachedSpellCooldownInfo(spellId))
+						if spellPassState and spellPassState.infoLoaded == nil then
+							spellPassState.cooldownStart, spellPassState.cooldownDuration, spellPassState.cooldownEnabled, spellPassState.cooldownRate, spellPassState.cooldownGCD =
+								self:GetCachedSpellCooldownInfo(spellId)
+							spellPassState.infoLoaded = true
+						end
+						cooldownGCD = spellPassState and spellPassState.cooldownGCD or select(5, self:GetCachedSpellCooldownInfo(spellId))
 					end
 					if glowReady and showCooldown then
-						local readyDurationObject = cooldownDurationObject or self:GetCachedSpellCooldownDurationObject(spellId)
+						local readyDurationObject = cooldownDurationObject
+						if not readyDurationObject then
+							if spellPassState and spellPassState.durationLoaded == nil then
+								spellPassState.cooldownDurationObject = self:GetCachedSpellCooldownDurationObject(spellId)
+								spellPassState.durationLoaded = true
+							end
+							readyDurationObject = spellPassState and spellPassState.cooldownDurationObject or self:GetCachedSpellCooldownDurationObject(spellId)
+						end
 						if cooldownGCD then
 							spellReadyCondition = true
 						elseif readyDurationObject and readyDurationObject.IsZero then
@@ -13814,44 +13965,24 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 					local fixedGroup = entry.fixedGroupId and fixedGroupById and fixedGroupById[entry.fixedGroupId] or nil
 					if fixedGroup then
 						if fixedGroup._eqolIsStatic == true then
-							local slotColumn = Helper.NormalizeSlotCoordinate(entry.slotColumn)
-							local slotRow = Helper.NormalizeSlotCoordinate(entry.slotRow)
-							if
-								slotColumn
-								and slotRow
-								and fixedGridColumns > 0
-								and fixedGridRows > 0
-								and slotColumn <= fixedGridColumns
-								and slotRow <= fixedGridRows
-								and CooldownPanels.RectContainsCell(fixedGroup.column, fixedGroup.row, fixedGroup.columns, fixedGroup.rows, slotColumn, slotRow)
-							then
-								targetIndex = ((slotRow - 1) * fixedGridColumns) + slotColumn
-								visibleSlotsUsed[targetIndex] = true
-								if targetIndex > fixedSlotCount then fixedSlotCount = targetIndex end
-							else
-								targetIndex = nil
-							end
+							targetIndex = fixedStaticTargetIndices and fixedStaticTargetIndices[entryId] or nil
 						else
 							local groupVisibleCount = (fixedGroupVisibleCounts[fixedGroup.id] or 0) + 1
 							fixedGroupVisibleCounts[fixedGroup.id] = groupVisibleCount
 							targetIndex = fixedGroup._eqolDynamicTargetIndices and fixedGroup._eqolDynamicTargetIndices[groupVisibleCount] or nil
-							if targetIndex and targetIndex <= fixedSlotCount then
-								visibleSlotsUsed[targetIndex] = true
-							else
+							if not (targetIndex and targetIndex <= fixedSlotCount) then
 								targetIndex = nil
 							end
 						end
 					else
-						local slotColumn = Helper.NormalizeSlotCoordinate(entry.slotColumn)
-						local slotRow = Helper.NormalizeSlotCoordinate(entry.slotRow)
-						if slotColumn and slotRow and fixedGridColumns > 0 and fixedGridRows > 0 and slotColumn <= fixedGridColumns and slotRow <= fixedGridRows then
-							targetIndex = ((slotRow - 1) * fixedGridColumns) + slotColumn
-							visibleSlotsUsed[targetIndex] = true
-							if targetIndex > fixedSlotCount then fixedSlotCount = targetIndex end
-						else
-							targetIndex = nil
-						end
+						targetIndex = fixedStaticTargetIndices and fixedStaticTargetIndices[entryId] or nil
 					end
+					if targetIndex and targetIndex > fixedSlotCount then targetIndex = nil end
+				end
+				if fixedLayout and targetIndex and visibleSlotsUsed and not visibleSlotsUsed[targetIndex] then
+					visibleSlotsUsed[targetIndex] = true
+					visibleSlotCount = visibleSlotCount + 1
+					visibleSlotIndices[visibleSlotCount] = targetIndex
 				end
 				if not data then data = targetIndex and visible[targetIndex] or nil end
 				if not data then
@@ -13995,7 +14126,8 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 
 	local count = fixedLayout and fixedSlotCount or visibleCount
 	local layoutCount = count > 0 and count or 1
-	if didLayoutShapeChange(runtime, layout, layoutCount) then self:ApplyLayout(panelId, layoutCount) end
+	local layoutShapeChanged = didLayoutShapeChange(runtime, layout, layoutCount)
+	if layoutShapeChanged then self:ApplyLayout(panelId, layoutCount) end
 	ensureIconCount(frame, count)
 
 	runtime.entryToIcon = runtime.entryToIcon or {}
@@ -14004,7 +14136,14 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 		entryToIcon[key] = nil
 	end
 
-	for i = 1, count do
+	local sparseFixedRuntime = fixedLayout
+		and not layoutEditActive
+		and not lastLayoutEditActive
+		and not layoutShapeChanged
+		and runtime.initialized == true
+		and previousOccupiedSlots ~= nil
+		and previousOccupiedSlotIndices ~= nil
+	local function updateRuntimeIconAtIndex(i)
 		local data = visible[i]
 		local icon = frame.icons[i]
 		local slotColumn = fixedLayout and fixedGridColumns > 0 and (((i - 1) % fixedGridColumns) + 1) or (editGridColumns and (((i - 1) % editGridColumns) + 1) or nil)
@@ -14200,7 +14339,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			if data.resolvedType == "CDM_AURA" and data.cdmAuraInactiveDesaturate == true and not cdmAuraActive and not cdmAuraDurationActive then desaturate = true end
 
 			if not isSafeNumber(cooldownRate) then cooldownRate = 1 end
-			setIconDesaturated(icon.texture, desaturate, entryNoDesaturation)
+			CooldownPanels.SetIconDesaturatedRuntime(icon.texture, desaturate, entryNoDesaturation)
 			if hideOnCooldown then
 				icon:SetAlphaFromBoolean(hidden, 0, 1)
 			elseif showOnCooldown then
@@ -14267,7 +14406,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 							else
 								if icon.cooldown.SetScript then icon.cooldown:SetScript("OnCooldownDone", onCooldownDone) end
 								setCooldownDrawState(icon.cooldown, entryDrawEdge, entryDrawBling, entryDrawSwipe)
-								setIconDesaturation(icon.texture, cooldownDurationObject:EvaluateRemainingDuration(curveDesat), entryNoDesaturation)
+								CooldownPanels.SetIconDesaturationRuntime(icon.texture, cooldownDurationObject:EvaluateRemainingDuration(curveDesat), entryNoDesaturation)
 								if hideOnCooldown then
 									icon:SetAlpha(cooldownDurationObject:EvaluateRemainingDuration(curveAlpha))
 								elseif showOnCooldown then
@@ -14287,7 +14426,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				elseif durationActive then
 					icon.cooldown:SetCooldownFromDurationObject(cooldownDurationObject)
 					if data.cooldownGCD then
-						setIconDesaturation(icon.texture, 0, entryNoDesaturation)
+						CooldownPanels.SetIconDesaturationRuntime(icon.texture, 0, entryNoDesaturation)
 						if hideOnCooldown then
 							icon:SetAlpha(1)
 						elseif showOnCooldown then
@@ -14300,7 +14439,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 						setCooldownDrawState(icon.cooldown, entryDrawEdge, entryDrawBling, entryDrawSwipe)
 
 						local desat = cooldownDurationObject:EvaluateRemainingDuration(curveDesat)
-						setIconDesaturation(icon.texture, desat, entryNoDesaturation)
+						CooldownPanels.SetIconDesaturationRuntime(icon.texture, desat, entryNoDesaturation)
 						if hideOnCooldown then
 							icon:SetAlpha(cooldownDurationObject:EvaluateRemainingDuration(curveAlpha))
 						elseif showOnCooldown then
@@ -14328,7 +14467,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 					else
 						icon.cooldown:Clear()
 					end
-					setIconDesaturation(icon.texture, 0, entryNoDesaturation)
+					CooldownPanels.SetIconDesaturationRuntime(icon.texture, 0, entryNoDesaturation)
 					desaturate = false
 					if hideOnCooldown then
 						icon:SetAlpha(0)
@@ -14340,7 +14479,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				elseif cooldownActive then
 					icon.cooldown:SetCooldown(cooldownStart, cooldownDuration, cooldownRate)
 					desaturate = true
-					setIconDesaturated(icon.texture, desaturate, entryNoDesaturation)
+					CooldownPanels.SetIconDesaturatedRuntime(icon.texture, desaturate, entryNoDesaturation)
 					if hideOnCooldown then
 						icon:SetAlpha(0)
 					elseif showOnCooldown then
@@ -14351,7 +14490,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				elseif data.resolvedType == "CDM_AURA" and cdmAuraActive then
 					setCooldownDrawState(icon.cooldown, entryDrawEdge, entryDrawBling, entryDrawSwipe)
 					icon.cooldown:Clear()
-					setIconDesaturation(icon.texture, 0, entryNoDesaturation)
+					CooldownPanels.SetIconDesaturationRuntime(icon.texture, 0, entryNoDesaturation)
 					desaturate = false
 					if hideOnCooldown then
 						icon:SetAlpha(0)
@@ -14545,6 +14684,22 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 		end
 	end
 
+	if sparseFixedRuntime and visibleSlotIndices then
+		for listIndex = 1, visibleSlotCount do
+			updateRuntimeIconAtIndex(visibleSlotIndices[listIndex])
+		end
+		if previousOccupiedSlotIndices and previousOccupiedSlots then
+			for listIndex = 1, #previousOccupiedSlotIndices do
+				local slotIndex = previousOccupiedSlotIndices[listIndex]
+				if slotIndex and not visibleSlotsUsed[slotIndex] and previousOccupiedSlots[slotIndex] then updateRuntimeIconAtIndex(slotIndex) end
+			end
+		end
+	else
+		for i = 1, count do
+			updateRuntimeIconAtIndex(i)
+		end
+	end
+
 	for i = count + 1, #frame.icons do
 		local icon = frame.icons[i]
 		if icon then
@@ -14575,6 +14730,18 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 		end
 	end
 
+	if fixedLayout then
+		local nextScratchOccupiedSlots = previousOccupiedSlots or {}
+		local nextScratchOccupiedSlotIndices = previousOccupiedSlotIndices or {}
+		for i = visibleSlotCount + 1, #(visibleSlotIndices or {}) do
+			visibleSlotIndices[i] = nil
+		end
+		runtime._eqolScratchOccupiedSlots = nextScratchOccupiedSlots
+		runtime._eqolScratchOccupiedSlotIndices = nextScratchOccupiedSlotIndices
+		runtime._eqolOccupiedSlots = visibleSlotsUsed
+		runtime._eqolOccupiedSlotIndices = visibleSlotIndices
+	end
+	runtime._eqolLastLayoutEditActive = layoutEditActive == true
 	runtime.visibleCount = visibleCount
 	runtime.initialized = true
 end
@@ -14802,6 +14969,11 @@ function CooldownPanels:RefreshPanel(panelId)
 		if frame then frame:Hide() end
 		return
 	end
+	local startedRuntimeQueryBatch = false
+	if not self:IsRuntimeQueryBatchActive() then
+		self:BeginRuntimeQueryBatch()
+		startedRuntimeQueryBatch = true
+	end
 	self:EnsurePanelFrame(panelId)
 	self:ApplyPanelPosition(panelId)
 	local runtime = getRuntime(panelId)
@@ -14819,6 +14991,7 @@ function CooldownPanels:RefreshPanel(panelId)
 	end
 	self:UpdateVisibility(panelId)
 	self:ShowEditModeHint(panelId, self:IsInEditMode() == true or layoutEditActive)
+	if startedRuntimeQueryBatch then self:EndRuntimeQueryBatch() end
 end
 
 function CooldownPanels:HideAllRuntimePanels()
@@ -14872,6 +15045,7 @@ function CooldownPanels:RefreshAllPanels()
 	end
 	syncRootOrderIfDirty(root)
 	panelIds = panelIds or CooldownPanels.GetCachedPanelIds(root)
+	self:BeginRuntimeQueryBatch()
 	for _, panelId in ipairs(panelIds) do
 		self:EnsurePanelFrame(panelId)
 	end
@@ -14881,6 +15055,7 @@ function CooldownPanels:RefreshAllPanels()
 	for _, panelId in ipairs(panelIds) do
 		self:RefreshPanel(panelId)
 	end
+	self:EndRuntimeQueryBatch()
 	self:UpdateCursorAnchorState()
 end
 
@@ -17806,11 +17981,13 @@ CooldownPanels.RequestEnabledPanelRefreshes = function()
 	local enabledPanelIds = runtime and runtime.enabledPanelIds
 	if not (root and root.panels and enabledPanels and next(enabledPanels)) then return false end
 	local queued = false
+	CooldownPanels:BeginRuntimeQueryBatch()
 	if enabledPanelIds and #enabledPanelIds > 0 then
 		for i = 1, #enabledPanelIds do
 			CooldownPanels:RefreshPanel(enabledPanelIds[i])
 			queued = true
 		end
+		CooldownPanels:EndRuntimeQueryBatch()
 		return queued
 	end
 	for _, panelId in ipairs(CooldownPanels.GetCachedPanelIds(root)) do
@@ -17819,6 +17996,7 @@ CooldownPanels.RequestEnabledPanelRefreshes = function()
 			queued = true
 		end
 	end
+	CooldownPanels:EndRuntimeQueryBatch()
 	return queued
 end
 

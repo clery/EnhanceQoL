@@ -5139,6 +5139,17 @@ function CooldownPanels:ResolveEntryNoDesaturation(layout, entry)
 	return entry.noDesaturation == true
 end
 
+function CooldownPanels:ResolveEntryCooldownVisibility(layout, entry)
+	local hideOnCooldown = layout and layout.hideOnCooldown == true
+	local showOnCooldown = layout and layout.showOnCooldown == true
+	if showOnCooldown then hideOnCooldown = false end
+	if not entry or entry.cooldownVisibilityUseGlobal ~= false then return hideOnCooldown, showOnCooldown end
+	hideOnCooldown = entry.hideOnCooldown == true
+	showOnCooldown = entry.showOnCooldown == true
+	if showOnCooldown then hideOnCooldown = false end
+	return hideOnCooldown, showOnCooldown
+end
+
 function CooldownPanels:ResolveEntryCDMAuraAlwaysShowMode(layout, entry)
 	local values = self.CDM_AURA_ALWAYS_SHOW_MODE or {}
 	local panelValue = self:NormalizeCDMAuraAlwaysShowMode(layout and layout.cdmAuraAlwaysShowMode, Helper.PANEL_LAYOUT_DEFAULTS.cdmAuraAlwaysShowMode or values.HIDE or "HIDE")
@@ -7806,9 +7817,7 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 		local normalized = value == true
 		if (currentEntry[field] == true) == normalized then return end
 		currentEntry[field] = normalized and true or false
-		if field == "glowReady" then CooldownPanels.ClearReadyGlowEntryState(panelId, entryId, true) end
-		if field == "glowReady" or field == "checkPower" or field == "hideWhenNoResource" or field == "readyGlowCheckPower" then CooldownPanels:RebuildPowerIndex() end
-		if field == "showCharges" then CooldownPanels:RebuildChargesIndex() end
+		CooldownPanels:HandleEntryBooleanMutation(panelId, entryId, currentEntry, field)
 		refreshEntryViews()
 	end
 
@@ -8022,6 +8031,39 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 		local useGlobal = value ~= true
 		if currentEntry.cooldownVisualsUseGlobal == useGlobal then return end
 		currentEntry.cooldownVisualsUseGlobal = useGlobal
+		refreshEntryViews()
+	end
+
+	local function setCooldownVisibilityOverrideEnabled(value)
+		local layout = getLayout()
+		local _, currentEntry = getEntry()
+		if not currentEntry then return end
+		local useGlobal = value ~= true
+		if currentEntry.cooldownVisibilityUseGlobal == useGlobal then return end
+		if not useGlobal then
+			currentEntry.hideOnCooldown, currentEntry.showOnCooldown = CooldownPanels:ResolveEntryCooldownVisibility(layout, currentEntry)
+		end
+		currentEntry.cooldownVisibilityUseGlobal = useGlobal
+		refreshEntryViews()
+	end
+
+	local function setCooldownVisibility(field, value)
+		local _, currentEntry = getEntry()
+		if not currentEntry then return end
+		local hideOnCooldown = currentEntry.hideOnCooldown == true
+		local showOnCooldown = currentEntry.showOnCooldown == true
+		if field == "hideOnCooldown" then
+			hideOnCooldown = value == true
+			if hideOnCooldown then showOnCooldown = false end
+		elseif field == "showOnCooldown" then
+			showOnCooldown = value == true
+			if showOnCooldown then hideOnCooldown = false end
+		else
+			return
+		end
+		if currentEntry.hideOnCooldown == hideOnCooldown and currentEntry.showOnCooldown == showOnCooldown then return end
+		currentEntry.hideOnCooldown = hideOnCooldown
+		currentEntry.showOnCooldown = showOnCooldown
 		refreshEntryViews()
 	end
 
@@ -8266,6 +8308,18 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 		return CooldownPanels:ResolveEntryNoDesaturation(layout, currentEntry)
 	end
 
+	local function getResolvedHideOnCooldown()
+		local layout = getLayout()
+		local _, currentEntry = getEntry()
+		return select(1, CooldownPanels:ResolveEntryCooldownVisibility(layout, currentEntry))
+	end
+
+	local function getResolvedShowOnCooldown()
+		local layout = getLayout()
+		local _, currentEntry = getEntry()
+		return select(2, CooldownPanels:ResolveEntryCooldownVisibility(layout, currentEntry))
+	end
+
 	local function getResolvedHideWhenNoResource()
 		local layout = getLayout()
 		local _, currentEntry = getEntry()
@@ -8340,6 +8394,41 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 					root:CreateRadio(option.label, function() return getResolvedCDMAuraAlwaysShowMode() == option.value end, function() setCDMAuraAlwaysShowMode(nil, option.value) end)
 				end
 			end,
+		},
+		{
+			name = L["CooldownPanelOverwriteGlobalDefault"] or "Overwrite global default",
+			kind = SettingType.Checkbox,
+			parentId = "cooldownPanelStandaloneDisplay",
+			isShown = function() return getEffectiveType() ~= "CDM_AURA" end,
+			get = function()
+				local _, currentEntry = getEntry()
+				return currentEntry and currentEntry.cooldownVisibilityUseGlobal == false or false
+			end,
+			set = function(_, value) setCooldownVisibilityOverrideEnabled(value) end,
+		},
+		{
+			name = L["CooldownPanelHideOnCooldown"] or "Hide on cooldown",
+			kind = SettingType.Checkbox,
+			parentId = "cooldownPanelStandaloneDisplay",
+			isShown = function() return getEffectiveType() ~= "CDM_AURA" end,
+			disabled = function()
+				local _, currentEntry = getEntry()
+				return not (currentEntry and currentEntry.cooldownVisibilityUseGlobal == false)
+			end,
+			get = function() return getResolvedHideOnCooldown() end,
+			set = function(_, value) setCooldownVisibility("hideOnCooldown", value) end,
+		},
+		{
+			name = L["CooldownPanelShowOnCooldown"] or "Show on cooldown",
+			kind = SettingType.Checkbox,
+			parentId = "cooldownPanelStandaloneDisplay",
+			isShown = function() return getEffectiveType() ~= "CDM_AURA" end,
+			disabled = function()
+				local _, currentEntry = getEntry()
+				return not (currentEntry and currentEntry.cooldownVisibilityUseGlobal == false)
+			end,
+			get = function() return getResolvedShowOnCooldown() end,
+			set = function(_, value) setCooldownVisibility("showOnCooldown", value) end,
 		},
 		{
 			name = L["CooldownPanelShowItemCount"] or "Show item count",
@@ -11219,8 +11308,7 @@ local function ensureEditor()
 			local entry = panel and panel.entries and panel.entries[entryId]
 			if not entry then return end
 			entry[field] = self:GetChecked() and true or false
-			if field == "glowReady" then CooldownPanels.ClearReadyGlowEntryState(panelId, entryId, true) end
-			if field == "showCharges" then CooldownPanels:RebuildChargesIndex() end
+			CooldownPanels:HandleEntryBooleanMutation(panelId, entryId, entry, field)
 			CooldownPanels:RefreshPanel(panelId)
 			CooldownPanels:RefreshEditor()
 		end)
@@ -13637,19 +13725,40 @@ local function updateItemCountCache(usesOnly)
 	return true
 end
 
-updateItemCountCacheForItem = function(itemID)
+updateItemCountCacheForItem = function(itemID, includeUses)
 	if not itemID then return end
 	CooldownPanels.runtime = CooldownPanels.runtime or {}
 	local runtime = CooldownPanels.runtime
 	runtime.itemCountCache = runtime.itemCountCache or {}
 	local slot = runtime.itemCountCache[itemID] or {}
 	slot.count = Api.GetItemCount(itemID, false, false) or 0
-	if runtime.itemUsesTrackedIds and runtime.itemUsesTrackedIds[itemID] then
+	if includeUses == nil then includeUses = runtime.itemUsesTrackedIds and runtime.itemUsesTrackedIds[itemID] end
+	if includeUses then
 		slot.uses = Api.GetItemCount(itemID, false, true) or 0
 	else
 		slot.uses = nil
 	end
 	runtime.itemCountCache[itemID] = slot
+end
+
+function CooldownPanels:HandleEntryBooleanMutation(panelId, entryId, entry, field)
+	if not (panelId and entry and field) then return end
+	if field == "glowReady" then CooldownPanels.ClearReadyGlowEntryState(panelId, entryId, true) end
+	if field == "glowReady" or field == "checkPower" or field == "hideWhenNoResource" or field == "readyGlowCheckPower" then
+		self:RebuildPowerIndex()
+	end
+	if field == "showCharges" then self:RebuildChargesIndex() end
+	if field == "showItemUses" or field == "useHighestRank" then
+		self:RebuildSpellIndex()
+		updateItemCountCache()
+		if entry.type == "ITEM" then
+			local resolvedItemId = CooldownPanels.ResolveEntryItemID(entry, entry.itemID)
+			if resolvedItemId then updateItemCountCacheForItem(resolvedItemId, entry.showItemUses == true) end
+		elseif entry.type == "MACRO" then
+			local macro = CooldownPanels.ResolveMacroEntry(entry)
+			if macro and macro.kind == "ITEM" and macro.itemID then updateItemCountCacheForItem(macro.itemID, entry.showItemUses == true) end
+		end
+	end
 end
 
 function CooldownPanels:UpdateRuntimeIcons(panelId)
@@ -13714,15 +13823,9 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 	local drawEdge = resolvedLayout and resolvedLayout.drawEdge
 	local drawBling = resolvedLayout and resolvedLayout.drawBling
 	local drawSwipe = resolvedLayout and resolvedLayout.drawSwipe
-	local hideOnCooldown = resolvedLayout and resolvedLayout.hideOnCooldown
-	local showOnCooldown = resolvedLayout and resolvedLayout.showOnCooldown
 	local gcdDrawEdge = resolvedLayout and resolvedLayout.gcdDrawEdge
 	local gcdDrawBling = resolvedLayout and resolvedLayout.gcdDrawBling
 	local gcdDrawSwipe = resolvedLayout and resolvedLayout.gcdDrawSwipe
-	if layoutEditActive then
-		hideOnCooldown = false
-		showOnCooldown = false
-	end
 	local assistedHighlightEnabled = shared and shared.assistedHighlightEnabled
 	if assistedHighlightEnabled == nil then
 		if CooldownPanels.refreshAssistedHighlightCVarState then CooldownPanels.refreshAssistedHighlightCVarState(nil, true) end
@@ -13835,8 +13938,11 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			local showWhenMissing = resolvedType == "STANCE" and entry.showWhenMissing == true
 			local alwaysShow = entry.alwaysShow ~= false
 			local cdmAuraAlwaysShowMode = resolvedType == "CDM_AURA" and CooldownPanels:ResolveEntryCDMAuraAlwaysShowMode(entryLayout, entry) or nil
-			local entryHideOnCooldown = hideOnCooldown and resolvedType ~= "CDM_AURA"
-			local entryShowOnCooldown = showOnCooldown and resolvedType ~= "CDM_AURA"
+			local entryHideOnCooldown, entryShowOnCooldown = self:ResolveEntryCooldownVisibility(entryLayout, entry)
+			if layoutEditActive or resolvedType == "CDM_AURA" then
+				entryHideOnCooldown = false
+				entryShowOnCooldown = false
+			end
 			local showEntryIconTexture = self:ResolveEntryShowIconTexture(entryLayout, entry)
 			local showGhostIcon = self:ShouldShowEditorGhostIcon(entryLayout, entry, showEntryIconTexture, layoutEditActive)
 			local entryNoDesaturation = self:ResolveEntryNoDesaturation(entryLayout, entry)
@@ -14009,7 +14115,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				local itemCache = shared and shared.itemCountCache
 				local cached = itemCache and itemCache[resolvedItemId]
 				if not cached then
-					updateItemCountCacheForItem(resolvedItemId)
+					updateItemCountCacheForItem(resolvedItemId, showItemUses)
 					itemCache = shared and shared.itemCountCache
 					cached = itemCache and itemCache[resolvedItemId]
 				end
@@ -14034,7 +14140,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 					if showItemCount then
 						local count = cachedCount
 						if count == nil then
-							updateItemCountCacheForItem(resolvedItemId)
+							updateItemCountCacheForItem(resolvedItemId, showItemUses)
 							itemCache = shared and shared.itemCountCache
 							cached = itemCache and itemCache[resolvedItemId]
 							count = cached and cached.count or 0
@@ -14049,7 +14155,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 					if showItemUses then
 						local uses = cachedUses
 						if uses == nil then
-							updateItemCountCacheForItem(resolvedItemId)
+							updateItemCountCacheForItem(resolvedItemId, true)
 							itemCache = shared and shared.itemCountCache
 							cached = itemCache and itemCache[resolvedItemId]
 							uses = cached and cached.uses or 0

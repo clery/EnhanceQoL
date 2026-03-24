@@ -257,6 +257,8 @@ function addon.Health.functions.resolveTrackedHealthstoneItem(itemID)
 	if not numericID then return nil end
 	if numericID ~= HEALTHSTONE_ITEM_ID and numericID ~= DEMONIC_HEALTHSTONE_ITEM_ID then return numericID end
 	if numericID ~= HEALTHSTONE_ITEM_ID then return numericID end
+	local normalCount = C_Item.GetItemCount(HEALTHSTONE_ITEM_ID, false, false) or 0
+	if normalCount > 0 then return numericID end
 	if not addon.Health.functions.isDemonicAvailable() then return numericID end
 	local demonicCount = C_Item.GetItemCount(DEMONIC_HEALTHSTONE_ITEM_ID, false, false) or 0
 	if demonicCount > 0 then return DEMONIC_HEALTHSTONE_ITEM_ID end

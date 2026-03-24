@@ -213,6 +213,9 @@ Helper.ENTRY_DEFAULTS = {
 	iconOffsetY = 0,
 	showCooldown = true,
 	showCooldownText = true,
+	cooldownVisibilityUseGlobal = true,
+	hideOnCooldown = false,
+	showOnCooldown = false,
 	showCharges = false,
 	showStacks = false,
 	stackStyleUseGlobal = true,
@@ -535,10 +538,7 @@ function Helper.NormalizeFixedGroupLayoutOverrides(value)
 	if value.pandemicGlowStyle ~= nil then normalized.pandemicGlowStyle = Helper.NormalizeGlowStyle(value.pandemicGlowStyle, Helper.PANEL_LAYOUT_DEFAULTS.readyGlowStyle) end
 	if value.pandemicGlowInset ~= nil then normalized.pandemicGlowInset = Helper.NormalizeGlowInset(value.pandemicGlowInset, Helper.PANEL_LAYOUT_DEFAULTS.readyGlowInset or 0) end
 	if value.pandemicGlowColor ~= nil then
-		normalized.pandemicGlowColor = Helper.NormalizeColor(
-			value.pandemicGlowColor,
-			Helper.PANEL_LAYOUT_DEFAULTS.pandemicGlowColor or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor
-		)
+		normalized.pandemicGlowColor = Helper.NormalizeColor(value.pandemicGlowColor, Helper.PANEL_LAYOUT_DEFAULTS.pandemicGlowColor or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor)
 	end
 	if not next(normalized) then return nil end
 	return normalized
@@ -1095,12 +1095,12 @@ function Helper.BuildFixedSlotEntryIds(panel, filterFn, includePreviewPadding)
 	if type(panel) ~= "table" or type(panel.entries) ~= "table" or type(panel.order) ~= "table" then return nil, 0, 0, 0 end
 	local previewPadding = includePreviewPadding == true
 	local cache = Helper.GetFixedLayoutCache(panel)
-	if type(filterFn) ~= "function" and not previewPadding and cache then
-		return cache.slotEntryIds or {}, cache.slotCount or 0, cache.boundsColumns or 0, cache.boundsRows or 0
-	end
+	if type(filterFn) ~= "function" and not previewPadding and cache then return cache.slotEntryIds or {}, cache.slotCount or 0, cache.boundsColumns or 0, cache.boundsRows or 0 end
 	local columns = cache and cache.boundsColumns or 0
 	local rows = cache and cache.boundsRows or 0
-	if previewPadding or not cache then columns, rows = Helper.GetFixedGridBounds(panel, previewPadding) end
+	if previewPadding or not cache then
+		columns, rows = Helper.GetFixedGridBounds(panel, previewPadding)
+	end
 	local count = columns * rows
 	if count <= 0 then return {}, 0, columns, rows end
 	local slotEntryIds = {}
@@ -1116,42 +1116,42 @@ function Helper.BuildFixedSlotEntryIds(panel, filterFn, includePreviewPadding)
 			if column and row and column <= columns and row <= rows then slotEntryIds[((row - 1) * columns) + column] = placed.entryId end
 		end
 	else
-	for _, entryId in ipairs(panel.order) do
-		local entry = panel.entries[entryId]
-		if entry and (type(filterFn) ~= "function" or filterFn(entry, entryId) ~= false) then
-			local groupId = Helper.NormalizeFixedGroupId(entry.fixedGroupId)
-			local group = groupId and ((groupById and groupById[groupId]) or Helper.GetFixedGroupById(panel, groupId)) or nil
-			if group then
-				if Helper.FixedGroupUsesStaticSlots(group) then
-					local column = Helper.NormalizeSlotCoordinate(entry.slotColumn)
-					local row = Helper.NormalizeSlotCoordinate(entry.slotRow)
-					if
-						column
-						and row
-						and column <= columns
-						and row <= rows
-						and column >= group.column
-						and column <= (group.column + group.columns - 1)
-						and row >= group.row
-						and row <= (group.row + group.rows - 1)
-					then
-						slotEntryIds[((row - 1) * columns) + column] = entryId
+		for _, entryId in ipairs(panel.order) do
+			local entry = panel.entries[entryId]
+			if entry and (type(filterFn) ~= "function" or filterFn(entry, entryId) ~= false) then
+				local groupId = Helper.NormalizeFixedGroupId(entry.fixedGroupId)
+				local group = groupId and ((groupById and groupById[groupId]) or Helper.GetFixedGroupById(panel, groupId)) or nil
+				if group then
+					if Helper.FixedGroupUsesStaticSlots(group) then
+						local column = Helper.NormalizeSlotCoordinate(entry.slotColumn)
+						local row = Helper.NormalizeSlotCoordinate(entry.slotRow)
+						if
+							column
+							and row
+							and column <= columns
+							and row <= rows
+							and column >= group.column
+							and column <= (group.column + group.columns - 1)
+							and row >= group.row
+							and row <= (group.row + group.rows - 1)
+						then
+							slotEntryIds[((row - 1) * columns) + column] = entryId
+						end
+					else
+						local list = dynamicGroupEntries[group.id]
+						if not list then
+							list = {}
+							dynamicGroupEntries[group.id] = list
+						end
+						list[#list + 1] = entryId
 					end
 				else
-					local list = dynamicGroupEntries[group.id]
-					if not list then
-						list = {}
-						dynamicGroupEntries[group.id] = list
-					end
-					list[#list + 1] = entryId
+					local column = Helper.NormalizeSlotCoordinate(entry.slotColumn)
+					local row = Helper.NormalizeSlotCoordinate(entry.slotRow)
+					if column and row and column <= columns and row <= rows then slotEntryIds[((row - 1) * columns) + column] = entryId end
 				end
-			else
-				local column = Helper.NormalizeSlotCoordinate(entry.slotColumn)
-				local row = Helper.NormalizeSlotCoordinate(entry.slotRow)
-				if column and row and column <= columns and row <= rows then slotEntryIds[((row - 1) * columns) + column] = entryId end
 			end
 		end
-	end
 	end
 	for i = 1, #groups do
 		local group = groups[i]
@@ -1594,6 +1594,9 @@ function Helper.NormalizeRoot(root)
 	root.defaults.entry.alwaysShow = Helper.ENTRY_DEFAULTS.alwaysShow
 	root.defaults.entry.showCooldown = Helper.ENTRY_DEFAULTS.showCooldown
 	root.defaults.entry.showCooldownText = Helper.ENTRY_DEFAULTS.showCooldownText
+	root.defaults.entry.cooldownVisibilityUseGlobal = Helper.ENTRY_DEFAULTS.cooldownVisibilityUseGlobal
+	root.defaults.entry.hideOnCooldown = Helper.ENTRY_DEFAULTS.hideOnCooldown
+	root.defaults.entry.showOnCooldown = Helper.ENTRY_DEFAULTS.showOnCooldown
 	root.defaults.entry.showCharges = Helper.ENTRY_DEFAULTS.showCharges
 	root.defaults.entry.showStacks = Helper.ENTRY_DEFAULTS.showStacks
 	root.defaults.entry.glowReady = Helper.ENTRY_DEFAULTS.glowReady
@@ -1768,6 +1771,10 @@ function Helper.NormalizeEntry(entry, defaults)
 	entry.chargesFontStyle = Helper.NormalizeFontStyleChoice(entry.chargesFontStyle, Helper.ENTRY_DEFAULTS.chargesFontStyle or Helper.PANEL_LAYOUT_DEFAULTS.chargesFontStyle or "OUTLINE")
 	entry.chargesColor = Helper.NormalizeColor(entry.chargesColor, Helper.ENTRY_DEFAULTS.chargesColor or Helper.PANEL_LAYOUT_DEFAULTS.chargesColor or { 1, 1, 1, 1 })
 	if type(entry.cooldownVisualsUseGlobal) ~= "boolean" then entry.cooldownVisualsUseGlobal = true end
+	if type(entry.cooldownVisibilityUseGlobal) ~= "boolean" then entry.cooldownVisibilityUseGlobal = Helper.ENTRY_DEFAULTS.cooldownVisibilityUseGlobal end
+	if type(entry.hideOnCooldown) ~= "boolean" then entry.hideOnCooldown = Helper.ENTRY_DEFAULTS.hideOnCooldown end
+	if type(entry.showOnCooldown) ~= "boolean" then entry.showOnCooldown = Helper.ENTRY_DEFAULTS.showOnCooldown end
+	if entry.showOnCooldown == true then entry.hideOnCooldown = false end
 	if type(entry.showChargesCooldown) ~= "boolean" then entry.showChargesCooldown = Helper.ENTRY_DEFAULTS.showChargesCooldown end
 	if type(entry.cooldownDrawEdge) ~= "boolean" then entry.cooldownDrawEdge = Helper.ENTRY_DEFAULTS.cooldownDrawEdge end
 	if type(entry.cooldownDrawBling) ~= "boolean" then entry.cooldownDrawBling = Helper.ENTRY_DEFAULTS.cooldownDrawBling end

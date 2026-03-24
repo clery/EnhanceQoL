@@ -1,5 +1,13 @@
 # Changelog
 
+## [9.9.4] - 2026-03-24
+
+### 🐛 Fixed
+
+- Missing locale
+
+---
+
 ## [9.9.3] - 2026-03-24
 
 ### 🐛 Fixed
@@ -7,12 +15,16 @@
 - Group Frames (Party / Raid / Edit Mode): Fixed the action buttons at the bottom of the settings panel using an uneven layout. They now use a consistent grid and the panel height behaves more cleanly when many options are visible.
 - Group Frames (Party / Raid / Edit Mode): Fixed `Hover`, `Target`, and `Aggro highlight` borders not showing anymore, including their sample preview.
 
+---
+
 ## [9.9.2] - 2026-03-24
 
 ### 🐛 Fixed
 
 - Cooldown Panels (Items / Healthstones): Fixed `Show item uses` not updating immediately after enabling it on item entries.
 - Unit Frames (Boss): Highlight color wasn't working correctly
+
+---
 
 ## [9.9.1] - 2026-03-24
 

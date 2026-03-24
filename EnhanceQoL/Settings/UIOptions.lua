@@ -1370,7 +1370,7 @@ local function createNameplatesCategory()
 	table.sort(nameplateData, function(a, b) return a.text < b.text end)
 	addon.functions.SettingsCreateCheckboxes(category, nameplateData)
 
-	addon.functions.SettingsCreateHeadline(category, L["nameplateEnhancementsHeader"] or "Enhancements", {
+	addon.functions.SettingsCreateHeadline(category, _G.STAT_CATEGORY_ENHANCEMENTS, {
 		parentSection = expandable,
 	})
 

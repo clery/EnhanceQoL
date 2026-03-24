@@ -7793,7 +7793,7 @@ local function applyConfig(unit)
 			if st.portraitHolder then st.portraitHolder:Hide() end
 			if st.portraitSeparator then st.portraitSeparator:Hide() end
 			if st.auraContainer then AuraUtil.hideAuraContainers(st) end
-			if st.barGroup and st.barGroup._ufHighlight then st.barGroup._ufHighlight:Hide() end
+			if st._highlightFrame then st._highlightFrame:Hide() end
 			st._hovered = false
 		end
 		if st then st._highlightCfg = nil end

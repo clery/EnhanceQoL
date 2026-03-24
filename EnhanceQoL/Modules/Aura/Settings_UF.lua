@@ -3072,6 +3072,9 @@ local function buildUnitSettings(unit)
 
 	local function isHighlightEnabled() return getValue(unit, { "highlight", "enabled" }, highlightDef.enabled == true) == true end
 	local function isHighlightAggroEnabled() return isHighlightEnabled() and (isPlayer or isPet) end
+	local function isHighlightMouseoverEnabled()
+		return isHighlightEnabled() and (getValue(unit, { "highlight", "mouseover" }, highlightDef.mouseover ~= false) == true)
+	end
 
 	list[#list + 1] = checkbox(
 		L["UFHighlightMouseover"] or "Highlight on mouseover",
@@ -3084,6 +3087,35 @@ local function buildUnitSettings(unit)
 		"highlight",
 		isHighlightEnabled
 	)
+
+	list[#list + 1] = {
+		name = L["UFHighlightMouseoverColor"] or "Mouseover color",
+		kind = settingType.Color,
+		parentId = "highlight",
+		hasOpacity = true,
+		default = highlightDef.mouseoverColor or highlightDef.color or { 1, 0, 0, 1 },
+		get = function() return getValue(unit, { "highlight", "mouseoverColor" }, highlightDef.mouseoverColor or highlightDef.color or { 1, 0, 0, 1 }) end,
+		set = function(_, color)
+			setColor(unit, { "highlight", "mouseoverColor" }, color.r, color.g, color.b, color.a)
+			refresh()
+		end,
+		colorGet = function()
+			local color = getValue(unit, { "highlight", "mouseoverColor" }, highlightDef.mouseoverColor or highlightDef.color or { 1, 0, 0, 1 })
+			local r, g, b, a = toRGBA(color, highlightDef.mouseoverColor or highlightDef.color or { 1, 0, 0, 1 })
+			return { r = r, g = g, b = b, a = a }
+		end,
+		colorSet = function(_, color)
+			setColor(unit, { "highlight", "mouseoverColor" }, color.r, color.g, color.b, color.a)
+			refresh()
+		end,
+		colorDefault = {
+			r = select(1, toRGBA(highlightDef.mouseoverColor or highlightDef.color, { 1, 0, 0, 1 })),
+			g = select(2, toRGBA(highlightDef.mouseoverColor or highlightDef.color, { 1, 0, 0, 1 })),
+			b = select(3, toRGBA(highlightDef.mouseoverColor or highlightDef.color, { 1, 0, 0, 1 })),
+			a = select(4, toRGBA(highlightDef.mouseoverColor or highlightDef.color, { 1, 0, 0, 1 })),
+		},
+		isEnabled = isHighlightMouseoverEnabled,
+	}
 
 	list[#list + 1] = checkbox(
 		L["Enable target highlight"] or "Enable target highlight",

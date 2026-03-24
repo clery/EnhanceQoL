@@ -1059,6 +1059,11 @@ local function ensureHighlightFrame(frame)
 	return highlight
 end
 
+local function getHighlightHostFrame(st)
+	if not st then return nil end
+	return st.frame or st.barGroup
+end
+
 function H.buildHighlightConfig(cfg, def)
 	local hcfg = (cfg and cfg.highlight) or {}
 	local hdef = (def and def.highlight) or {}
@@ -1082,6 +1087,9 @@ function H.buildHighlightConfig(cfg, def)
 	local color = hcfg.color
 	if type(color) ~= "table" then color = hdef.color end
 	if type(color) ~= "table" then color = { 1, 0, 0, 1 } end
+	local mouseoverColor = hcfg.mouseoverColor
+	if type(mouseoverColor) ~= "table" then mouseoverColor = hdef.mouseoverColor end
+	if type(mouseoverColor) ~= "table" then mouseoverColor = color end
 	return {
 		enabled = true,
 		mouseover = mouseover == true,
@@ -1090,13 +1098,15 @@ function H.buildHighlightConfig(cfg, def)
 		texture = texture,
 		size = size,
 		color = color,
+		mouseoverColor = mouseoverColor,
 	}
 end
 
 function H.applyHighlightStyle(st, highlightCfg)
-	if not st or not st.barGroup then return end
+	local host = getHighlightHostFrame(st)
+	if not host then return end
 	if not highlightCfg or highlightCfg.enabled ~= true then
-		local highlight = st.barGroup._ufHighlight
+		local highlight = host._ufHighlight or st._highlightFrame
 		if highlight then
 			highlight:SetBackdrop(nil)
 			highlight:Hide()
@@ -1104,7 +1114,7 @@ function H.applyHighlightStyle(st, highlightCfg)
 		st._highlightFrame = nil
 		return
 	end
-	local highlight = ensureHighlightFrame(st.barGroup)
+	local highlight = ensureHighlightFrame(host)
 	if not highlight then return end
 	st._highlightFrame = highlight
 	local size = highlightCfg.size or 1
@@ -1131,28 +1141,30 @@ local function hasAggro(unit)
 end
 
 function H.updateHighlight(st, unit, playerUnit)
-	if not st or not st.barGroup then return end
+	local host = getHighlightHostFrame(st)
+	if not host then return end
 	local cfg = st._highlightCfg
-	local highlight = st.barGroup._ufHighlight
+	local highlight = host._ufHighlight or st._highlightFrame
 	if not cfg or cfg.enabled ~= true then
 		if highlight then highlight:Hide() end
 		return
 	end
 	if not highlight then
 		H.applyHighlightStyle(st, cfg)
-		highlight = st.barGroup._ufHighlight
+		highlight = host._ufHighlight or st._highlightFrame
 		if not highlight then return end
 	end
 	local show = false
+	local color = cfg.color or { 1, 0, 0, 1 }
 	if cfg.mouseover and st._hovered then
 		show = true
+		color = cfg.mouseoverColor or color
 	elseif cfg.target and UnitIsUnit and UnitExists and UnitExists("target") and UnitExists(unit) and UnitIsUnit(unit, "target") then
 		show = true
 	elseif cfg.aggro and (unit == (playerUnit or "player") or unit == "pet") and hasAggro(unit) then
 		show = true
 	end
 	if show then
-		local color = cfg.color or { 1, 0, 0, 1 }
 		highlight:SetBackdropBorderColor(color[1] or 1, color[2] or 0, color[3] or 0, color[4] or 1)
 		highlight:Show()
 	else

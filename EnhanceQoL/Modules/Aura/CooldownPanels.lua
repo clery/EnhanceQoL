@@ -15234,12 +15234,17 @@ function CooldownPanels:HideAllRuntimePanels()
 	end
 end
 
-function CooldownPanels:RefreshAllPanels()
+function CooldownPanels:RefreshAllPanels(forceAll)
 	local root = ensureRoot()
 	if not root then return end
 	local runtime = self.runtime
 	local panelIds = nil
-	if self:IsInEditMode() ~= true and not self:IsAnyPanelLayoutEditActive() then
+	if forceAll == true and runtime and runtime.disabledPanelIds then
+		for i = 1, #runtime.disabledPanelIds do
+			runtime.disabledPanelIds[i] = nil
+		end
+	end
+	if forceAll ~= true and self:IsInEditMode() ~= true and not self:IsAnyPanelLayoutEditActive() then
 		local enabledPanels = runtime and runtime.enabledPanels
 		if not enabledPanels or not next(enabledPanels) then
 			self:HideAllRuntimePanels()
@@ -18635,7 +18640,7 @@ function CooldownPanels:RequestUpdate(cause)
 		runtime.updateCause = nil
 		runtime.updateFullRefresh = nil
 		if shouldFullRefresh then
-			CooldownPanels:RefreshAllPanels()
+			CooldownPanels:RefreshAllPanels(true)
 			return
 		end
 		if not CooldownPanels.RequestEnabledPanelRefreshes() then CooldownPanels:RefreshAllPanels() end

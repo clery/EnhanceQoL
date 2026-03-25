@@ -95,9 +95,8 @@ end
 
 function GF.SetStatusBarValue(bar, value, smooth, forceImmediate)
 	if not bar or value == nil then return end
-	local interpolation = Enum and Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.ExponentialEaseOut
-	if smooth and not forceImmediate and interpolation then
-		bar:SetValue(value, interpolation)
+	if smooth then
+		bar:SetValue(value, Enum.StatusBarInterpolation.ExponentialEaseOut)
 	else
 		bar:SetValue(value)
 	end
@@ -8450,7 +8449,7 @@ function GF:UpdateHealthValue(self, unit, st)
 	elseif deadOrGhost then
 		GF.SetStatusBarValue(st.health, 0, false, true)
 	elseif secretHealth then
-		GF.SetStatusBarValue(st.health, cur or 0, false, true)
+		GF.SetStatusBarValue(st.health, cur or 0, smoothHealth, true)
 	else
 		GF.SetStatusBarValue(st.health, cur or 0, smoothHealth)
 	end
@@ -8873,7 +8872,7 @@ function GF:UpdatePowerValue(self, unit, st)
 	local smoothPower = (pcfg.smoothFill ~= nil) and (pcfg.smoothFill == true) or (defP.smoothFill == true)
 	if secretPower then
 		st.power:SetMinMaxValues(0, maxForValue)
-		GF.SetStatusBarValue(st.power, cur or 0, false, true)
+		GF.SetStatusBarValue(st.power, cur or 0, smoothPower, true)
 	else
 		if st._lastPowerMax ~= maxForValue then
 			st.power:SetMinMaxValues(0, maxForValue)

@@ -1546,12 +1546,11 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry, entryLayout, alwaysS
 	local cooldownRate = 1
 	local cooldownDurationObject
 	local durationActive = false
-	local cooldownUsesExpirationTime = false
-	local cooldownUsesStartTime = false
 
+	auraInstanceID = getAuraInstanceID(auraData) or auraInstanceID
 	if auraData and active and auraUnit and hasAuraInstanceID(auraInstanceID) and Api.GetAuraDuration then
 		cooldownDurationObject = Api.GetAuraDuration(auraUnit, auraInstanceID)
-		durationActive = true
+		durationActive = cooldownDurationObject ~= nil
 	end
 
 	if not cooldownDurationObject and auraData and active and rawDuration ~= nil and rawExpirationTime ~= nil then
@@ -1563,20 +1562,16 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry, entryLayout, alwaysS
 				cooldownDuration = duration
 				if cooldownStart < 0 then cooldownStart = 0 end
 				cooldownRate = tonumber(rawTimeMod) or 1
-				durationActive = true
-				cooldownUsesExpirationTime = false
 			end
 		end
 	end
 
-	if not durationActive and hasTotemData then
+	if not cooldownDurationObject and hasTotemData then
 		local startTime, duration, modRate = getTotemCooldownInfo(chosenFrame)
 		if duration then
 			cooldownStart = startTime
 			cooldownDuration = duration
 			cooldownRate = modRate or 1
-			durationActive = true
-			cooldownUsesStartTime = true
 		end
 	end
 
@@ -1600,8 +1595,6 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry, entryLayout, alwaysS
 	data.cooldownEnabled = durationActive
 	data.cooldownRate = cooldownRate
 	data.cooldownDurationObject = cooldownDurationObject
-	data.cooldownUsesExpirationTime = cooldownUsesExpirationTime
-	data.cooldownUsesStartTime = cooldownUsesStartTime
 	data.cooldownID = resolvedCooldownID or entry.cooldownID
 	data.spellID = entry.spellID
 	data.buffName = entry.buffName or (scanInfo and scanInfo.buffName) or getSpellName(entry.spellID) or tostring(resolvedCooldownID or entry.cooldownID)

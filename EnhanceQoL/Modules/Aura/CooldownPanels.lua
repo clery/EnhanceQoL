@@ -14346,10 +14346,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				data.cdmAuraActive = cdmAuraData and cdmAuraData.active == true
 				data.cdmAuraInactiveDesaturate = cdmAuraData and cdmAuraData.inactiveDesaturate == true
 					or cdmAuraAlwaysShowMode == (CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE and CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE.DESATURATE or "DESATURATE")
-				data.cdmAuraDurationActive = cdmAuraData and cdmAuraData.durationActive == true
 				data.cdmAuraDurationObject = cdmAuraData and cdmAuraData.cooldownDurationObject or nil
-				data.cdmAuraUsesExpirationTime = cdmAuraData and cdmAuraData.cooldownUsesExpirationTime == true
-				data.cdmAuraUsesStartTime = cdmAuraData and cdmAuraData.cooldownUsesStartTime == true
 			end
 		end
 	end
@@ -14496,10 +14493,8 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			local cooldownRemaining = data.cooldownRemaining
 			local durationActive = cooldownDurationObject ~= nil and (cooldownRemaining == nil or cooldownRemaining > 0)
 			local cdmAuraActive = data.cdmAuraActive == true
-			local cdmAuraDurationActive = data.cdmAuraDurationActive == true
 			local cdmAuraDurationObject = data.cdmAuraDurationObject
-			local cdmAuraUsesExpirationTime = data.cdmAuraUsesExpirationTime == true
-			local cdmAuraUsesStartTime = data.cdmAuraUsesStartTime == true
+			local cdmAuraDurationActive = cdmAuraDurationObject ~= nil
 			local cooldownActive = data.showCooldown and (durationActive or (cooldownEnabledOk and isCooldownActive(cooldownStart, cooldownDuration)))
 			local usingCooldown = false
 			local desaturate = false
@@ -14678,22 +14673,14 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 					else
 						if icon.cooldown.SetScript then icon.cooldown:SetScript("OnCooldownDone", onCooldownDone) end
 					end
-				elseif cdmAuraDurationActive then
+				elseif cdmAuraActive then
 					setCooldownDrawState(icon.cooldown, entryDrawEdge, entryDrawBling, entryDrawSwipe)
-					if cdmAuraDurationObject and icon.cooldown.SetCooldownFromDurationObject then
-						icon.cooldown:Clear()
+					icon.cooldown:Clear()
+					if cdmAuraDurationActive and icon.cooldown.SetCooldownFromDurationObject then
 						icon.cooldown:SetCooldownFromDurationObject(cdmAuraDurationObject)
-					elseif cdmAuraUsesExpirationTime and icon.cooldown.SetCooldownFromExpirationTime then
-						icon.cooldown:Clear()
-						icon.cooldown:SetCooldownFromExpirationTime(cooldownStart, cooldownDuration, cooldownRate)
-					elseif cdmAuraUsesStartTime then
-						icon.cooldown:Clear()
-						icon.cooldown:SetCooldown(cooldownStart or 0, cooldownDuration or 0, cooldownRate)
-					elseif isSafeNumber(cooldownStart) and isSafeNumber(cooldownDuration) then
-						icon.cooldown:Clear()
-						icon.cooldown:SetCooldown(cooldownStart, cooldownDuration, cooldownRate)
+						if icon.cooldown.SetScript then icon.cooldown:SetScript("OnCooldownDone", onCooldownDone) end
 					else
-						icon.cooldown:Clear()
+						if icon.cooldown.SetScript then icon.cooldown:SetScript("OnCooldownDone", nil) end
 					end
 					CooldownPanels.SetIconDesaturationRuntime(icon.texture, 0, entryNoDesaturation)
 					desaturate = false
@@ -14703,7 +14690,6 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 					elseif showOnCooldown then
 						icon:SetAlpha(1)
 					end
-					if icon.cooldown.SetScript then icon.cooldown:SetScript("OnCooldownDone", onCooldownDone) end
 				elseif cooldownActive then
 					icon.cooldown:SetCooldown(cooldownStart, cooldownDuration, cooldownRate)
 					desaturate = true

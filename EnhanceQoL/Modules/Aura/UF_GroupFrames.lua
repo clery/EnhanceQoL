@@ -93,6 +93,16 @@ local function formatSliderDecimal(value)
 	return text
 end
 
+function GF.SetStatusBarValue(bar, value, smooth, forceImmediate)
+	if not bar or value == nil then return end
+	local interpolation = Enum and Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.ExponentialEaseOut
+	if smooth and not forceImmediate and interpolation then
+		bar:SetValue(value, interpolation)
+	else
+		bar:SetValue(value)
+	end
+end
+
 function GF.GetDynamicContentScaleAmount(cfg)
 	if type(cfg) ~= "table" then return 0 end
 	local value = cfg.dynamicScaleMin
@@ -2004,6 +2014,7 @@ local DEFAULTS = {
 			textLeft = "NONE",
 			textRight = "NONE",
 			texture = "DEFAULT",
+			smoothFill = false,
 			useClassColor = true,
 			useCustomColor = false,
 			useShortNumbers = true,
@@ -2130,6 +2141,7 @@ local DEFAULTS = {
 			textLeft = "NONE",
 			textRight = "NONE",
 			texture = "DEFAULT",
+			smoothFill = false,
 			useShortNumbers = true,
 		},
 		powerHeight = 6,
@@ -2759,6 +2771,7 @@ local DEFAULTS = {
 			textLeft = "NONE",
 			textRight = "CURRENT",
 			texture = "DEFAULT",
+			smoothFill = false,
 			useClassColor = true,
 			useCustomColor = false,
 			useShortNumbers = true,
@@ -2869,6 +2882,7 @@ local DEFAULTS = {
 			textLeft = "NONE",
 			textRight = "NONE",
 			texture = "DEFAULT",
+			smoothFill = false,
 			useShortNumbers = true,
 		},
 		powerHeight = 4,
@@ -3370,6 +3384,7 @@ local DEFAULTS = {
 			textLeft = "NONE",
 			textRight = "CURRENT",
 			texture = "DEFAULT",
+			smoothFill = false,
 			useClassColor = true,
 			useCustomColor = false,
 			useShortNumbers = true,
@@ -3481,6 +3496,7 @@ local DEFAULTS = {
 			textLeft = "NONE",
 			textRight = "NONE",
 			texture = "DEFAULT",
+			smoothFill = false,
 			useShortNumbers = true,
 		},
 		powerHeight = 6,
@@ -3980,6 +3996,7 @@ local DEFAULTS = {
 			textLeft = "NONE",
 			textRight = "CURRENT",
 			texture = "DEFAULT",
+			smoothFill = false,
 			useClassColor = true,
 			useCustomColor = false,
 			useShortNumbers = true,
@@ -4090,6 +4107,7 @@ local DEFAULTS = {
 			textLeft = "NONE",
 			textRight = "NONE",
 			texture = "DEFAULT",
+			smoothFill = false,
 			useShortNumbers = true,
 		},
 		powerHeight = 6,
@@ -8421,21 +8439,22 @@ function GF:UpdateHealthValue(self, unit, st)
 	local isGhost = unit and UnitIsGhost and GFH.UnsecretBool(UnitIsGhost(unit)) or nil
 	local deadOrGhost = (isDead == true) or (isGhost == true)
 	local suppressAuxHealthBars = (connected == false) or deadOrGhost
+	local cfg = self._eqolCfg or getCfg(self._eqolGroupKind or "party")
+	local kind = self._eqolGroupKind or "party"
+	local hc = cfg and cfg.health or {}
+	local defH = (DEFAULTS[kind] and DEFAULTS[kind].health) or {}
+	local smoothHealth = (hc.smoothFill ~= nil) and (hc.smoothFill == true) or (defH.smoothFill == true)
 	st.health:SetMinMaxValues(0, maxForValue)
 	if connected == false then
-		st.health:SetValue(maxForValue)
+		GF.SetStatusBarValue(st.health, maxForValue, false, true)
 	elseif deadOrGhost then
-		st.health:SetValue(0)
+		GF.SetStatusBarValue(st.health, 0, false, true)
 	elseif secretHealth then
-		st.health:SetValue(cur or 0)
+		GF.SetStatusBarValue(st.health, cur or 0, false, true)
 	else
-		st.health:SetValue(cur or 0)
+		GF.SetStatusBarValue(st.health, cur or 0, smoothHealth)
 	end
 
-	local cfg = self._eqolCfg or getCfg(self._eqolGroupKind or "party")
-	local hc = cfg and cfg.health or {}
-	local kind = self._eqolGroupKind or "party"
-	local defH = (DEFAULTS[kind] and DEFAULTS[kind].health) or {}
 	local incomingHealEnabled = hc.incomingHealEnabled == true
 	local absorbEnabled = hc.absorbEnabled ~= false
 	local healAbsorbEnabled = hc.healAbsorbEnabled ~= false
@@ -8847,9 +8866,14 @@ function GF:UpdatePowerValue(self, unit, st)
 		maxForValue = maxv
 	end
 	local secretPower = issecretvalue and (issecretvalue(cur) or issecretvalue(maxv))
+	local cfg = self._eqolCfg or getCfg(self._eqolGroupKind or "party")
+	local kind = self._eqolGroupKind or "party"
+	local pcfg = cfg and cfg.power or {}
+	local defP = (DEFAULTS[kind] and DEFAULTS[kind].power) or {}
+	local smoothPower = (pcfg.smoothFill ~= nil) and (pcfg.smoothFill == true) or (defP.smoothFill == true)
 	if secretPower then
 		st.power:SetMinMaxValues(0, maxForValue)
-		st.power:SetValue(cur or 0)
+		GF.SetStatusBarValue(st.power, cur or 0, false, true)
 	else
 		if st._lastPowerMax ~= maxForValue then
 			st.power:SetMinMaxValues(0, maxForValue)
@@ -8863,21 +8887,17 @@ function GF:UpdatePowerValue(self, unit, st)
 			if st._lastPowerPx ~= px or st._lastPowerBarW ~= w then
 				st._lastPowerPx = px
 				st._lastPowerBarW = w
-				st.power:SetValue((px / w) * maxForValue)
+				GF.SetStatusBarValue(st.power, (px / w) * maxForValue, smoothPower)
 				st._lastPowerCur = cur
 			end
 		else
 			if st._lastPowerCur ~= cur then
-				st.power:SetValue(cur)
+				GF.SetStatusBarValue(st.power, cur, smoothPower)
 				st._lastPowerCur = cur
 			end
 		end
 	end
 
-	local cfg = self._eqolCfg or getCfg(self._eqolGroupKind or "party")
-	local kind = self._eqolGroupKind or "party"
-	local pcfg = cfg and cfg.power or {}
-	local defP = (DEFAULTS[kind] and DEFAULTS[kind].power) or {}
 	local leftMode = (pcfg.textLeft ~= nil) and pcfg.textLeft or defP.textLeft or "NONE"
 	local centerMode = (pcfg.textCenter ~= nil) and pcfg.textCenter or defP.textCenter or "NONE"
 	local rightMode = (pcfg.textRight ~= nil) and pcfg.textRight or defP.textRight or "NONE"
@@ -16026,6 +16046,27 @@ local function buildEditModeSettings(kind, editModeId)
 			end,
 		},
 		{
+			name = L["Smooth fill"] or "Smooth fill",
+			kind = SettingType.Checkbox,
+			field = "healthSmoothFill",
+			parentId = "health",
+			get = function()
+				local cfg = getCfg(kind)
+				local hc = cfg and cfg.health or {}
+				local def = DEFAULTS[kind] and DEFAULTS[kind].health or {}
+				if hc.smoothFill == nil then return def.smoothFill == true end
+				return hc.smoothFill == true
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				cfg.health = cfg.health or {}
+				cfg.health.smoothFill = value and true or false
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "healthSmoothFill", cfg.health.smoothFill, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+			end,
+		},
+		{
 			name = L["Show bar backdrop"] or "Show bar backdrop",
 			kind = SettingType.Checkbox,
 			field = "healthBackdropEnabled",
@@ -19617,6 +19658,27 @@ local function buildEditModeSettings(kind, editModeId)
 			end,
 		},
 		{
+			name = L["Smooth fill"] or "Smooth fill",
+			kind = SettingType.Checkbox,
+			field = "powerSmoothFill",
+			parentId = "power",
+			get = function()
+				local cfg = getCfg(kind)
+				local pcfg = cfg and cfg.power or {}
+				local def = DEFAULTS[kind] and DEFAULTS[kind].power or {}
+				if pcfg.smoothFill == nil then return def.smoothFill == true end
+				return pcfg.smoothFill == true
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				cfg.power = cfg.power or {}
+				cfg.power.smoothFill = value and true or false
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "powerSmoothFill", cfg.power.smoothFill, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+			end,
+		},
+		{
 			name = L["Show bar backdrop"] or "Show bar backdrop",
 			kind = SettingType.Checkbox,
 			field = "powerBackdropEnabled",
@@ -23131,6 +23193,10 @@ local function applyEditModeData(kind, data)
 		cfg.health = cfg.health or {}
 		cfg.health.texture = data.healthTexture
 	end
+	if data.healthSmoothFill ~= nil then
+		cfg.health = cfg.health or {}
+		cfg.health.smoothFill = data.healthSmoothFill and true or false
+	end
 	if data.healthBackdropEnabled ~= nil then
 		cfg.health = cfg.health or {}
 		cfg.health.backdrop = cfg.health.backdrop or {}
@@ -23569,6 +23635,10 @@ local function applyEditModeData(kind, data)
 	if data.powerTexture ~= nil then
 		cfg.power = cfg.power or {}
 		cfg.power.texture = data.powerTexture
+	end
+	if data.powerSmoothFill ~= nil then
+		cfg.power = cfg.power or {}
+		cfg.power.smoothFill = data.powerSmoothFill and true or false
 	end
 	if data.powerBackdropEnabled ~= nil then
 		cfg.power = cfg.power or {}
@@ -24054,6 +24124,7 @@ function GF:EnsureEditMode()
 				healthFont = hc.font or defH.font or nil,
 				healthFontOutline = hc.fontOutline or defH.fontOutline or "OUTLINE",
 				healthTexture = hc.texture or defH.texture or "DEFAULT",
+				healthSmoothFill = (hc.smoothFill ~= nil) and (hc.smoothFill == true) or (defH.smoothFill == true),
 				healthBackdropEnabled = (hcBackdrop.enabled ~= nil) and (hcBackdrop.enabled ~= false) or (defHBackdrop.enabled ~= false),
 				healthBackdropClampToFill = (hcBackdrop.clampToFill ~= nil) and (hcBackdrop.clampToFill == true) or ((hcBackdrop.clampToFill == nil) and (defHBackdrop.clampToFill == true)),
 				healthBackdropColor = hcBackdrop.color or defHBackdrop.color or { 0, 0, 0, 0.6 },
@@ -24262,6 +24333,7 @@ function GF:EnsureEditMode()
 				powerFont = pcfg.font or defP.font or nil,
 				powerFontOutline = pcfg.fontOutline or defP.fontOutline or "OUTLINE",
 				powerTexture = pcfg.texture or defP.texture or "DEFAULT",
+				powerSmoothFill = (pcfg.smoothFill ~= nil) and (pcfg.smoothFill == true) or (defP.smoothFill == true),
 				powerBackdropEnabled = (pcfgBackdrop.enabled ~= nil) and (pcfgBackdrop.enabled ~= false) or (defPBackdrop.enabled ~= false),
 				powerBackdropColor = pcfgBackdrop.color or defPBackdrop.color or { 0, 0, 0, 0.6 },
 				powerBackdropTexture = pcfgBackdrop.texture or defPBackdrop.texture or "DEFAULT",

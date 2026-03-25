@@ -1,5 +1,18 @@
 # Changelog
 
+## [9.10.0] - 2026-03-25
+
+### ✨ Added
+
+- Group Frames (Party / Raid / Main Tanks / Main Assists): Added optional `Smooth fill` toggles for the health and power bars in Edit Mode, matching the existing smooth bar behavior used on other EQoL bar modules.
+
+### 🐛 Fixed
+
+- Cooldown Panels (CDM Auras): Fixed aura cooldown rendering falling back to deprecated legacy cooldown APIs when `C_UnitAuras.GetAuraDuration()` did not provide a duration object. CDM aura panels now only use `SetCooldownFromDurationObject()` for aura-driven cooldowns.
+- Unit Frames (Player / Target / ToT / Focus / Boss): Fixed highlight borders using the outer frame bounds instead of the actual health-bar border area. Highlights now align with the visible bar border again and no longer render partially behind it.
+
+---
+
 ## [9.9.4] - 2026-03-24
 
 ### 🐛 Fixed

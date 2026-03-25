@@ -687,6 +687,73 @@ local privateAuraDuration = {
 
 local privateAuraShowDispelType = false
 local privateAuraShowDispelCount = 0
+H._privateAuraDeferred = H._privateAuraDeferred or { containers = {} }
+
+function H.UpdatePrivateAuraDeferredEvent()
+	local frame = H._privateAuraDeferred and H._privateAuraDeferred.frame
+	if not frame then return end
+	if next(H._privateAuraDeferred.containers) then
+		frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+	else
+		frame:UnregisterEvent("PLAYER_REGEN_ENABLED")
+	end
+end
+
+function H.ClearDeferredPrivateAuraMutation(container)
+	if not container then return end
+	container._eqolPrivateAuraDeferred = nil
+	H._privateAuraDeferred.containers[container] = nil
+	H.UpdatePrivateAuraDeferredEvent()
+end
+
+function H.FlushDeferredPrivateAuraMutations()
+	local queued = {}
+	for container in pairs(H._privateAuraDeferred.containers) do
+		queued[#queued + 1] = container
+	end
+	for i = 1, #queued do
+		local container = queued[i]
+		local pending = container and container._eqolPrivateAuraDeferred
+		H.ClearDeferredPrivateAuraMutation(container)
+		if pending then
+			if pending.action == "remove" then
+				H.RemovePrivateAuras(container)
+			elseif pending.action == "apply" then
+				H.ApplyPrivateAuras(container, pending.unit, pending.cfg, pending.parent, pending.levelFrame, pending.showSample, pending.inverseAnchor)
+			end
+		end
+	end
+end
+
+function H.QueueDeferredPrivateAuraMutation(container, action, payload)
+	if not container then return end
+	if not H._privateAuraDeferred.frame then
+		H._privateAuraDeferred.frame = CreateFrame("Frame")
+		H._privateAuraDeferred.frame:SetScript("OnEvent", function(_, event)
+			if event == "PLAYER_REGEN_ENABLED" then H.FlushDeferredPrivateAuraMutations() end
+		end)
+	end
+	local pending = container._eqolPrivateAuraDeferred or {}
+	pending.action = action
+	if action == "apply" and payload then
+		pending.unit = payload.unit
+		pending.cfg = payload.cfg
+		pending.parent = payload.parent
+		pending.levelFrame = payload.levelFrame
+		pending.showSample = payload.showSample
+		pending.inverseAnchor = payload.inverseAnchor
+	else
+		pending.unit = nil
+		pending.cfg = nil
+		pending.parent = nil
+		pending.levelFrame = nil
+		pending.showSample = nil
+		pending.inverseAnchor = nil
+	end
+	container._eqolPrivateAuraDeferred = pending
+	H._privateAuraDeferred.containers[container] = true
+	H.UpdatePrivateAuraDeferredEvent()
+end
 
 local function removePrivateAuraAnchor(anchor)
 	if anchor and anchor.anchorID and C_UnitAuras and C_UnitAuras.RemovePrivateAuraAnchor then
@@ -785,6 +852,14 @@ end
 
 function H.RemovePrivateAuras(container)
 	if not container then return end
+	if InCombatLockdown and InCombatLockdown() then
+		updatePrivateAuraShowDispelType(container, false)
+		H.QueueDeferredPrivateAuraMutation(container, "remove")
+		container._eqolPrivateAuraState = nil
+		if container.Hide then container:Hide() end
+		return
+	end
+	H.ClearDeferredPrivateAuraMutation(container)
 	updatePrivateAuraShowDispelType(container, false)
 	if container._eqolPrivateAuraFrames then
 		for _, anchor in ipairs(container._eqolPrivateAuraFrames) do
@@ -825,6 +900,18 @@ function H.ApplyPrivateAuras(container, unit, cfg, parent, levelFrame, showSampl
 		if container.Hide then container:Hide() end
 		return
 	end
+	if InCombatLockdown and InCombatLockdown() then
+		H.QueueDeferredPrivateAuraMutation(container, "apply", {
+			unit = unit,
+			cfg = cfg,
+			parent = parent,
+			levelFrame = levelFrame,
+			showSample = showSample,
+			inverseAnchor = inverseAnchor,
+		})
+		return
+	end
+	H.ClearDeferredPrivateAuraMutation(container)
 
 	local effectiveUnit = resolvePrivateAuraUnitToken(unit)
 	local cacheState = unit == "player" or unit == "focus"
@@ -1061,7 +1148,8 @@ end
 
 local function getHighlightHostFrame(st)
 	if not st then return nil end
-	return st.frame or st.barGroup
+	-- Unit frame borders are applied to the bar wrapper, not the outer frame.
+	return st.barGroup or st.frame
 end
 
 function H.buildHighlightConfig(cfg, def)
@@ -1105,14 +1193,25 @@ end
 function H.applyHighlightStyle(st, highlightCfg)
 	local host = getHighlightHostFrame(st)
 	if not host then return end
+	local highlight = host._ufHighlight
+	if not highlight then
+		highlight = st and st._highlightFrame or nil
+		if highlight and highlight.GetParent and highlight:GetParent() ~= host then
+			highlight:Hide()
+			highlight = nil
+		end
+	end
 	if not highlightCfg or highlightCfg.enabled ~= true then
-		local highlight = host._ufHighlight or st._highlightFrame
+		if st._highlightFrame and st._highlightFrame ~= highlight then st._highlightFrame:Hide() end
 		if highlight then
 			highlight:SetBackdrop(nil)
 			highlight:Hide()
 		end
 		st._highlightFrame = nil
 		return
+	end
+	if st._highlightFrame and st._highlightFrame.GetParent and st._highlightFrame:GetParent() ~= host then
+		st._highlightFrame:Hide()
 	end
 	local highlight = ensureHighlightFrame(host)
 	if not highlight then return end
@@ -1144,7 +1243,14 @@ function H.updateHighlight(st, unit, playerUnit)
 	local host = getHighlightHostFrame(st)
 	if not host then return end
 	local cfg = st._highlightCfg
-	local highlight = host._ufHighlight or st._highlightFrame
+	local highlight = host._ufHighlight
+	if not highlight then
+		highlight = st and st._highlightFrame or nil
+		if highlight and highlight.GetParent and highlight:GetParent() ~= host then
+			highlight:Hide()
+			highlight = nil
+		end
+	end
 	if not cfg or cfg.enabled ~= true then
 		if highlight then highlight:Hide() end
 		return

@@ -334,7 +334,11 @@ local function buildSettings()
 					order = orderTable,
 					get = function()
 						local specSettings = ensureTalentSettings(specData.value)
-						local current = specSettings and specSettings[mapData.id]
+						local current = specSettings
+							and (
+								addon.MythicPlus.functions.GetTalentReminderSetting and select(1, addon.MythicPlus.functions.GetTalentReminderSetting(specSettings, mapData.id))
+								or specSettings[mapData.id]
+							)
 						if type(current) == "number" then return tostring(current) end
 						if current == nil then return "0" end
 						return current
@@ -343,7 +347,9 @@ local function buildSettings()
 						local specSettings = ensureTalentSettings(specData.value)
 						if not specSettings then return end
 						local converted = tonumber(value)
-						if converted ~= nil then
+						if addon.MythicPlus.functions.SetTalentReminderSetting then
+							addon.MythicPlus.functions.SetTalentReminderSetting(specSettings, mapData.id, converted ~= nil and converted or value)
+						elseif converted ~= nil then
 							specSettings[mapData.id] = converted
 						else
 							specSettings[mapData.id] = value

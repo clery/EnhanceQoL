@@ -19,42 +19,138 @@ addon.MythicPlus.variables.specNames = {}
 addon.MythicPlus.variables.currentSpecID = PlayerUtil.GetCurrentSpecID()
 addon.MythicPlus.variables.seasonMapInfo = {}
 addon.MythicPlus.variables.seasonMapHash = {}
+addon.MythicPlus.variables.seasonMapLookup = {}
+
+local function addSeasonMapAlias(aliasList, aliasHash, value)
+	if value == nil then return end
+	if type(value) ~= "number" and type(value) ~= "string" then return end
+	if aliasHash[value] then return end
+	aliasHash[value] = true
+	table.insert(aliasList, value)
+end
+
+local function getLegacySeasonMapID(data, cId)
+	if not data or not data.mapID then return nil end
+	if type(data.mapID) == "table" then
+		local variant = data.mapID[cId]
+		if type(variant) == "table" then return variant.mapID .. "_" .. variant.zoneID end
+		return variant
+	end
+	return data.mapID
+end
+
+local function getSeasonZoneID(data, cId)
+	if not data then return nil end
+	if type(data.mapID) == "table" then
+		local variant = data.mapID[cId]
+		if type(variant) == "table" then return variant.zoneID end
+	end
+	return data.zoneID
+end
 
 local function createSeasonInfo()
 	addon.MythicPlus.variables.seasonMapInfo = {}
 	addon.MythicPlus.variables.seasonMapHash = {}
+	addon.MythicPlus.variables.seasonMapLookup = {}
 	local cModeIDs = C_ChallengeMode.GetMapTable()
 	local cModeIDLookup = {}
+	local liveMapIDCounts = {}
+	local pendingEntries = {}
+	local seenMapIDs = {}
 	for _, id in ipairs(cModeIDs) do
 		cModeIDLookup[id] = true
 	end
 
 	for _, section in pairs(addon.MythicPlus.variables.portalCompendium) do
 		for spellID, data in pairs(section.spells) do
-			if data.mapID and data.cId then
+			if data.cId then
 				for cId in pairs(data.cId) do
 					if cModeIDLookup[cId] then
-						local mID
-						if type(data.mapID) == "table" then
-							if type(data.mapID[cId]) == "table" then
-								mID = data.mapID[cId].mapID .. "_" .. data.mapID[cId].zoneID
-							else
-								mID = data.mapID[cId]
-							end
-						else
-							mID = data.mapID
-						end
-						if mID and not addon.MythicPlus.variables.seasonMapHash[mID] then
-							local mapName = C_ChallengeMode.GetMapUIInfo(cId)
-							table.insert(addon.MythicPlus.variables.seasonMapInfo, { name = mapName, id = mID })
-							addon.MythicPlus.variables.seasonMapHash[mID] = true
-						end
+						local mapName, _, _, _, _, liveMapID = C_ChallengeMode.GetMapUIInfo(cId)
+						local legacyMapID = getLegacySeasonMapID(data, cId)
+						local zoneID = getSeasonZoneID(data, cId)
+						if type(liveMapID) == "number" then liveMapIDCounts[liveMapID] = (liveMapIDCounts[liveMapID] or 0) + 1 end
+						table.insert(pendingEntries, {
+							cId = cId,
+							legacyMapID = legacyMapID,
+							liveMapID = liveMapID,
+							name = mapName,
+							zoneID = zoneID,
+						})
 					end
 				end
 			end
 		end
 	end
+
+	for _, entry in ipairs(pendingEntries) do
+		local liveMapID = entry.liveMapID
+		local mapID = entry.legacyMapID
+
+		if type(liveMapID) == "number" then
+			mapID = liveMapID
+			if liveMapIDCounts[liveMapID] and liveMapIDCounts[liveMapID] > 1 then
+				if entry.zoneID then
+					mapID = liveMapID .. "_" .. entry.zoneID
+				elseif entry.legacyMapID ~= nil then
+					mapID = entry.legacyMapID
+				end
+			end
+		end
+
+		if mapID and not seenMapIDs[mapID] then
+			seenMapIDs[mapID] = true
+			local aliases = {}
+			local aliasHash = {}
+			addSeasonMapAlias(aliases, aliasHash, mapID)
+			addSeasonMapAlias(aliases, aliasHash, entry.legacyMapID)
+			if type(liveMapID) == "number" and liveMapIDCounts[liveMapID] == 1 then addSeasonMapAlias(aliases, aliasHash, liveMapID) end
+
+			local mapEntry = {
+				aliases = aliases,
+				cId = entry.cId,
+				id = mapID,
+				name = entry.name,
+			}
+
+			table.insert(addon.MythicPlus.variables.seasonMapInfo, mapEntry)
+			for _, alias in ipairs(aliases) do
+				addon.MythicPlus.variables.seasonMapHash[alias] = true
+				addon.MythicPlus.variables.seasonMapLookup[alias] = mapEntry
+			end
+		end
+	end
 	table.sort(addon.MythicPlus.variables.seasonMapInfo, function(a, b) return a.name < b.name end)
+end
+
+local function getTalentReminderSetting(specSettings, mapID)
+	if type(specSettings) ~= "table" or mapID == nil then return nil, nil, mapID end
+	if specSettings[mapID] ~= nil then return specSettings[mapID], mapID, mapID end
+
+	local mapEntry = addon.MythicPlus.variables.seasonMapLookup and addon.MythicPlus.variables.seasonMapLookup[mapID]
+	if mapEntry and type(mapEntry.aliases) == "table" then
+		for _, alias in ipairs(mapEntry.aliases) do
+			if alias ~= mapID and specSettings[alias] ~= nil then return specSettings[alias], alias, mapEntry.id end
+		end
+		return nil, nil, mapEntry.id
+	end
+
+	return nil, nil, mapID
+end
+
+local function setTalentReminderSetting(specSettings, mapID, value)
+	if type(specSettings) ~= "table" or mapID == nil then return end
+
+	local mapEntry = addon.MythicPlus.variables.seasonMapLookup and addon.MythicPlus.variables.seasonMapLookup[mapID]
+	local canonicalID = mapEntry and mapEntry.id or mapID
+
+	if mapEntry and type(mapEntry.aliases) == "table" then
+		for _, alias in ipairs(mapEntry.aliases) do
+			if alias ~= canonicalID then specSettings[alias] = nil end
+		end
+	end
+
+	specSettings[canonicalID] = value
 end
 
 function addon.MythicPlus.functions.getAllLoadouts()
@@ -183,8 +279,7 @@ local function showPopup(actTalent, requiredTalent)
 	if addon.db["talentReminderSoundOnDifference"] and not playedMusic then
 		if addon.db["talentReminderUseCustomSound"] then
 			local key = addon.db["talentReminderCustomSoundFile"]
-			local soundTable = (addon.ChatIM and addon.ChatIM.availableSounds)
-				or ((addon.functions and addon.functions.GetLSMMediaHash and addon.functions.GetLSMMediaHash("sound")) or {})
+			local soundTable = (addon.ChatIM and addon.ChatIM.availableSounds) or ((addon.functions and addon.functions.GetLSMMediaHash and addon.functions.GetLSMMediaHash("sound")) or {})
 			local file = key ~= "" and soundTable and soundTable[key]
 			if file then
 				PlaySoundFile(file, "Master")
@@ -466,6 +561,7 @@ local function checkLoadout(isReadycheck)
 	then
 		if #addon.MythicPlus.variables.seasonMapInfo == 0 then createSeasonInfo() end
 		local _, _, difficulty, _, _, _, _, mapID = GetInstanceInfo()
+		local specSettings = addon.db["talentReminderSettings"][addon.variables.unitPlayerGUID][addon.MythicPlus.variables.currentSpecID]
 
 		if difficulty == 23 and mapID then
 			if not addon.MythicPlus.variables.seasonMapHash[mapID] then
@@ -474,8 +570,8 @@ local function checkLoadout(isReadycheck)
 				if addon.MythicPlus.variables.seasonMapHash[mapID .. "_" .. zoneID] then mapID = mapID .. "_" .. zoneID end
 			end
 
-			if addon.MythicPlus.variables.seasonMapHash[mapID] and addon.db["talentReminderSettings"][addon.variables.unitPlayerGUID][addon.MythicPlus.variables.currentSpecID][mapID] then
-				local reqTalent = addon.db["talentReminderSettings"][addon.variables.unitPlayerGUID][addon.MythicPlus.variables.currentSpecID][mapID]
+			if addon.MythicPlus.variables.seasonMapHash[mapID] then
+				local reqTalent = getTalentReminderSetting(specSettings, mapID)
 				if
 					reqTalent
 					and addon.MythicPlus.variables.knownLoadout
@@ -495,11 +591,17 @@ local function checkLoadout(isReadycheck)
 						else
 							deleteFrame(ChangeTalentUIPopup)
 						end
+					else
+						deleteFrame(ChangeTalentUIPopup)
 					end
 				else
 					deleteFrame(ChangeTalentUIPopup)
 				end
+			else
+				deleteFrame(ChangeTalentUIPopup)
 			end
+		else
+			deleteFrame(ChangeTalentUIPopup)
 		end
 	elseif (ChangeTalentUIPopup and ChangeTalentUIPopup:IsVisible()) or (ChangeTalentUIWarning and ChangeTalentUIWarning:IsVisible()) then
 		deleteFrame(ChangeTalentUIPopup)
@@ -509,6 +611,8 @@ end
 
 function addon.MythicPlus.functions.checkLoadout() checkLoadout() end
 function addon.MythicPlus.functions.createSeasonInfo() createSeasonInfo() end
+function addon.MythicPlus.functions.GetTalentReminderSetting(specSettings, mapID) return getTalentReminderSetting(specSettings, mapID) end
+function addon.MythicPlus.functions.SetTalentReminderSetting(specSettings, mapID, value) setTalentReminderSetting(specSettings, mapID, value) end
 function addon.MythicPlus.functions.checkRemovedLoadout(clear)
 	local tRemoved = {}
 	for _, cbData in pairs(addon.MythicPlus.variables.seasonMapInfo) do
@@ -519,13 +623,11 @@ function addon.MythicPlus.functions.checkRemovedLoadout(clear)
 				and addon.db["talentReminderSettings"][addon.variables.unitPlayerGUID]
 				and addon.db["talentReminderSettings"][addon.variables.unitPlayerGUID][specID]
 			then
-				if
-					addon.db["talentReminderSettings"][addon.variables.unitPlayerGUID][specID]
-					and addon.db["talentReminderSettings"][addon.variables.unitPlayerGUID][specID][cbData.id]
-					and not addon.MythicPlus.variables.knownLoadout[specID][addon.db["talentReminderSettings"][addon.variables.unitPlayerGUID][specID][cbData.id]]
-				then
+				local specSettings = addon.db["talentReminderSettings"][addon.variables.unitPlayerGUID][specID]
+				local configuredLoadout = getTalentReminderSetting(specSettings, cbData.id)
+				if configuredLoadout and not addon.MythicPlus.variables.knownLoadout[specID][configuredLoadout] then
 					if clear then
-						addon.db["talentReminderSettings"][addon.variables.unitPlayerGUID][specID][cbData.id] = nil
+						setTalentReminderSetting(specSettings, cbData.id, nil)
 					else
 						table.insert(tRemoved, { spec = specName, dungeon = cbData.name })
 					end

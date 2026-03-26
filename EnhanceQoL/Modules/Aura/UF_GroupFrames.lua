@@ -1160,7 +1160,6 @@ function GF:BuildDenseCustomGroupSpecs(cfg)
 	end
 
 	local orderedGroups = buildOrderedGroups(true)
-	if #orderedGroups == 0 then orderedGroups = buildOrderedGroups(false) end
 	local fallbackLists = {}
 	local fallbackGroups = {}
 	if IsInRaid and IsInRaid() and GetNumGroupMembers and GetRaidRosterInfo then
@@ -1261,16 +1260,6 @@ function GF:BuildRaidGroupHeaderSpecs(cfg, sortMethod, useCustomSort)
 			group = group,
 			sortMethod = method,
 		} end
-	end
-
-	if #specs == 0 then
-		for _, group in ipairs(groups) do
-			local allowed = (not hasNumericFilter) or numericFilter[group]
-			if allowed then specs[#specs + 1] = {
-				group = group,
-				sortMethod = method,
-			} end
-		end
 	end
 
 	return specs
@@ -5124,7 +5113,20 @@ function GF:ApplyPendingSortKinds()
 	return applied
 end
 
-local function getUnit(self) return (self and (self.unit or (self.GetAttribute and self:GetAttribute("unit")))) end
+local function getUnit(self)
+	if not self then return nil end
+
+	if self._eqolUseSecureUnitAttribute and self.GetAttribute then
+		local secureUnit = self:GetAttribute("unit")
+		if secureUnit == "" then secureUnit = nil end
+		return secureUnit
+	end
+
+	local secureUnit = self.GetAttribute and self:GetAttribute("unit")
+	if secureUnit ~= nil and secureUnit ~= "" then return secureUnit end
+
+	return self.unit
+end
 
 local function getState(self)
 	local st = self and self._eqolUFState
@@ -9171,7 +9173,10 @@ end
 
 function GF.UnitButton_OnLoad(self)
 	local parent = self and self.GetParent and self:GetParent()
-	if parent and parent._eqolKind then self._eqolGroupKind = parent._eqolKind end
+	if parent and parent._eqolKind then
+		self._eqolGroupKind = parent._eqolKind
+		self._eqolUseSecureUnitAttribute = true
+	end
 
 	GF:BuildButton(self)
 
@@ -10379,6 +10384,7 @@ local function syncHeaderChild(child, kind, cfg, frameW, frameH)
 	if not (child and cfg) then return end
 
 	child._eqolGroupKind = kind
+	child._eqolUseSecureUnitAttribute = true
 	child._eqolCfg = cfg
 	updateButtonConfig(child, cfg)
 	if frameW and frameH and child.SetSize then
@@ -11039,15 +11045,15 @@ local function applyRaidGroupHeaders(cfg, layout, groupSpecs, forceShow, forceHi
 			local layoutChanged = GF.UpdateHeaderChildLayoutKey(header, childLayoutKey)
 			if active and (not skipChildSync or layoutChanged) then syncRaidGroupHeaderChildren(header, cfg, layout) end
 
-			if header.IsShown and header:IsShown() then
-				nudgeHeaderLayout(header)
-			else
-				header._eqolPendingLayout = true
-			end
+				if header.IsShown and header:IsShown() then
+					nudgeHeaderLayout(header)
+				else
+					header._eqolPendingLayout = true
+				end
 
-			if not active and header.Hide then header:Hide() end
-			if not active then header._eqolDisplayGroup = nil end
-		end
+				if not active and header.Hide then header:Hide() end
+				if not active then header._eqolDisplayGroup = nil end
+			end
 	end
 end
 
@@ -11561,7 +11567,7 @@ end
 function GF:EnableFeature()
 	registerFeatureEvents(GF._eventFrame)
 	GF:EnsureHeaders()
-	GF.Refresh()
+	GF.FullRefresh()
 	GF:DisableBlizzardFrames()
 	GF:EnsureEditMode()
 end
@@ -11632,78 +11638,66 @@ end
 function GF:DidRosterStateChange()
 	local state = self._rosterState
 	if not state then
-		state = { guids = {}, present = {}, mode = nil, count = nil }
+		state = { mode = nil, signature = nil }
 		self._rosterState = state
 	end
 
-	local guids = state.guids
-	local present = state.present
-	local changed = false
-	local modeChanged = false
-	local countChanged = false
-
-	local function visit(unit)
-		present[unit] = true
-		local guid = UnitGUID and UnitGUID(unit) or nil
-		if issecretvalue and issecretvalue(guid) then guid = nil end
-		local cachedGuid = guids[unit]
-		if issecretvalue and issecretvalue(cachedGuid) then
-			cachedGuid = nil
-			guids[unit] = nil
-		end
-		if cachedGuid ~= guid then
-			guids[unit] = guid
-			changed = true
-		end
-	end
-
-	local mode, count
+	local mode
+	local groupCount = (GetNumGroupMembers and GetNumGroupMembers()) or 0
+	local subgroupCount = (GetNumSubgroupMembers and GetNumSubgroupMembers()) or 0
 	if IsInRaid and IsInRaid() then
 		mode = "raid"
-		count = (GetNumGroupMembers and GetNumGroupMembers()) or 0
-		for i = 1, count do
-			visit("raid" .. i)
-		end
 	elseif IsInGroup and IsInGroup() then
 		mode = "party"
-		count = (GetNumSubgroupMembers and GetNumSubgroupMembers()) or 0
-		visit("player")
-		for i = 1, count do
-			visit("party" .. i)
-		end
 	else
 		mode = "solo"
-		count = 0
-		visit("player")
 	end
 
-	if state.mode ~= mode then
-		state.mode = mode
-		changed = true
-		modeChanged = true
-	end
-	if state.count ~= count then
-		state.count = count
-		changed = true
-		countChanged = true
-	end
+	local signatureParts = {
+		mode,
+		tostring(groupCount),
+		tostring(subgroupCount),
+	}
 
-	for unit in pairs(guids) do
-		if not present[unit] then
-			guids[unit] = nil
-			changed = true
-		end
-	end
-
-	if wipe then
-		wipe(present)
+	if mode == "party" or mode == "solo" then
+		local partyCfg = getCfg("party")
+		local partySortState = GF.BuildPartyRuntimeSortState(partyCfg)
+		signatureParts[#signatureParts + 1] = tostring(partySortState and partySortState.sortMethod or "")
+		signatureParts[#signatureParts + 1] = tostring(partySortState and partySortState.sortDir or "")
+		signatureParts[#signatureParts + 1] = tostring(partySortState and partySortState.nameList or "")
 	else
-		for k in pairs(present) do
-			present[k] = nil
+		local cfg = getCfg("raid")
+		local raidSortState = GF.BuildRaidRuntimeSortState(cfg)
+		local configuredSortMethod = raidSortState and raidSortState.configuredSortMethod or resolveSortMethod(cfg)
+		local custom = cfg and GFH and GFH.EnsureCustomSortConfig and GFH.EnsureCustomSortConfig(cfg)
+		local useGroupedCustomSort = raidSortState and raidSortState.useGroupedCustom and (custom and custom.enabled == true)
+		local useGroupHeaders = GF:IsRaidGroupedLayout(cfg) and (configuredSortMethod ~= "NAMELIST" or useGroupedCustomSort)
+		signatureParts[#signatureParts + 1] = tostring(useGroupHeaders)
+		signatureParts[#signatureParts + 1] = tostring(raidSortState and raidSortState.sortMethod or "")
+		signatureParts[#signatureParts + 1] = tostring(raidSortState and raidSortState.sortDir or "")
+		signatureParts[#signatureParts + 1] = tostring(raidSortState and raidSortState.nameList or "")
+
+		if useGroupHeaders then
+			local specs = raidSortState and raidSortState.groupedSpecs
+			if not specs then specs = GF:BuildRaidGroupHeaderSpecs(cfg, configuredSortMethod, useGroupedCustomSort) end
+			for _, spec in ipairs(specs or {}) do
+				signatureParts[#signatureParts + 1] = string.format(
+					"%s:%s:%s",
+					tostring(spec and spec.group or ""),
+					tostring(spec and spec.sortMethod or ""),
+					tostring(spec and spec.nameList or "")
+				)
+			end
 		end
 	end
 
-	return changed, modeChanged, countChanged
+	local signature = table.concat(signatureParts, "\031")
+	local modeChanged = state.mode ~= mode
+	local changed = state.signature ~= signature
+	state.mode = mode
+	state.signature = signature
+
+	return changed, modeChanged
 end
 
 function GF:RefreshChangedUnitButtons()
@@ -11776,6 +11770,20 @@ function GF:RefreshChangedUnitButtons()
 	end
 
 	return updated
+end
+
+function GF.FullRefresh(kind)
+	if not isFeatureEnabled() then return 0 end
+	GF:EnsureHeaders()
+	if kind then
+		GF:ApplyHeaderAttributes(kind)
+	else
+		GF:ApplyHeaderAttributes("party")
+		GF:ApplyHeaderAttributes("raid")
+		GF:ApplyHeaderAttributes("mt")
+		GF:ApplyHeaderAttributes("ma")
+	end
+	return GF:RefreshChangedUnitButtons()
 end
 
 function GF.Refresh(kind)
@@ -24733,7 +24741,7 @@ end
 function GF:RunPostEnterWorldRefreshPass()
 	if not isFeatureEnabled() then return end
 	self:EnsureHeaders()
-	self.Refresh()
+	self.FullRefresh()
 	self:RefreshRangeFade()
 	self:RefreshRoleIcons()
 	self:RefreshGroupIcons()
@@ -24771,7 +24779,7 @@ do
 			if isFeatureEnabled() then
 				registerFeatureEvents(_)
 				GF:EnsureHeaders()
-				GF.Refresh()
+				GF.FullRefresh()
 				GF:DisableBlizzardFrames()
 				GF:EnsureEditMode()
 			end
@@ -24788,7 +24796,7 @@ do
 				GF._pendingRefresh = false
 				local applied = GF:ApplyPendingHeaderKinds()
 				local appliedSort = GF:ApplyPendingSortKinds()
-				if not applied and not appliedSort then GF.Refresh() end
+				if not applied and not appliedSort then GF.FullRefresh() end
 			end
 		elseif event == "CLIENT_SCENE_OPENED" then
 			local sceneType = ...
@@ -24823,29 +24831,27 @@ do
 				end
 			end
 		elseif event == "GROUP_ROSTER_UPDATE" then
-			local rosterChanged, modeChanged, countChanged = GF:DidRosterStateChange()
-			if not rosterChanged then
-				-- Assistant/main-assist assignments can change without GUID/count deltas.
-				GF:RefreshGroupIcons()
-				return
-			end
-			local needsFullRefresh = modeChanged
-			local inRaidNow = IsInRaid and IsInRaid()
+			local headerStateChanged = GF:DidRosterStateChange()
 			local cfg = getCfg("raid")
 			local custom = cfg and GFH and GFH.EnsureCustomSortConfig and GFH.EnsureCustomSortConfig(cfg)
 			local sortMethod = cfg and resolveSortMethod(cfg) or "INDEX"
-			if not needsFullRefresh and inRaidNow and countChanged then needsFullRefresh = true end
-			local updatedCount = 0
-			if needsFullRefresh then
-				updatedCount = GF.Refresh() or 0
-			else
-				updatedCount = GF:RefreshChangedUnitButtons()
+			local updatedCount = GF:RefreshChangedUnitButtons() or 0
+			if headerStateChanged then
+				if InCombatLockdown and InCombatLockdown() then
+					GF:MarkPendingHeaderRefresh("party")
+					GF:MarkPendingHeaderRefresh("raid")
+					GF:MarkPendingHeaderRefresh("mt")
+					GF:MarkPendingHeaderRefresh("ma")
+				else
+					GF:ApplyHeaderAttributes("party")
+					GF:ApplyHeaderAttributes("raid")
+					GF:ApplyHeaderAttributes("mt")
+					GF:ApplyHeaderAttributes("ma")
+					updatedCount = updatedCount + (GF:RefreshChangedUnitButtons() or 0)
+				end
 			end
-			if not needsFullRefresh and sortMethod == "NAMELIST" then GF:RefreshCustomSortNameList("raid") end
-			local partyCfg = getCfg("party")
-			if not needsFullRefresh and partyCfg and (resolveSortMethod(partyCfg) == "NAMELIST" or GF.IsPartyCenterGrowthMode(partyCfg)) then GF:RefreshCustomSortNameList("party") end
 			GF:RefreshGroupIcons()
-			if needsFullRefresh or updatedCount > 0 then
+			if headerStateChanged or updatedCount > 0 then
 				GF:RefreshStatusIcons()
 				GF:RefreshGroupIndicators()
 				queueGroupIndicatorRefresh(0, 4)

@@ -686,7 +686,7 @@ addon.MythicPlus.variables.portalCompendium = {
 			[224871] = { text = "DalB", isMagePortal = true, locID = 627, x = 0.6042, y = 0.4440, zoneID = 627 },
 			[1254551] = { text = "SotT", cId = { [239] = true }, mapID = 903, locID = 882, x = 0.2503, y = 0.528, zoneID = 903 },
 			[227334] = { text = "FMW", isToy = true, toyID = 141605, isHearthstone = true, icon = 132161 },
-			[82674] = { text = GetItemInfo(64457), isItem = true, itemID = 64457, isHearthstone = true, icon = 458240 },
+			[82674] = { text = "The Last Relic of Argus", isItem = true, itemID = 64457, isHearthstone = true, icon = 458240 },
 			[223444] = {
 				text = addon.MythicPlus.variables.hearthstoneName or "HS",
 				isToy = true,

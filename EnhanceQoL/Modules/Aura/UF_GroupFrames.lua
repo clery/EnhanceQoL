@@ -4872,16 +4872,10 @@ local function ensureDB()
 			local healthCfg = t.health or {}
 			t.health = healthCfg
 			local defHealth = (def and def.health) or {}
-			local overlayFallback =
-				GF._computeOverlayHeightFallback((t.height ~= nil and t.height) or def.height, (t.powerHeight ~= nil and t.powerHeight) or def.powerHeight)
-			healthCfg.absorbOverlayHeight = GF._resolveOverlayHeightSetting(
-				healthCfg.absorbOverlayHeight ~= nil and healthCfg.absorbOverlayHeight or defHealth.absorbOverlayHeight,
-				overlayFallback
-			)
-			healthCfg.healAbsorbOverlayHeight = GF._resolveOverlayHeightSetting(
-				healthCfg.healAbsorbOverlayHeight ~= nil and healthCfg.healAbsorbOverlayHeight or defHealth.healAbsorbOverlayHeight,
-				overlayFallback
-			)
+			local overlayFallback = GF._computeOverlayHeightFallback((t.height ~= nil and t.height) or def.height, (t.powerHeight ~= nil and t.powerHeight) or def.powerHeight)
+			healthCfg.absorbOverlayHeight = GF._resolveOverlayHeightSetting(healthCfg.absorbOverlayHeight ~= nil and healthCfg.absorbOverlayHeight or defHealth.absorbOverlayHeight, overlayFallback)
+			healthCfg.healAbsorbOverlayHeight =
+				GF._resolveOverlayHeightSetting(healthCfg.healAbsorbOverlayHeight ~= nil and healthCfg.healAbsorbOverlayHeight or defHealth.healAbsorbOverlayHeight, overlayFallback)
 		end
 		if UF.GroupFramesHealerBuffs and UF.GroupFramesHealerBuffs.EnsureConfig then UF.GroupFramesHealerBuffs.EnsureConfig(t) end
 		if kind == "party" then
@@ -5301,7 +5295,7 @@ function GF:NeedsClassColor(frame, st, cfg)
 	local tc = cfg and cfg.text or {}
 	local sc = cfg and cfg.status or {}
 
-	if hc.useClassColor == true then return true end
+	if hc.useClassColor == true or hc.useTextClassColor == true then return true end
 
 	local nameMode = sc.nameColorMode
 	if nameMode == nil then nameMode = (tc.useClassColor ~= false) and "CLASS" or "CUSTOM" end
@@ -5782,18 +5776,10 @@ function GF:LayoutButton(self)
 	end
 
 	local healthHeight = max(1, (tonumber(h) or 0) - (tonumber(healthBottomOffset) or 0))
-	local configuredOverlayFallback =
-		GF._computeOverlayHeightFallback((cfg.height ~= nil and cfg.height) or def.height, (cfg.powerHeight ~= nil and cfg.powerHeight) or def.powerHeight)
-	local resolvedAbsorbHeight = GF._resolveRuntimeOverlayHeightSetting(
-		hc.absorbOverlayHeight ~= nil and hc.absorbOverlayHeight or defH.absorbOverlayHeight,
-		configuredOverlayFallback,
-		healthHeight
-	)
-	local resolvedHealAbsorbHeight = GF._resolveRuntimeOverlayHeightSetting(
-		hc.healAbsorbOverlayHeight ~= nil and hc.healAbsorbOverlayHeight or defH.healAbsorbOverlayHeight,
-		configuredOverlayFallback,
-		healthHeight
-	)
+	local configuredOverlayFallback = GF._computeOverlayHeightFallback((cfg.height ~= nil and cfg.height) or def.height, (cfg.powerHeight ~= nil and cfg.powerHeight) or def.powerHeight)
+	local resolvedAbsorbHeight = GF._resolveRuntimeOverlayHeightSetting(hc.absorbOverlayHeight ~= nil and hc.absorbOverlayHeight or defH.absorbOverlayHeight, configuredOverlayFallback, healthHeight)
+	local resolvedHealAbsorbHeight =
+		GF._resolveRuntimeOverlayHeightSetting(hc.healAbsorbOverlayHeight ~= nil and hc.healAbsorbOverlayHeight or defH.healAbsorbOverlayHeight, configuredOverlayFallback, healthHeight)
 	if st.incomingHeal then
 		local incomingHealTextureKey = hc.incomingHealTexture or healthTexKey
 		if st.incomingHeal.SetStatusBarTexture and UFHelper and UFHelper.resolveTexture then
@@ -6032,7 +6018,12 @@ function GF:LayoutButton(self)
 	end
 
 	if st.healthTextLeft or st.healthTextCenter or st.healthTextRight then
-		local r, g, b, a = unpackColor(hc.textColor, defH.textColor or GFH.COLOR_WHITE)
+		local r, g, b, a
+		if hc.useTextClassColor == true and GF:EnsureUnitClassColor(self, st, getUnit(self)) then
+			r, g, b, a = st._classR, st._classG, st._classB, st._classA or 1
+		else
+			r, g, b, a = unpackColor(hc.textColor, defH.textColor or GFH.COLOR_WHITE)
+		end
 		if st._lastHealthTextR ~= r or st._lastHealthTextG ~= g or st._lastHealthTextB ~= b or st._lastHealthTextA ~= a then
 			st._lastHealthTextR, st._lastHealthTextG, st._lastHealthTextB, st._lastHealthTextA = r, g, b, a
 			if st.healthTextLeft then st.healthTextLeft:SetTextColor(r, g, b, a) end
@@ -9710,6 +9701,8 @@ function GF:EnsurePreviewFrames(kind)
 		btn._eqolGroupKind = kind
 		btn._eqolPreview = true
 		btn._eqolPreviewIndex = i
+		-- Preview buttons use synthetic unit assignment via self.unit, not secure header attributes.
+		btn._eqolUseSecureUnitAttribute = false
 		btn:SetFrameStrata(anchor:GetFrameStrata())
 		btn:SetFrameLevel((anchor:GetFrameLevel() or 1) + 1)
 		local st = getState(btn)
@@ -11045,15 +11038,15 @@ local function applyRaidGroupHeaders(cfg, layout, groupSpecs, forceShow, forceHi
 			local layoutChanged = GF.UpdateHeaderChildLayoutKey(header, childLayoutKey)
 			if active and (not skipChildSync or layoutChanged) then syncRaidGroupHeaderChildren(header, cfg, layout) end
 
-				if header.IsShown and header:IsShown() then
-					nudgeHeaderLayout(header)
-				else
-					header._eqolPendingLayout = true
-				end
-
-				if not active and header.Hide then header:Hide() end
-				if not active then header._eqolDisplayGroup = nil end
+			if header.IsShown and header:IsShown() then
+				nudgeHeaderLayout(header)
+			else
+				header._eqolPendingLayout = true
 			end
+
+			if not active and header.Hide then header:Hide() end
+			if not active then header._eqolDisplayGroup = nil end
+		end
 	end
 end
 
@@ -11681,12 +11674,7 @@ function GF:DidRosterStateChange()
 			local specs = raidSortState and raidSortState.groupedSpecs
 			if not specs then specs = GF:BuildRaidGroupHeaderSpecs(cfg, configuredSortMethod, useGroupedCustomSort) end
 			for _, spec in ipairs(specs or {}) do
-				signatureParts[#signatureParts + 1] = string.format(
-					"%s:%s:%s",
-					tostring(spec and spec.group or ""),
-					tostring(spec and spec.sortMethod or ""),
-					tostring(spec and spec.nameList or "")
-				)
+				signatureParts[#signatureParts + 1] = string.format("%s:%s:%s", tostring(spec and spec.group or ""), tostring(spec and spec.sortMethod or ""), tostring(spec and spec.nameList or ""))
 			end
 		end
 	end
@@ -15673,7 +15661,34 @@ local function buildEditModeSettings(kind, editModeId)
 				if not (cfg and value) then return end
 				cfg.health = cfg.health or {}
 				cfg.health.textColor = { value.r or 1, value.g or 1, value.b or 1, value.a or 1 }
+				cfg.health.useTextClassColor = false
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "healthTextColor", cfg.health.textColor, nil, true) end
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "healthTextClassColor", false, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+			end,
+			isEnabled = function()
+				if not anyHealthTextEnabled() then return false end
+				local cfg = getCfg(kind)
+				local hc = cfg and cfg.health or {}
+				return hc.useTextClassColor ~= true
+			end,
+		},
+		{
+			name = L["Use class color (health text)"] or "Use class color (health text)",
+			kind = SettingType.Checkbox,
+			field = "healthTextClassColor",
+			parentId = "health",
+			get = function()
+				local cfg = getCfg(kind)
+				local hc = cfg and cfg.health or {}
+				return hc.useTextClassColor == true
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				cfg.health = cfg.health or {}
+				cfg.health.useTextClassColor = value and true or false
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "healthTextClassColor", cfg.health.useTextClassColor, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			isEnabled = function() return anyHealthTextEnabled() end,
@@ -23229,6 +23244,10 @@ local function applyEditModeData(kind, data)
 		cfg.health = cfg.health or {}
 		cfg.health.textColor = data.healthTextColor
 	end
+	if data.healthTextClassColor ~= nil then
+		cfg.health = cfg.health or {}
+		cfg.health.useTextClassColor = data.healthTextClassColor and true or false
+	end
 	if data.healthDelimiter ~= nil then
 		cfg.health = cfg.health or {}
 		cfg.health.textDelimiter = data.healthDelimiter
@@ -24184,6 +24203,7 @@ function GF:EnsureEditMode()
 				healthTextCenter = (cfg.health and cfg.health.textCenter) or ((DEFAULTS[kind] and DEFAULTS[kind].health and DEFAULTS[kind].health.textCenter) or "NONE"),
 				healthTextRight = (cfg.health and cfg.health.textRight) or ((DEFAULTS[kind] and DEFAULTS[kind].health and DEFAULTS[kind].health.textRight) or "NONE"),
 				healthTextColor = (cfg.health and cfg.health.textColor) or ((DEFAULTS[kind] and DEFAULTS[kind].health and DEFAULTS[kind].health.textColor) or { 1, 1, 1, 1 }),
+				healthTextClassColor = (cfg.health and cfg.health.useTextClassColor) == true,
 				healthDelimiter = (cfg.health and cfg.health.textDelimiter) or ((DEFAULTS[kind] and DEFAULTS[kind].health and DEFAULTS[kind].health.textDelimiter) or " "),
 				healthDelimiterSecondary = (cfg.health and cfg.health.textDelimiterSecondary)
 					or ((DEFAULTS[kind] and DEFAULTS[kind].health and DEFAULTS[kind].health.textDelimiterSecondary) or ((cfg.health and cfg.health.textDelimiter) or " ")),

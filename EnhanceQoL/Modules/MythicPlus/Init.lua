@@ -580,6 +580,7 @@ addon.MythicPlus.variables.portalCompendium = {
 			[395289] = { text = "Vald", isMagePortal = true, locID = 2112, x = 0.5432, y = 0.4788, zoneID = 2112 },
 			[376300] = {
 				text = "RHG",
+				loadItemName = true,
 				isItem = true,
 				itemID = 193000,
 				isHearthstone = true,
@@ -685,8 +686,8 @@ addon.MythicPlus.variables.portalCompendium = {
 			[224869] = { text = "DalB", isClassTP = "MAGE", locID = 627, x = 0.6042, y = 0.4440, zoneID = 627 },
 			[224871] = { text = "DalB", isMagePortal = true, locID = 627, x = 0.6042, y = 0.4440, zoneID = 627 },
 			[1254551] = { text = "SotT", cId = { [239] = true }, mapID = 903, locID = 882, x = 0.2503, y = 0.528, zoneID = 903 },
-			[227334] = { text = "FMW", isToy = true, toyID = 141605, isHearthstone = true, icon = 132161 },
-			[82674] = { text = "The Last Relic of Argus", isItem = true, itemID = 64457, isHearthstone = true, icon = 458240 },
+			[227334] = { text = "FMW", loadItemName = true, isToy = true, toyID = 141605, isHearthstone = true, icon = 132161 },
+			[82674] = { text = "The Last Relic of Argus", loadItemName = true, isItem = true, itemID = 64457, isHearthstone = true, icon = 458240 },
 			[223444] = {
 				text = addon.MythicPlus.variables.hearthstoneName or "HS",
 				isToy = true,
@@ -1035,6 +1036,18 @@ addon.MythicPlus.variables.portalCompendium = {
 		},
 	},
 }
+
+for expansionID, expansionData in pairs(addon.MythicPlus.variables.portalCompendium) do
+	for spellID, spellData in pairs(expansionData.spells) do
+		if spellData.loadItemName == true then
+			eItem = Item:CreateFromItemID(spellData.itemID or spellData.toyID)
+			eItem:ContinueOnItemLoad(function()
+				local name = eItem:GetItemName()
+				addon.MythicPlus.variables.portalCompendium[expansionID].spells[spellID].text = name
+			end)
+		end
+	end
+end
 
 -- Pre-Stage all icon to have less calls to LUA API
 local RANDOM_HS_ID = 999999

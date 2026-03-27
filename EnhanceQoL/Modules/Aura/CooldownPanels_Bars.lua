@@ -19,6 +19,7 @@ CooldownPanels.Bars = CooldownPanels.Bars or {}
 local Bars = CooldownPanels.Bars
 if Bars._eqolSupplementLoaded == true then return end
 Bars._eqolSupplementLoaded = true
+Bars._eqolDebugEnabled = false
 
 local CreateFrame = CreateFrame
 local GetTime = GetTime
@@ -220,6 +221,7 @@ local function getDebugValue(value)
 end
 
 local function writeBarsDebug(stage, payload)
+	if Bars._eqolDebugEnabled ~= true then return end
 	local store = getBarsDebugStore()
 	if not (store and store.enabled == true) then return end
 	local entry = {
@@ -474,6 +476,7 @@ local function mutateBarEntry(panelId, entryId, mutator, reopenDialog)
 	if not (panel and entry) then return nil, nil end
 	if type(mutator) == "function" then mutator(entry, panel) end
 	normalizeBarEntry(entry)
+	Bars.MarkReservationCacheDirty(panel)
 	refreshPanelContext(panelId)
 	refreshStandaloneEntryDialogForBars(panelId, entryId, reopenDialog == true)
 	return panel, entry
@@ -771,10 +774,23 @@ local function getReservationSignature(panel)
 	return table.concat(buffer, "|")
 end
 
+Bars.MarkReservationCacheDirty = function(panel)
+	if type(panel) ~= "table" then return end
+	panel._eqolBarsReservationDirty = true
+end
+
 local function augmentFixedLayoutCache(panel, cache)
 	if not (panel and cache and Helper.IsFixedLayout and Helper.IsFixedLayout(panel.layout)) then return cache end
+	if
+		panel._eqolBarsReservationDirty ~= true
+		and cache._eqolBarsReservedOwnerByCell
+		and cache._eqolBarsReservedOwnerByIndex
+		and cache._eqolBarsEffectiveSpanByEntryId
+		and cache._eqolBarsAnchorCellByEntryId
+	then
+		return cache
+	end
 	local signature = getReservationSignature(panel)
-	if cache._eqolBarsReservationSignature == signature then return cache end
 
 	local reservedOwnerByCell = cache._eqolBarsReservedOwnerByCell or {}
 	local reservedOwnerByIndex = cache._eqolBarsReservedOwnerByIndex or {}
@@ -853,35 +869,36 @@ local function augmentFixedLayoutCache(panel, cache)
 	cache._eqolBarsReservedOwnerByIndex = reservedOwnerByIndex
 	cache._eqolBarsEffectiveSpanByEntryId = effectiveSpanByEntryId
 	cache._eqolBarsAnchorCellByEntryId = anchorCellByEntryId
+	panel._eqolBarsReservationDirty = false
 	return cache
 end
 
-local function getReservedOwnerForCell(panel, column, row, skipEntryId)
+local function getReservedOwnerForCell(panel, column, row, skipEntryId, cache)
 	column = Helper.NormalizeSlotCoordinate(column)
 	row = Helper.NormalizeSlotCoordinate(row)
 	if not (panel and column and row) then return nil end
-	local cache = Helper.GetFixedLayoutCache and Helper.GetFixedLayoutCache(panel) or nil
+	cache = cache or (Helper.GetFixedLayoutCache and Helper.GetFixedLayoutCache(panel) or nil)
 	cache = augmentFixedLayoutCache(panel, cache)
 	local ownerId = cache and cache._eqolBarsReservedOwnerByCell and cache._eqolBarsReservedOwnerByCell[getCellKey(column, row)] or nil
 	if ownerId and ownerId ~= skipEntryId then return ownerId, panel.entries and panel.entries[ownerId] or nil end
 	return nil
 end
 
-local function isAnchorCell(panel, entryId, column, row)
+local function isAnchorCell(panel, entryId, column, row, cache)
 	column = Helper.NormalizeSlotCoordinate(column)
 	row = Helper.NormalizeSlotCoordinate(row)
 	entryId = normalizeId(entryId)
 	if not (panel and entryId and column and row) then return false end
-	local cache = Helper.GetFixedLayoutCache and Helper.GetFixedLayoutCache(panel) or nil
+	cache = cache or (Helper.GetFixedLayoutCache and Helper.GetFixedLayoutCache(panel) or nil)
 	cache = augmentFixedLayoutCache(panel, cache)
 	local anchor = cache and cache._eqolBarsAnchorCellByEntryId and cache._eqolBarsAnchorCellByEntryId[entryId] or nil
 	return anchor and anchor.column == column and anchor.row == row or false
 end
 
-local function getEffectiveBarSpan(panel, entryId)
+local function getEffectiveBarSpan(panel, entryId, cache)
 	local panelEntryId = normalizeId(entryId)
 	if not (panel and panelEntryId) then return 1 end
-	local cache = Helper.GetFixedLayoutCache and Helper.GetFixedLayoutCache(panel) or nil
+	cache = cache or (Helper.GetFixedLayoutCache and Helper.GetFixedLayoutCache(panel) or nil)
 	cache = augmentFixedLayoutCache(panel, cache)
 	return cache and cache._eqolBarsEffectiveSpanByEntryId and cache._eqolBarsEffectiveSpanByEntryId[panelEntryId] or 1
 end
@@ -1098,15 +1115,67 @@ end
 
 Bars.HideForwardHitHandle = function(hitHandle)
 	if not hitHandle then return end
+	if hitHandle._eqolBarsFreeMoveActive == true then
+		hitHandle._eqolBarsFreeMoveActive = nil
+		Bars.StopFreeMove(false)
+	end
 	hitHandle:EnableMouse(false)
 	hitHandle:Hide()
-	hitHandle:SetScript("OnEnter", nil)
-	hitHandle:SetScript("OnLeave", nil)
-	hitHandle:SetScript("OnDragStart", nil)
-	hitHandle:SetScript("OnDragStop", nil)
-	hitHandle:SetScript("OnReceiveDrag", nil)
-	hitHandle:SetScript("OnMouseUp", nil)
 	hitHandle._eqolForwardHandle = nil
+	hitHandle._eqolBarsBarFrame = nil
+	hitHandle._eqolBarsIcon = nil
+end
+
+Bars.InvokeForwardHitHandleScript = function(hitHandle, scriptName, ...)
+	local handle = hitHandle and hitHandle._eqolForwardHandle or nil
+	local script = handle and handle.GetScript and handle:GetScript(scriptName) or nil
+	if script then return script(handle, ...) end
+	return nil
+end
+
+Bars.OnForwardHitHandleEnter = function(hitHandle)
+	Bars.InvokeForwardHitHandleScript(hitHandle, "OnEnter")
+end
+
+Bars.OnForwardHitHandleLeave = function(hitHandle)
+	Bars.InvokeForwardHitHandleScript(hitHandle, "OnLeave")
+end
+
+Bars.OnForwardHitHandleReceiveDrag = function(hitHandle)
+	Bars.InvokeForwardHitHandleScript(hitHandle, "OnReceiveDrag")
+end
+
+Bars.OnForwardHitHandleMouseUp = function(hitHandle, button)
+	Bars.InvokeForwardHitHandleScript(hitHandle, "OnMouseUp", button)
+end
+
+Bars.OnForwardHitHandleDragStart = function(hitHandle)
+	if IsShiftKeyDown and IsShiftKeyDown() then
+		Bars.InvokeForwardHitHandleScript(hitHandle, "OnDragStart")
+		return
+	end
+	hitHandle._eqolBarsFreeMoveActive = Bars.StartFreeMove(hitHandle, hitHandle._eqolBarsBarFrame, hitHandle._eqolBarsIcon) == true
+	if hitHandle._eqolBarsFreeMoveActive ~= true then Bars.InvokeForwardHitHandleScript(hitHandle, "OnDragStart") end
+end
+
+Bars.OnForwardHitHandleDragStop = function(hitHandle)
+	if hitHandle._eqolBarsFreeMoveActive == true then
+		hitHandle._eqolBarsFreeMoveActive = nil
+		Bars.StopFreeMove(true)
+		return
+	end
+	Bars.InvokeForwardHitHandleScript(hitHandle, "OnDragStop")
+end
+
+Bars.InstallForwardHitHandleScripts = function(hitHandle)
+	if not hitHandle or hitHandle._eqolBarsForwardScriptsInstalled == true then return end
+	hitHandle:SetScript("OnEnter", Bars.OnForwardHitHandleEnter)
+	hitHandle:SetScript("OnLeave", Bars.OnForwardHitHandleLeave)
+	hitHandle:SetScript("OnDragStart", Bars.OnForwardHitHandleDragStart)
+	hitHandle:SetScript("OnDragStop", Bars.OnForwardHitHandleDragStop)
+	hitHandle:SetScript("OnReceiveDrag", Bars.OnForwardHitHandleReceiveDrag)
+	hitHandle:SetScript("OnMouseUp", Bars.OnForwardHitHandleMouseUp)
+	hitHandle._eqolBarsForwardScriptsInstalled = true
 end
 
 Bars.ConfigureForwardHitHandle = function(hitHandle, anchorFrame, forwardHandle)
@@ -1120,39 +1189,10 @@ Bars.ConfigureForwardHitHandle = function(hitHandle, anchorFrame, forwardHandle)
 	hitHandle:SetFrameLevel(anchorFrame:GetFrameLevel() + 20)
 	hitHandle:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 	hitHandle:RegisterForDrag("LeftButton")
+	Bars.InstallForwardHitHandleScripts(hitHandle)
+	hitHandle._eqolForwardHandle = forwardHandle
 	hitHandle:EnableMouse(true)
 	hitHandle:Show()
-	hitHandle._eqolForwardHandle = forwardHandle
-	hitHandle:SetScript("OnEnter", function(self)
-		local handle = self and self._eqolForwardHandle or nil
-		local script = handle and handle.GetScript and handle:GetScript("OnEnter") or nil
-		if script then script(handle) end
-	end)
-	hitHandle:SetScript("OnLeave", function(self)
-		local handle = self and self._eqolForwardHandle or nil
-		local script = handle and handle.GetScript and handle:GetScript("OnLeave") or nil
-		if script then script(handle) end
-	end)
-	hitHandle:SetScript("OnDragStart", function(self)
-		local handle = self and self._eqolForwardHandle or nil
-		local script = handle and handle.GetScript and handle:GetScript("OnDragStart") or nil
-		if script then script(handle) end
-	end)
-	hitHandle:SetScript("OnDragStop", function(self)
-		local handle = self and self._eqolForwardHandle or nil
-		local script = handle and handle.GetScript and handle:GetScript("OnDragStop") or nil
-		if script then script(handle) end
-	end)
-	hitHandle:SetScript("OnReceiveDrag", function(self)
-		local handle = self and self._eqolForwardHandle or nil
-		local script = handle and handle.GetScript and handle:GetScript("OnReceiveDrag") or nil
-		if script then script(handle) end
-	end)
-	hitHandle:SetScript("OnMouseUp", function(self, btn)
-		local handle = self and self._eqolForwardHandle or nil
-		local script = handle and handle.GetScript and handle:GetScript("OnMouseUp") or nil
-		if script then script(handle, btn) end
-	end)
 end
 
 Bars.StopFreeMove = function(commit)
@@ -1160,10 +1200,38 @@ Bars.StopFreeMove = function(commit)
 	local move = runtime and runtime.barFreeMove or nil
 	if not move then return false end
 	if move.hitHandle and move.hitHandle.SetScript then move.hitHandle:SetScript("OnUpdate", nil) end
-	if move.barFrame and move.slotAnchor then
+	if move.barFrame and move.anchorFrame then
 		move.barFrame:ClearAllPoints()
-		move.barFrame:SetPoint("LEFT", move.slotAnchor, "LEFT", move.currentOffsetX or move.startOffsetX or 0, move.currentOffsetY or move.startOffsetY or 0)
+		move.barFrame:SetPoint(
+			move.anchorPoint or "LEFT",
+			move.anchorFrame,
+			move.relativePoint or move.anchorPoint or "LEFT",
+			(move.anchorBaseX or 0) + (move.currentOffsetX or move.startOffsetX or 0),
+			(move.anchorBaseY or 0) + (move.currentOffsetY or move.startOffsetY or 0)
+		)
 	end
+	writeBarsDebug("barFreeMoveStop", {
+		panelId = move.panelId,
+		entryId = move.entryId,
+		committed = commit == true,
+		startOffsetX = move.startOffsetX,
+		startOffsetY = move.startOffsetY,
+		currentOffsetX = move.currentOffsetX,
+		currentOffsetY = move.currentOffsetY,
+		anchorPoint = move.anchorPoint,
+		relativePoint = move.relativePoint,
+		anchorBaseX = move.anchorBaseX,
+		anchorBaseY = move.anchorBaseY,
+		anchorFrameName = move.anchorFrame and move.anchorFrame.GetName and move.anchorFrame:GetName() or nil,
+		anchorFrameLeft = move.anchorFrame and move.anchorFrame.GetLeft and move.anchorFrame:GetLeft() or nil,
+		anchorFrameTop = move.anchorFrame and move.anchorFrame.GetTop and move.anchorFrame:GetTop() or nil,
+		barLeft = move.barFrame and move.barFrame.GetLeft and move.barFrame:GetLeft() or nil,
+		barRight = move.barFrame and move.barFrame.GetRight and move.barFrame:GetRight() or nil,
+		barTop = move.barFrame and move.barFrame.GetTop and move.barFrame:GetTop() or nil,
+		barBottom = move.barFrame and move.barFrame.GetBottom and move.barFrame:GetBottom() or nil,
+		barWidth = move.barFrame and move.barFrame.GetWidth and move.barFrame:GetWidth() or nil,
+		barHeight = move.barFrame and move.barFrame.GetHeight and move.barFrame:GetHeight() or nil,
+	})
 	runtime.barFreeMove = nil
 	if commit == true and move.panelId and move.entryId then
 		local targetOffsetX = normalizeBarOffset(move.currentOffsetX, move.startOffsetX or Bars.DEFAULTS.barOffsetX)
@@ -1194,7 +1262,11 @@ Bars.StartFreeMove = function(hitHandle, barFrame, icon)
 	runtime.barFreeMove = {
 		hitHandle = hitHandle,
 		barFrame = barFrame,
-		slotAnchor = icon.slotAnchor or icon,
+		anchorFrame = barFrame._eqolAnchorFrame or icon.slotAnchor or icon,
+		anchorPoint = barFrame._eqolAnchorPoint or "LEFT",
+		relativePoint = barFrame._eqolAnchorRelativePoint or barFrame._eqolAnchorPoint or "LEFT",
+		anchorBaseX = barFrame._eqolAnchorBaseX or 0,
+		anchorBaseY = barFrame._eqolAnchorBaseY or 0,
 		panelId = panelId,
 		entryId = entryId,
 		startCursorX = cursorX,
@@ -1204,6 +1276,29 @@ Bars.StartFreeMove = function(hitHandle, barFrame, icon)
 		currentOffsetX = normalizeBarOffset(state.barOffsetX, Bars.DEFAULTS.barOffsetX),
 		currentOffsetY = normalizeBarOffset(state.barOffsetY, Bars.DEFAULTS.barOffsetY),
 	}
+	writeBarsDebug("barFreeMoveStart", {
+		panelId = panelId,
+		entryId = entryId,
+		label = state and getDebugText(state.label) or nil,
+		iconEntryId = icon and normalizeId(icon.entryId) or nil,
+		slotColumn = Helper.NormalizeSlotCoordinate(icon and (icon._eqolPreviewCellColumn or icon._eqolLayoutSlotColumn) or nil),
+		slotRow = Helper.NormalizeSlotCoordinate(icon and (icon._eqolPreviewCellRow or icon._eqolLayoutSlotRow) or nil),
+		startOffsetX = runtime.barFreeMove.startOffsetX,
+		startOffsetY = runtime.barFreeMove.startOffsetY,
+		anchorPoint = runtime.barFreeMove.anchorPoint,
+		relativePoint = runtime.barFreeMove.relativePoint,
+		anchorBaseX = runtime.barFreeMove.anchorBaseX,
+		anchorBaseY = runtime.barFreeMove.anchorBaseY,
+		anchorFrameName = runtime.barFreeMove.anchorFrame and runtime.barFreeMove.anchorFrame.GetName and runtime.barFreeMove.anchorFrame:GetName() or nil,
+		anchorFrameLeft = runtime.barFreeMove.anchorFrame and runtime.barFreeMove.anchorFrame.GetLeft and runtime.barFreeMove.anchorFrame:GetLeft() or nil,
+		anchorFrameTop = runtime.barFreeMove.anchorFrame and runtime.barFreeMove.anchorFrame.GetTop and runtime.barFreeMove.anchorFrame:GetTop() or nil,
+		barLeft = barFrame and barFrame.GetLeft and barFrame:GetLeft() or nil,
+		barRight = barFrame and barFrame.GetRight and barFrame:GetRight() or nil,
+		barTop = barFrame and barFrame.GetTop and barFrame:GetTop() or nil,
+		barBottom = barFrame and barFrame.GetBottom and barFrame:GetBottom() or nil,
+		barWidth = barFrame and barFrame.GetWidth and barFrame:GetWidth() or nil,
+		barHeight = barFrame and barFrame.GetHeight and barFrame:GetHeight() or nil,
+	})
 	hitHandle:SetScript("OnUpdate", function(self)
 		local activeRuntime = getRuntimeState()
 		local move = activeRuntime and activeRuntime.barFreeMove or nil
@@ -1216,9 +1311,15 @@ Bars.StartFreeMove = function(hitHandle, barFrame, icon)
 		if not (currentCursorX and currentCursorY) then return end
 		move.currentOffsetX = normalizeBarOffset(move.startOffsetX + (currentCursorX - move.startCursorX), move.startOffsetX)
 		move.currentOffsetY = normalizeBarOffset(move.startOffsetY + (currentCursorY - move.startCursorY), move.startOffsetY)
-		if move.barFrame and move.slotAnchor then
+		if move.barFrame and move.anchorFrame then
 			move.barFrame:ClearAllPoints()
-			move.barFrame:SetPoint("LEFT", move.slotAnchor, "LEFT", move.currentOffsetX, move.currentOffsetY)
+			move.barFrame:SetPoint(
+				move.anchorPoint or "LEFT",
+				move.anchorFrame,
+				move.relativePoint or move.anchorPoint or "LEFT",
+				(move.anchorBaseX or 0) + move.currentOffsetX,
+				(move.anchorBaseY or 0) + move.currentOffsetY
+			)
 			if move.barFrame._eqolBarState then
 				move.barFrame._eqolBarState.barOffsetX = move.currentOffsetX
 				move.barFrame._eqolBarState.barOffsetY = move.currentOffsetY
@@ -1230,28 +1331,32 @@ end
 
 Bars.ConfigureFreeMoveHandle = function(hitHandle, barFrame, icon)
 	if not hitHandle then return end
-	local forwardHandle = hitHandle._eqolForwardHandle
-	local originalStart = hitHandle.GetScript and hitHandle:GetScript("OnDragStart") or nil
-	local originalStop = hitHandle.GetScript and hitHandle:GetScript("OnDragStop") or nil
-	hitHandle:SetScript("OnDragStart", function(self)
-		if IsShiftKeyDown and IsShiftKeyDown() then
-			if originalStart then originalStart(self) end
-			return
+	Bars.InstallForwardHitHandleScripts(hitHandle)
+	hitHandle._eqolBarsBarFrame = barFrame
+	hitHandle._eqolBarsIcon = icon
+end
+
+Bars.GetEditorGridCell = function(panelId, column, row)
+	panelId = normalizeId(panelId)
+	column = Helper.NormalizeSlotCoordinate(column)
+	row = Helper.NormalizeSlotCoordinate(row)
+	if not (panelId and column and row) then return nil end
+	local runtime = CooldownPanels.runtime and CooldownPanels.runtime[panelId] or nil
+	local frame = runtime and runtime.frame or nil
+	local grid = frame and frame.editGrid or nil
+	local cells = grid and grid.cells or nil
+	if not cells then return nil end
+	for index = 1, #cells do
+		local cell = cells[index]
+		if
+			cell and cell.IsShown and cell:IsShown()
+			and Helper.NormalizeSlotCoordinate(cell._eqolLayoutSlotColumn) == column
+			and Helper.NormalizeSlotCoordinate(cell._eqolLayoutSlotRow) == row
+		then
+			return cell
 		end
-		self._eqolBarsFreeMoveActive = Bars.StartFreeMove(self, barFrame, icon) == true
-		if self._eqolBarsFreeMoveActive ~= true and originalStart then originalStart(self) end
-	end)
-	hitHandle:SetScript("OnDragStop", function(self)
-		if self._eqolBarsFreeMoveActive == true then
-			self._eqolBarsFreeMoveActive = nil
-			Bars.StopFreeMove(true)
-			return
-		end
-		if originalStop then originalStop(self) end
-	end)
-	if forwardHandle then
-		hitHandle._eqolForwardHandle = forwardHandle
 	end
+	return nil
 end
 
 local function hideBarHitHandle(barFrame)
@@ -1406,11 +1511,11 @@ local function showEditorBarDragPreview(panelId, panel, entryId, entry, sourceIc
 	end
 end
 
-local function configureBarDragPreview(panelId, panel, icon, actualEntryId, slotColumn, slotRow)
+local function configureBarDragPreview(panelId, panel, icon, actualEntryId, slotColumn, slotRow, cache)
 	local handle = icon and icon.layoutHandle or nil
 	if not (handle and panel and actualEntryId) then return end
 	if not (Helper.IsFixedLayout and Helper.IsFixedLayout(panel.layout)) then return end
-	if not isAnchorCell(panel, actualEntryId, slotColumn, slotRow) then return end
+	if not isAnchorCell(panel, actualEntryId, slotColumn, slotRow, cache) then return end
 	local entry = panel.entries and panel.entries[actualEntryId] or nil
 	if not entry or normalizeDisplayMode(entry.displayMode, Bars.DEFAULTS.displayMode) ~= Bars.DISPLAY_MODE.BAR then return end
 	local originalStart = handle:GetScript("OnDragStart")
@@ -2060,7 +2165,7 @@ local function layoutBarFrame(barFrame, icon, span, layout, state)
 	local spacing = Helper.ClampInt(layout and layout.spacing, 0, Helper.SPACING_RANGE or 200, Helper.PANEL_LAYOUT_DEFAULTS and Helper.PANEL_LAYOUT_DEFAULTS.spacing or 2)
 	local maxWidth = (slotSize * span) + (max(span - 1, 0) * spacing)
 	local configuredWidth = normalizeBarWidth(state and state.barWidth, Bars.DEFAULTS.barWidth)
-	local resolvedWidth = configuredWidth > 0 and min(maxWidth, max(BAR_WIDTH_MIN, configuredWidth)) or maxWidth
+	local resolvedWidth = configuredWidth > 0 and max(BAR_WIDTH_MIN, configuredWidth) or maxWidth
 	local width = pixelSnap(resolvedWidth, slotAnchor.GetEffectiveScale and slotAnchor:GetEffectiveScale() or nil)
 	local height = pixelSnap(normalizeBarHeight(state and state.barHeight, max(16, floor(slotSize * 0.72))), slotAnchor.GetEffectiveScale and slotAnchor:GetEffectiveScale() or nil)
 	local offsetX = normalizeBarOffset(state and state.barOffsetX, Bars.DEFAULTS.barOffsetX)
@@ -2071,32 +2176,6 @@ local function layoutBarFrame(barFrame, icon, span, layout, state)
 	local gap = useChargeSegments and normalizeBarChargesGap(state.chargesGap, Bars.DEFAULTS.barChargesGap) or 0
 	local segmentDirection = useChargeSegments and normalizeBarSegmentDirection(state.segmentDirection, Bars.DEFAULTS.barSegmentDirection) or BAR_ORIENTATION_HORIZONTAL
 	local segmentReverse = useChargeSegments and state.segmentReverse == true or false
-	local parent = slotAnchor:GetParent() or icon:GetParent() or UIParent
-	if barFrame:GetParent() ~= parent then barFrame:SetParent(parent) end
-	barFrame:ClearAllPoints()
-	barFrame:SetPoint("LEFT", slotAnchor, "LEFT", offsetX, offsetY)
-	barFrame:SetFrameStrata((icon.overlay and icon.overlay:GetFrameStrata()) or icon:GetFrameStrata())
-	barFrame:SetFrameLevel(((icon.overlay and icon.overlay:GetFrameLevel()) or icon:GetFrameLevel()) + 2)
-	if barFrame.body then
-		barFrame.body:SetFrameStrata(barFrame:GetFrameStrata())
-		barFrame.body:SetFrameLevel(barFrame:GetFrameLevel() + 1)
-	end
-	if barFrame.fill then barFrame.fill:SetFrameLevel((barFrame.body and barFrame.body:GetFrameLevel() or barFrame:GetFrameLevel()) + 1) end
-	if barFrame.borderOverlay then
-		barFrame.borderOverlay:SetFrameStrata(barFrame:GetFrameStrata())
-		barFrame.borderOverlay:SetFrameLevel((barFrame.body and barFrame.body:GetFrameLevel() or barFrame:GetFrameLevel()) + 2)
-	end
-	if barFrame.iconOverlay then
-		barFrame.iconOverlay:SetFrameStrata(barFrame:GetFrameStrata())
-		barFrame.iconOverlay:SetFrameLevel(barFrame:GetFrameLevel() + 5)
-	end
-	if barFrame.textOverlay then
-		barFrame.textOverlay:ClearAllPoints()
-		barFrame.textOverlay:SetPoint("TOPLEFT", barFrame.body, "TOPLEFT", 0, 0)
-		barFrame.textOverlay:SetPoint("BOTTOMRIGHT", barFrame.body, "BOTTOMRIGHT", 0, 0)
-		barFrame.textOverlay:SetFrameStrata(barFrame:GetFrameStrata())
-		barFrame.textOverlay:SetFrameLevel(barFrame:GetFrameLevel() + 6)
-	end
 
 	local borderSize = normalizeBarBorderSize(state and state.borderSize, Bars.DEFAULTS.barBorderSize)
 	local fillTexturePath = state and state.barTexture or resolveBarTexture(Bars.DEFAULTS.barTexture)
@@ -2136,6 +2215,55 @@ local function layoutBarFrame(barFrame, icon, span, layout, state)
 			frameWidth = pixelSnap(bodyLeft + bodyRight + (width * segmentCount) + (max(segmentCount - 1, 0) * gap), slotAnchor.GetEffectiveScale and slotAnchor:GetEffectiveScale() or nil)
 			bodyWidth = max(1, frameWidth - bodyLeft - bodyRight)
 		end
+	end
+
+	local anchorFrame = slotAnchor
+	local anchorPoint = "LEFT"
+	local relativePoint = "LEFT"
+	local anchorBaseX = 0
+	local anchorBaseY = 0
+	if state and state.panelId and CooldownPanels.IsPanelLayoutEditActive and CooldownPanels:IsPanelLayoutEditActive(state.panelId) then
+		local cellColumn = Helper.NormalizeSlotCoordinate(icon._eqolPreviewCellColumn or icon._eqolLayoutSlotColumn)
+		local cellRow = Helper.NormalizeSlotCoordinate(icon._eqolPreviewCellRow or icon._eqolLayoutSlotRow)
+		local gridCell = Bars.GetEditorGridCell(state.panelId, cellColumn, cellRow)
+		if gridCell then
+			anchorFrame = gridCell
+			anchorPoint = "TOPLEFT"
+			relativePoint = "TOPLEFT"
+			anchorBaseY = -((slotSize - frameHeight) / 2)
+		end
+	end
+
+	local parent = anchorFrame:GetParent() or slotAnchor:GetParent() or icon:GetParent() or UIParent
+	if barFrame:GetParent() ~= parent then barFrame:SetParent(parent) end
+	barFrame:ClearAllPoints()
+	barFrame:SetPoint(anchorPoint, anchorFrame, relativePoint, anchorBaseX + offsetX, anchorBaseY + offsetY)
+	barFrame._eqolAnchorFrame = anchorFrame
+	barFrame._eqolAnchorPoint = anchorPoint
+	barFrame._eqolAnchorRelativePoint = relativePoint
+	barFrame._eqolAnchorBaseX = anchorBaseX
+	barFrame._eqolAnchorBaseY = anchorBaseY
+	barFrame:SetFrameStrata((icon.overlay and icon.overlay:GetFrameStrata()) or icon:GetFrameStrata())
+	barFrame:SetFrameLevel(((icon.overlay and icon.overlay:GetFrameLevel()) or icon:GetFrameLevel()) + 2)
+	if barFrame.body then
+		barFrame.body:SetFrameStrata(barFrame:GetFrameStrata())
+		barFrame.body:SetFrameLevel(barFrame:GetFrameLevel() + 1)
+	end
+	if barFrame.fill then barFrame.fill:SetFrameLevel((barFrame.body and barFrame.body:GetFrameLevel() or barFrame:GetFrameLevel()) + 1) end
+	if barFrame.borderOverlay then
+		barFrame.borderOverlay:SetFrameStrata(barFrame:GetFrameStrata())
+		barFrame.borderOverlay:SetFrameLevel((barFrame.body and barFrame.body:GetFrameLevel() or barFrame:GetFrameLevel()) + 2)
+	end
+	if barFrame.iconOverlay then
+		barFrame.iconOverlay:SetFrameStrata(barFrame:GetFrameStrata())
+		barFrame.iconOverlay:SetFrameLevel(barFrame:GetFrameLevel() + 5)
+	end
+	if barFrame.textOverlay then
+		barFrame.textOverlay:ClearAllPoints()
+		barFrame.textOverlay:SetPoint("TOPLEFT", barFrame.body, "TOPLEFT", 0, 0)
+		barFrame.textOverlay:SetPoint("BOTTOMRIGHT", barFrame.body, "BOTTOMRIGHT", 0, 0)
+		barFrame.textOverlay:SetFrameStrata(barFrame:GetFrameStrata())
+		barFrame.textOverlay:SetFrameLevel(barFrame:GetFrameLevel() + 6)
 	end
 
 	barFrame:SetSize(frameWidth, frameHeight)
@@ -2362,6 +2490,53 @@ local function layoutBarFrame(barFrame, icon, span, layout, state)
 	barFrame:SetAlpha(icon:GetAlpha())
 	barFrame._eqolBarState = state
 	barFrame:Show()
+	if state and state.panelId and CooldownPanels.IsPanelLayoutEditActive and CooldownPanels:IsPanelLayoutEditActive(state.panelId) then
+		writeBarsDebug("layoutBarFrame", {
+			panelId = state.panelId,
+			entryId = state.entryId,
+			label = getDebugText(state.label),
+			mode = state.mode,
+			preview = state.preview == true,
+			iconEntryId = icon and normalizeId(icon.entryId) or nil,
+			slotColumn = Helper.NormalizeSlotCoordinate(icon and (icon._eqolPreviewCellColumn or icon._eqolLayoutSlotColumn) or nil),
+			slotRow = Helper.NormalizeSlotCoordinate(icon and (icon._eqolPreviewCellRow or icon._eqolLayoutSlotRow) or nil),
+			offsetX = offsetX,
+			offsetY = offsetY,
+			configuredWidth = configuredWidth,
+			resolvedWidth = resolvedWidth,
+			width = width,
+			height = height,
+			frameWidth = frameWidth,
+			frameHeight = frameHeight,
+			bodyWidth = bodyWidth,
+			bodyHeight = bodyHeight,
+			span = span,
+			orientation = orientation,
+			useChargeSegments = useChargeSegments == true,
+			segmentDirection = segmentDirection,
+			segmentReverse = segmentReverse == true,
+			anchorPoint = anchorPoint,
+			relativePoint = relativePoint,
+			anchorBaseX = anchorBaseX,
+			anchorBaseY = anchorBaseY,
+			anchorFrameName = anchorFrame and anchorFrame.GetName and anchorFrame:GetName() or nil,
+			anchorFrameLeft = anchorFrame and anchorFrame.GetLeft and anchorFrame:GetLeft() or nil,
+			anchorFrameTop = anchorFrame and anchorFrame.GetTop and anchorFrame:GetTop() or nil,
+			parentName = parent and parent.GetName and parent:GetName() or nil,
+			parentLeft = parent and parent.GetLeft and parent:GetLeft() or nil,
+			parentTop = parent and parent.GetTop and parent:GetTop() or nil,
+			barLeft = barFrame.GetLeft and barFrame:GetLeft() or nil,
+			barRight = barFrame.GetRight and barFrame:GetRight() or nil,
+			barTop = barFrame.GetTop and barFrame:GetTop() or nil,
+			barBottom = barFrame.GetBottom and barFrame:GetBottom() or nil,
+			barWidth = barFrame.GetWidth and barFrame:GetWidth() or nil,
+			barHeight = barFrame.GetHeight and barFrame:GetHeight() or nil,
+			bodyLeft = barFrame.body and barFrame.body.GetLeft and barFrame.body:GetLeft() or nil,
+			bodyRight = barFrame.body and barFrame.body.GetRight and barFrame.body:GetRight() or nil,
+			bodyTop = barFrame.body and barFrame.body.GetTop and barFrame.body:GetTop() or nil,
+			bodyBottom = barFrame.body and barFrame.body.GetBottom and barFrame.body:GetBottom() or nil,
+		})
+	end
 end
 
 refreshPanelContext = function(panelId)
@@ -2427,11 +2602,8 @@ refreshStandaloneEntryDialogForBars = function(panelId, entryId, reopen)
 	local state = CooldownPanels:GetLayoutEntryStandaloneMenuState(false)
 	if not state or normalizeId(state.panelId) ~= panelId or normalizeId(state.entryId) ~= entryId then return end
 	if reopen ~= true then
-		if isStandaloneDialogDragActive() then
-			scheduleStandaloneEntryDialogUpdate(panelId, entryId)
-			return
-		end
-		if updateStandaloneEntryDialogForBars(panelId, entryId) then return end
+		scheduleStandaloneEntryDialogUpdate(panelId, entryId)
+		return
 	end
 	local anchorFrame = state.anchorFrame or state.dialog or state.hostFrame
 	CooldownPanels:HideLayoutEntryStandaloneMenu(panelId)
@@ -2582,24 +2754,38 @@ local function applyBarsToPanel(panelId, preview)
 		local displayMode = entry and normalizeDisplayMode(entry.displayMode, Bars.DEFAULTS.displayMode) or Bars.DISPLAY_MODE.BUTTON
 		local reservedOwnerId = nil
 		if not entryId and fixedLayout and slotColumn and slotRow then
-			reservedOwnerId = select(1, getReservedOwnerForCell(panel, slotColumn, slotRow))
+			reservedOwnerId = select(1, getReservedOwnerForCell(panel, slotColumn, slotRow, nil, cache))
 		end
 		local reservedEntry = reservedOwnerId and panel.entries and panel.entries[reservedOwnerId] or nil
 		local barFrame = ensureBarFrame(icon)
-		hideBarPresentation(icon)
+		local showBar = entry and displayMode == Bars.DISPLAY_MODE.BAR and fixedLayout and isAnchorCell(panel, entryId, slotColumn, slotRow, cache)
+		local showReservedGhost = layoutEditActive and fixedLayout and not entry and reservedOwnerId and reservedEntry
 
-		if entry and displayMode == Bars.DISPLAY_MODE.BAR and fixedLayout and isAnchorCell(panel, entryId, slotColumn, slotRow) then
+		if showBar then
+			icon._eqolBarsReservedOwnerId = nil
+			icon._eqolBarsReservedSlot = nil
 			local state = buildBarState(panelId, entryId, entry, icon, preview)
-			local span = getEffectiveBarSpan(panel, entryId)
+			local span = getEffectiveBarSpan(panel, entryId, cache)
 			if state then
 				applyNativeSuppression(icon)
 				layoutBarFrame(barFrame, icon, span, panel.layout, state)
 				stopBarAnimation(barFrame)
+			else
+				hideBarPresentation(icon)
 			end
-		elseif layoutEditActive and fixedLayout and not entry and reservedOwnerId and reservedEntry then
+		elseif showReservedGhost then
+			hideBarPresentation(icon)
 			applyReservedGhost(icon, reservedEntry, slotColumn, slotRow)
-		elseif icon and icon.staticText and icon._eqolBarsReservedSlot then
-			icon.staticText:Hide()
+		else
+			if barFrame and barFrame.IsShown and barFrame:IsShown() then
+				hideBarPresentation(icon)
+			elseif icon._eqolBarsReservedSlot or icon._eqolBarsReservedOwnerId then
+				hideBarPresentation(icon)
+			else
+				icon._eqolBarsReservedOwnerId = nil
+				icon._eqolBarsReservedSlot = nil
+			end
+			if icon and icon.staticText and icon._eqolBarsReservedSlot then icon.staticText:Hide() end
 		end
 	end
 end
@@ -2621,6 +2807,14 @@ local originalGetFixedLayoutCache = Helper.GetFixedLayoutCache
 if originalGetFixedLayoutCache then
 	Helper.GetFixedLayoutCache = function(panel)
 		return augmentFixedLayoutCache(panel, originalGetFixedLayoutCache(panel))
+	end
+end
+
+Bars._eqolOriginalInvalidateFixedLayoutCache = Bars._eqolOriginalInvalidateFixedLayoutCache or Helper.InvalidateFixedLayoutCache
+if Bars._eqolOriginalInvalidateFixedLayoutCache then
+	Helper.InvalidateFixedLayoutCache = function(panel, ...)
+		Bars.MarkReservationCacheDirty(panel)
+		return Bars._eqolOriginalInvalidateFixedLayoutCache(panel, ...)
 	end
 end
 
@@ -2670,11 +2864,12 @@ local originalConfigureEditModePanelIcon = CooldownPanels.ConfigureEditModePanel
 function CooldownPanels:ConfigureEditModePanelIcon(panelId, icon, entryId, slotColumn, slotRow)
 	local panel = self.GetPanel and self:GetPanel(panelId) or nil
 	local fixedLayout = panel and Helper.IsFixedLayout and Helper.IsFixedLayout(panel.layout) or false
+	local cache = fixedLayout and Helper.GetFixedLayoutCache and Helper.GetFixedLayoutCache(panel) or nil
 	local mappedEntryId = normalizeId(entryId)
 	local reservedOwnerId = nil
 	local reservedEntry = nil
 	if mappedEntryId == nil and fixedLayout then
-		reservedOwnerId = select(1, getReservedOwnerForCell(panel, slotColumn, slotRow))
+		reservedOwnerId = select(1, getReservedOwnerForCell(panel, slotColumn, slotRow, nil, cache))
 		if reservedOwnerId then
 			reservedEntry = panel and panel.entries and panel.entries[reservedOwnerId] or nil
 			mappedEntryId = reservedOwnerId
@@ -2690,13 +2885,13 @@ function CooldownPanels:ConfigureEditModePanelIcon(panelId, icon, entryId, slotC
 	end
 	originalConfigureEditModePanelIcon(self, panelId, icon, mappedEntryId, slotColumn, slotRow)
 	local mappedEntry = mappedEntryId and panel and panel.entries and panel.entries[mappedEntryId] or nil
-	if fixedLayout and mappedEntry and normalizeDisplayMode(mappedEntry.displayMode, Bars.DEFAULTS.displayMode) == Bars.DISPLAY_MODE.BAR and isAnchorCell(panel, mappedEntryId, slotColumn, slotRow) then
+	if fixedLayout and mappedEntry and normalizeDisplayMode(mappedEntry.displayMode, Bars.DEFAULTS.displayMode) == Bars.DISPLAY_MODE.BAR and isAnchorCell(panel, mappedEntryId, slotColumn, slotRow, cache) then
 		Bars.SuppressIconLayoutHandles(icon)
 	elseif fixedLayout and normalizeId(entryId) == nil and reservedOwnerId and reservedEntry then
 		Bars.SuppressIconLayoutHandles(icon)
 	end
 	configureModeButton(panelId, panel, icon, normalizeId(entryId), mappedEntryId, slotColumn, slotRow)
-	configureBarDragPreview(panelId, panel, icon, normalizeId(entryId), slotColumn, slotRow)
+	configureBarDragPreview(panelId, panel, icon, normalizeId(entryId), slotColumn, slotRow, cache)
 end
 
 local function normalizeCDMAuraAlwaysShowModeValue(value, fallback)

@@ -114,6 +114,8 @@ local BAR_CHARGES_GAP_MAX = 48
 local BAR_FONT_SIZE_MIN = 6
 local BAR_FONT_SIZE_MAX = 64
 local BAR_TEXTURE_MENU_HEIGHT = 220
+local BAR_STATUS_INTERPOLATION_IMMEDIATE = Enum and Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.Immediate or 0
+local BAR_STATUS_TIMER_DIRECTION_ELAPSED = Enum and Enum.StatusBarTimerDirection and Enum.StatusBarTimerDirection.ElapsedTime or 0
 local getBarColor
 local normalizeBarEntry
 local refreshPanelContext
@@ -122,6 +124,12 @@ local inferChargeBaseCount
 local getDisplayedCharges
 local getChargeBarProgress
 local getChargeBarValueText
+local sweepChargeDurationObjects
+local setStatusBarImmediateValue
+local setStatusBarTimerDuration
+local getChargeSegmentDescriptors
+local setBooleanAlpha
+local shouldShowChargeSegmentFill
 
 local function getSettingType()
 	local lib = addon.EditModeLib or (addon.EditMode and addon.EditMode.lib)
@@ -743,26 +751,25 @@ local function ensureBarUpdater()
 						barFrame.value:SetText(getChargeBarValueText(icon, state.currentCharges, state.maxCharges) or (state.valueText or ""))
 					end
 					if state.segmentedCharges == true and barFrame._eqolSegmentCount and barFrame._eqolSegmentCount > 0 then
+						local descriptors = getChargeSegmentDescriptors(state, barFrame._eqolSegmentCount)
 						for index = 1, barFrame._eqolSegmentCount do
 							local segment = barFrame.segments and barFrame.segments[index] or nil
+							local descriptor = descriptors[index] or nil
 							if segment and segment.fill then
-								local segmentValue = 0
-								local maxCharges = safeNumber(state.maxCharges) or barFrame._eqolSegmentCount
-								local currentCharges = safeNumber(state.currentCharges)
-								if currentCharges == nil then currentCharges = inferChargeBaseCount(state, maxCharges) or 0 end
-								local rechargeProgress = clamp(safeNumber(state.rechargeProgress) or 0, 0, 1)
-								if index <= currentCharges then
-									segmentValue = 1
-								elseif index == (currentCharges + 1) and currentCharges < maxCharges then
-									segmentValue = rechargeProgress
+								if not setStatusBarTimerDuration(segment.fill, descriptor and descriptor.durationObject or nil) then
+									setStatusBarImmediateValue(segment.fill, descriptor and descriptor.value or 0)
 								end
-								segment.fill:SetValue(clamp(segmentValue, 0, 1))
+								local fillTexture = segment.fill.GetStatusBarTexture and segment.fill:GetStatusBarTexture() or nil
+								setBooleanAlpha(fillTexture, shouldShowChargeSegmentFill(state, index), 1, 0)
 							end
 						end
 					elseif barFrame.fill then
-						barFrame.fill:SetValue(progress)
+						setStatusBarImmediateValue(barFrame.fill, progress)
 					end
-					if state.chargeInfoActive ~= true and state.chargeDurationObject == nil and (state.cooldownDurationObject == nil or state.cooldownGCD == true) then
+					if
+						state.chargeDurationObject == nil and (state.cooldownDurationObject == nil or state.cooldownGCD == true)
+						and not (safeNumber(state.rechargeStart) and safeNumber(state.rechargeDuration) and safeNumber(state.rechargeDuration) > 0)
+					then
 						activeBars[barFrame] = nil
 					end
 				else
@@ -1141,13 +1148,64 @@ local function getDurationObjectElapsedProgress(durationObject)
 	return clamp(1 - (remaining / total), 0, 1)
 end
 
+setBooleanAlpha = function(target, condition, onAlpha, offAlpha)
+	if not target then return end
+	if target.SetAlphaFromBoolean then
+		target:SetAlphaFromBoolean(condition, onAlpha, offAlpha)
+	elseif target.SetAlpha then
+		if isSecretValue(condition) then
+			target:SetAlpha(offAlpha or 0)
+		else
+			target:SetAlpha(condition and (onAlpha or 1) or (offAlpha or 0))
+		end
+	end
+end
+
+shouldShowChargeSegmentFill = function(state, index)
+	if type(index) ~= "number" or index <= 1 then return true end
+	if type(state) ~= "table" or state.cooldownGCD == true then return true end
+	local cooldownDurationObject = state.cooldownDurationObject
+	if not cooldownDurationObject then return true end
+	if cooldownDurationObject.IsZero then return cooldownDurationObject:IsZero() end
+	local remaining = getDurationObjectRemaining(cooldownDurationObject)
+	if remaining == nil then return false end
+	return remaining <= 0
+end
+
+sweepChargeDurationObjects = function(state)
+	if type(state) ~= "table" then return end
+	local chargeRemaining = getDurationObjectRemaining(state.chargeDurationObject)
+	if chargeRemaining ~= nil and chargeRemaining <= 0 then state.chargeDurationObject = nil end
+	local cooldownRemaining = getDurationObjectRemaining(state.cooldownDurationObject)
+	if cooldownRemaining ~= nil and cooldownRemaining <= 0 then state.cooldownDurationObject = nil end
+end
+
+setStatusBarImmediateValue = function(statusBar, value)
+	if not statusBar then return end
+	if statusBar.SetMinMaxValues then statusBar:SetMinMaxValues(0, 1, BAR_STATUS_INTERPOLATION_IMMEDIATE) end
+	if statusBar.SetValue then statusBar:SetValue(clamp(value or 0, 0, 1), BAR_STATUS_INTERPOLATION_IMMEDIATE) end
+	if statusBar.SetToTargetValue then statusBar:SetToTargetValue() end
+	statusBar._eqolTimerDurationObject = nil
+end
+
+setStatusBarTimerDuration = function(statusBar, durationObject)
+	if not (statusBar and durationObject and statusBar.SetTimerDuration) then return false end
+	if statusBar._eqolTimerDurationObject ~= durationObject then
+		if statusBar.SetMinMaxValues then statusBar:SetMinMaxValues(0, 1, BAR_STATUS_INTERPOLATION_IMMEDIATE) end
+		statusBar:SetTimerDuration(durationObject, BAR_STATUS_INTERPOLATION_IMMEDIATE, BAR_STATUS_TIMER_DIRECTION_ELAPSED)
+		if statusBar.SetToTargetValue then statusBar:SetToTargetValue() end
+		statusBar._eqolTimerDurationObject = durationObject
+	end
+	return true
+end
+
 inferChargeBaseCount = function(state, maxCharges)
 	if type(state) ~= "table" then return nil end
 	local numericMax = safeNumber(maxCharges)
 	if not (numericMax and numericMax > 0) then return nil end
 	if state.cooldownDurationObject ~= nil and state.cooldownGCD ~= true then return 0 end
-	if state.chargeDurationObject ~= nil or state.chargeInfoActive == true then return min(1, numericMax) end
-	return nil
+	if state.chargeDurationObject ~= nil then return max(numericMax - 1, 0) end
+	return numericMax
 end
 
 getDisplayedCharges = function(icon)
@@ -1177,16 +1235,7 @@ end
 
 getChargeBarProgress = function(state)
 	if type(state) ~= "table" then return 0 end
-	local chargeRemaining = getDurationObjectRemaining(state.chargeDurationObject)
-	if chargeRemaining ~= nil and chargeRemaining <= 0 then
-		state.chargeDurationObject = nil
-		chargeRemaining = nil
-	end
-	local cooldownRemaining = getDurationObjectRemaining(state.cooldownDurationObject)
-	if cooldownRemaining ~= nil and cooldownRemaining <= 0 then
-		state.cooldownDurationObject = nil
-		cooldownRemaining = nil
-	end
+	sweepChargeDurationObjects(state)
 	local currentCharges = safeNumber(state.currentCharges)
 	local maxCharges = safeNumber(state.maxCharges)
 	local baseCharges = currentCharges
@@ -1195,7 +1244,17 @@ getChargeBarProgress = function(state)
 	if rechargeProgress == nil and state.cooldownGCD ~= true then
 		rechargeProgress = getDurationObjectElapsedProgress(state.cooldownDurationObject)
 	end
-	if rechargeProgress == nil then rechargeProgress = clamp(safeNumber(state.rechargeProgress) or 0, 0, 1) end
+	if rechargeProgress == nil then
+		local rechargeStart = safeNumber(state.rechargeStart)
+		local rechargeDuration = safeNumber(state.rechargeDuration)
+		if rechargeStart and rechargeDuration and rechargeDuration > 0 then
+			local now = (Api.GetTime and Api.GetTime()) or GetTime()
+			local rechargeRate = safeNumber(state.rechargeRate) or 1
+			rechargeProgress = clamp(((now - rechargeStart) * rechargeRate) / rechargeDuration, 0, 1)
+		else
+			rechargeProgress = clamp(safeNumber(state.rechargeProgress) or 0, 0, 1)
+		end
+	end
 	state.rechargeProgress = rechargeProgress
 	if baseCharges and maxCharges and maxCharges > 0 then
 		local progress = baseCharges / maxCharges
@@ -1216,6 +1275,45 @@ getChargeBarValueText = function(icon, currentCharges, maxCharges)
 	local maximum = safeNumber(maxCharges)
 	if current and maximum and maximum > 0 then return format("%d/%d", current, maximum) end
 	return icon and icon.charges and icon.charges.GetText and icon.charges:GetText() or nil
+end
+
+getChargeSegmentDescriptors = function(state, segmentCount)
+	local descriptors = {}
+	segmentCount = clamp(tonumber(segmentCount) or safeNumber(state and state.maxCharges) or 1, 1, 20)
+	for index = 1, segmentCount do
+		descriptors[index] = { value = 0, durationObject = nil }
+	end
+	if type(state) ~= "table" then return descriptors end
+
+	sweepChargeDurationObjects(state)
+	local maxCharges = safeNumber(state.maxCharges) or segmentCount
+	local currentCharges = safeNumber(state.currentCharges)
+	if currentCharges == nil then currentCharges = inferChargeBaseCount(state, maxCharges) end
+	currentCharges = clamp(currentCharges or 0, 0, segmentCount)
+
+	local hasCooldownTimer = state.cooldownDurationObject ~= nil and state.cooldownGCD ~= true
+	local hasChargeTimer = state.chargeDurationObject ~= nil
+
+	if segmentCount == 2 and currentCharges <= 0 and hasCooldownTimer and hasChargeTimer then
+		descriptors[1].durationObject = state.cooldownDurationObject
+		descriptors[2].durationObject = state.chargeDurationObject
+		return descriptors
+	end
+
+	for index = 1, segmentCount do
+		local descriptor = descriptors[index]
+		if index <= currentCharges then
+			descriptor.value = 1
+		elseif index == (currentCharges + 1) and currentCharges < segmentCount and hasChargeTimer then
+			descriptor.durationObject = state.chargeDurationObject
+		elseif index == 1 and currentCharges <= 0 and hasCooldownTimer then
+			descriptor.durationObject = state.cooldownDurationObject
+		else
+			descriptor.value = 0
+		end
+	end
+
+	return descriptors
 end
 
 local function buildBarState(panelId, entryId, entry, icon, preview)
@@ -1387,7 +1485,9 @@ local function buildBarState(panelId, entryId, entry, icon, preview)
 			state.rechargeProgress = rechargeProgress or 0
 			progress = getChargeBarProgress(state)
 			valueText = getChargeBarValueText(icon, state.currentCharges, state.maxCharges)
-			animate = state.chargeInfoActive == true or (state.cooldownDurationObject ~= nil and state.cooldownGCD ~= true)
+			animate = state.chargeDurationObject ~= nil
+				or (state.cooldownDurationObject ~= nil and state.cooldownGCD ~= true)
+				or (rechargeStart and rechargeDuration and rechargeDuration > 0)
 		end
 	else
 		local entryKey = Helper.GetEntryKey(panelId, entryId)
@@ -1565,19 +1665,16 @@ local function layoutBarFrame(barFrame, icon, span, layout, state)
 		end
 		hideUnusedBarSegments(barFrame, segmentCount + 1)
 		barFrame._eqolSegmentCount = segmentCount
-		local currentCharges = safeNumber(state.currentCharges)
-		local rechargeProgress = clamp(safeNumber(state.rechargeProgress) or 0, 0, 1)
-		if currentCharges == nil then currentCharges = inferChargeBaseCount(state, segmentCount) or 0 end
+		local descriptors = getChargeSegmentDescriptors(state, segmentCount)
 		for index = 1, segmentCount do
 			local segment = barFrame.segments and barFrame.segments[index] or nil
+			local descriptor = descriptors[index] or nil
 			if segment and segment.fill then
-				local segmentValue = 0
-				if index <= currentCharges then
-					segmentValue = 1
-				elseif index == (currentCharges + 1) and currentCharges < segmentCount then
-					segmentValue = rechargeProgress
+				if not setStatusBarTimerDuration(segment.fill, descriptor and descriptor.durationObject or nil) then
+					setStatusBarImmediateValue(segment.fill, descriptor and descriptor.value or 0)
 				end
-				segment.fill:SetValue(clamp(segmentValue, 0, 1))
+				local fillTexture = segment.fill.GetStatusBarTexture and segment.fill:GetStatusBarTexture() or nil
+				setBooleanAlpha(fillTexture, shouldShowChargeSegmentFill(state, index), 1, 0)
 			end
 		end
 	else
@@ -1587,7 +1684,7 @@ local function layoutBarFrame(barFrame, icon, span, layout, state)
 		barFrame.fillBg:Show()
 		barFrame.fill:SetStatusBarColor(fillColor[1], fillColor[2], fillColor[3], fillColor[4])
 		barFrame.fill:SetMinMaxValues(0, 1)
-		barFrame.fill:SetValue(clamp(state.progress or 0, 0, 1))
+		setStatusBarImmediateValue(barFrame.fill, state.progress or 0)
 	end
 
 	local textInset = 4

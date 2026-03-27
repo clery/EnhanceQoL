@@ -5,6 +5,7 @@
 ### 🐛 Fixed
 
 - Class Buff Reminder (Holy Paladin): Added tracking for `Beacon of Light` and `Beacon of Faith`. The reminder now behaves correctly in groups, counts self-casts properly.
+- Cooldown Panels (Tracked Auras): Fixed heavy lag spikes caused by tracked-aura panels doing too much repeated refresh work in some situations.
 
 ---
 

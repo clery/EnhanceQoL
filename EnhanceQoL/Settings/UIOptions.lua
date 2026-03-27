@@ -1293,6 +1293,11 @@ function addon.functions.initUIOptions()
 	addon.functions.InitDBValue("totalAbsorbTrackerEnabled", false)
 	addon.functions.InitDBValue("totalAbsorbTrackerTextOnly", false)
 	if addon.Aura and addon.Aura.TotalAbsorbTracker and addon.Aura.TotalAbsorbTracker.OnSettingChanged then addon.Aura.TotalAbsorbTracker:OnSettingChanged(addon.db["totalAbsorbTrackerEnabled"]) end
+	addon.db.focusInterruptTracker = type(addon.db.focusInterruptTracker) == "table" and addon.db.focusInterruptTracker or {}
+	if addon.db.focusInterruptTracker.enabled == nil then addon.db.focusInterruptTracker.enabled = false end
+	if addon.Aura and addon.Aura.FocusInterruptTracker and addon.Aura.FocusInterruptTracker.OnSettingChanged then
+		addon.Aura.FocusInterruptTracker:OnSettingChanged(addon.db.focusInterruptTracker.enabled)
+	end
 
 	local combatDefaults = (addon.CombatText and addon.CombatText.defaults) or {}
 	local combatAlwaysModeCombatOnly = addon.CombatText and addon.CombatText.ALWAYS_VISIBLE_MODE_COMBAT_ONLY or "COMBAT_ONLY"
@@ -1497,6 +1502,29 @@ local function createCastbarCategory()
 	})
 
 	addon.functions.SettingsCreateText(category, "|cffffd700" .. (L["xpBarEditModeHint"] or "Configure anchor, style, and text in Edit Mode.") .. "|r", {
+		parentSection = expandable,
+	})
+
+	addon.functions.SettingsCreateHeadline(category, L["FocusInterruptTracker"] or "Focus Interrupt Tracker", {
+		parentSection = expandable,
+	})
+	addon.functions.SettingsCreateCheckbox(category, {
+		var = "focusInterruptTrackerEnabled",
+		text = L["focusInterruptTrackerEnabled"] or "Enable Focus interrupt tracker",
+		desc = L["focusInterruptTrackerDesc"] or "Shows an interrupt indicator near the focus frame when your interrupt is ready and the focus cast can be interrupted.",
+		get = function()
+			local cfg = addon.db and addon.db.focusInterruptTracker
+			return cfg and cfg.enabled == true or false
+		end,
+		func = function(value)
+			addon.db.focusInterruptTracker = type(addon.db.focusInterruptTracker) == "table" and addon.db.focusInterruptTracker or {}
+			addon.db.focusInterruptTracker.enabled = value and true or false
+			local tracker = addon.Aura and addon.Aura.FocusInterruptTracker
+			if tracker and tracker.OnSettingChanged then tracker:OnSettingChanged(addon.db.focusInterruptTracker.enabled) end
+		end,
+		parentSection = expandable,
+	})
+	addon.functions.SettingsCreateText(category, "|cffffd700" .. (L["focusInterruptTrackerEditModeHint"] or "Configure display mode, icon, font, anchor, and border in Edit Mode.") .. "|r", {
 		parentSection = expandable,
 	})
 

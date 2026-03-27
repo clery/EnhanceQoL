@@ -14093,6 +14093,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 	local fixedGroups = fixedLayout and (fixedLayoutCache and fixedLayoutCache.groups or CooldownPanels.GetFixedGroups(panel)) or nil
 	local fixedGroupById = fixedLayout and (fixedLayoutCache and fixedLayoutCache.groupById or {}) or nil
 	local fixedStaticTargetIndices = fixedLayout and fixedLayoutCache and fixedLayoutCache.staticTargetIndexByEntryId or nil
+	local fixedDynamicTargetIndicesByGroupId = fixedLayout and fixedLayoutCache and fixedLayoutCache.dynamicTargetIndicesByGroupId or nil
 	local fixedGroupVisibleCounts = fixedLayout and {} or nil
 	local effectiveLayoutCache = {}
 	if fixedLayout then
@@ -14456,12 +14457,13 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				if fixedLayout then
 					local fixedGroup = entry.fixedGroupId and fixedGroupById and fixedGroupById[entry.fixedGroupId] or nil
 					if fixedGroup then
-						if fixedGroup._eqolIsStatic == true then
+						if Helper.FixedGroupUsesStaticSlots and Helper.FixedGroupUsesStaticSlots(fixedGroup) then
 							targetIndex = fixedStaticTargetIndices and fixedStaticTargetIndices[entryId] or nil
 						else
 							local groupVisibleCount = (fixedGroupVisibleCounts[fixedGroup.id] or 0) + 1
 							fixedGroupVisibleCounts[fixedGroup.id] = groupVisibleCount
-							targetIndex = fixedGroup._eqolDynamicTargetIndices and fixedGroup._eqolDynamicTargetIndices[groupVisibleCount] or nil
+							local targetIndices = fixedDynamicTargetIndicesByGroupId and fixedDynamicTargetIndicesByGroupId[fixedGroup.id] or nil
+							targetIndex = targetIndices and targetIndices[groupVisibleCount] or nil
 							if not (targetIndex and targetIndex <= fixedSlotCount) then targetIndex = nil end
 						end
 					else

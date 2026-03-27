@@ -121,6 +121,8 @@ curveFake:AddPoint(0.5, 0)
 curveFake:AddPoint(0.51, 1)
 Helper.FakeCurve = curveFake
 
+local FIXED_LAYOUT_RUNTIME_CACHE = setmetatable({}, { __mode = "k" })
+
 local function normalizeCDMAuraAlwaysShowMode(value, fallback)
 	local mode = type(value) == "string" and string.upper(value) or nil
 	if mode == "SHOW" or mode == "DESATURATE" or mode == "HIDE" then return mode end
@@ -577,7 +579,6 @@ function Helper.GetFixedGroupMode(group)
 end
 
 function Helper.FixedGroupUsesStaticSlots(group)
-	if type(group) == "table" and type(group._eqolIsStatic) == "boolean" then return group._eqolIsStatic == true end
 	return Helper.GetFixedGroupMode(group) == "STATIC"
 end
 
@@ -626,10 +627,14 @@ local function getFixedCellKey(column, row) return tostring(column) .. ":" .. to
 
 local function fixedLayoutCacheHasMissingDynamicTargets(candidate)
 	local groups = candidate and candidate.groups or nil
+	local dynamicTargetIndicesByGroupId = candidate and candidate.dynamicTargetIndicesByGroupId or nil
 	if type(groups) ~= "table" then return false end
 	for i = 1, #groups do
 		local group = groups[i]
-		if group and Helper.FixedGroupUsesStaticSlots(group) ~= true and type(group._eqolDynamicTargetIndices) ~= "table" then return true end
+		local groupId = group and group.id or nil
+		if group and Helper.FixedGroupUsesStaticSlots(group) ~= true and type(dynamicTargetIndicesByGroupId and dynamicTargetIndicesByGroupId[groupId] or nil) ~= "table" then
+			return true
+		end
 	end
 	return false
 end
@@ -775,8 +780,9 @@ function Helper.NormalizeFixedGroups(layout)
 				group.columns = columns
 				group.rows = rows
 				group.mode = Helper.NormalizeFixedGroupMode(group.mode, "DYNAMIC")
-				group._eqolIsStatic = group.mode == "STATIC"
-				group._eqolCapacity = columns * rows
+				group._eqolIsStatic = nil
+				group._eqolCapacity = nil
+				group._eqolDynamicTargetIndices = nil
 				group.dynamicStartPoint = Helper.NormalizeFixedGroupStartPoint(group.dynamicStartPoint, "TOPLEFT")
 				group.dynamicDirection = Helper.NormalizeFixedGroupDynamicDirection(group.dynamicStartPoint, group.dynamicDirection, nil)
 				group.iconSize = Helper.NormalizeFixedGroupIconSize(group.iconSize)
@@ -797,6 +803,7 @@ end
 function Helper.InvalidateFixedLayoutCache(panel)
 	if type(panel) ~= "table" then return end
 	panel._eqolFixedLayoutCache = nil
+	FIXED_LAYOUT_RUNTIME_CACHE[panel] = nil
 end
 
 function Helper.GetFixedGroupById(panelOrLayout, groupId)
@@ -819,7 +826,6 @@ end
 
 function Helper.GetFixedGroupCapacity(group)
 	if type(group) ~= "table" then return 0 end
-	if type(group._eqolCapacity) == "number" then return group._eqolCapacity end
 	local columns = Helper.NormalizeFixedGridSize(group.columns, 0)
 	local rows = Helper.NormalizeFixedGridSize(group.rows, 0)
 	if columns <= 0 or rows <= 0 then return 0 end
@@ -916,7 +922,8 @@ function Helper.GetFixedLayoutCache(panel)
 	if type(panel) ~= "table" or type(panel.entries) ~= "table" or type(panel.order) ~= "table" then return nil end
 	panel.layout = type(panel.layout) == "table" and panel.layout or {}
 	local layout = panel.layout
-	local cache = panel._eqolFixedLayoutCache
+	panel._eqolFixedLayoutCache = nil
+	local cache = FIXED_LAYOUT_RUNTIME_CACHE[panel]
 	local groupsRef = type(layout.fixedGroups) == "table" and layout.fixedGroups or nil
 	if
 		cache
@@ -943,6 +950,7 @@ function Helper.GetFixedLayoutCache(panel)
 	local entryAtUngroupedCell = {}
 	local entryAtStaticGroupCell = {}
 	local placedEntries = {}
+	local dynamicTargetIndicesByGroupId = {}
 	local configuredColumns = Helper.NormalizeFixedGridSize(layout.fixedGridColumns, 0)
 	local configuredRows = Helper.NormalizeFixedGridSize(layout.fixedGridRows, 0)
 	local used = {}
@@ -1097,7 +1105,7 @@ function Helper.GetFixedLayoutCache(panel)
 			local group = fixedGroups[i]
 			if group and not Helper.FixedGroupUsesStaticSlots(group) then
 				local capacity = Helper.GetFixedGroupCapacity(group)
-				local targetIndices = group._eqolDynamicTargetIndices or {}
+				local targetIndices = dynamicTargetIndicesByGroupId[group.id] or {}
 				local orderedCells = Helper.GetFixedGroupOrderedCells(group)
 				for groupIndex = 1, capacity do
 					local cell = orderedCells[groupIndex]
@@ -1112,9 +1120,7 @@ function Helper.GetFixedLayoutCache(panel)
 				for groupIndex = capacity + 1, #targetIndices do
 					targetIndices[groupIndex] = nil
 				end
-				group._eqolDynamicTargetIndices = targetIndices
-			elseif group then
-				group._eqolDynamicTargetIndices = nil
+				dynamicTargetIndicesByGroupId[group.id] = targetIndices
 			end
 		end
 		for i = 1, #placedEntries do
@@ -1131,7 +1137,7 @@ function Helper.GetFixedLayoutCache(panel)
 			local group = fixedGroups[i]
 			local list = group and not Helper.FixedGroupUsesStaticSlots(group) and dynamicGroupEntries[group.id] or nil
 			if list then
-				local targetIndices = group._eqolDynamicTargetIndices
+				local targetIndices = dynamicTargetIndicesByGroupId[group.id]
 				local limit = math.min(targetIndices and #targetIndices or 0, #list)
 				for groupIndex = 1, limit do
 					local targetIndex = targetIndices[groupIndex]
@@ -1160,6 +1166,7 @@ function Helper.GetFixedLayoutCache(panel)
 		entryAtUngroupedCell = entryAtUngroupedCell,
 		entryAtStaticGroupCell = entryAtStaticGroupCell,
 		placedEntries = placedEntries,
+		dynamicTargetIndicesByGroupId = dynamicTargetIndicesByGroupId,
 		maxColumn = maxColumn,
 		maxRow = maxRow,
 		boundsColumns = boundsColumns,
@@ -1168,7 +1175,7 @@ function Helper.GetFixedLayoutCache(panel)
 		slotEntryIds = slotEntryIds,
 		staticTargetIndexByEntryId = staticTargetIndexByEntryId,
 	}
-	panel._eqolFixedLayoutCache = cache
+	FIXED_LAYOUT_RUNTIME_CACHE[panel] = cache
 	return cache
 end
 
@@ -1290,9 +1297,10 @@ function Helper.BuildFixedSlotEntryIds(panel, filterFn, includePreviewPadding)
 		local group = groups[i]
 		local list = group and not Helper.FixedGroupUsesStaticSlots(group) and dynamicGroupEntries[group.id] or nil
 		if list then
-			local usePreparedTargets = cache and cache.boundsColumns == columns and cache.boundsRows == rows and group._eqolDynamicTargetIndices
+			local preparedTargets = cache and cache.dynamicTargetIndicesByGroupId and cache.dynamicTargetIndicesByGroupId[group.id] or nil
+			local usePreparedTargets = cache and cache.boundsColumns == columns and cache.boundsRows == rows and preparedTargets
 			if usePreparedTargets then
-				local targetIndices = group._eqolDynamicTargetIndices
+				local targetIndices = preparedTargets
 				local limit = math.min(targetIndices and #targetIndices or 0, #list)
 				for groupIndex = 1, limit do
 					local targetIndex = targetIndices[groupIndex]

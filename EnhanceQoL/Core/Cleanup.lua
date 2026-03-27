@@ -21,7 +21,29 @@ local function cleanupDebugArtifactsProfile(profile)
 		profile[PROFILE_DEBUG_KEYS[i]] = nil
 	end
 
-	if type(profile.cooldownPanels) == "table" then profile.cooldownPanels._eqolBarsDebug = nil end
+	if type(profile.cooldownPanels) == "table" then
+		profile.cooldownPanels._eqolBarsDebug = nil
+		local panels = profile.cooldownPanels.panels
+		if type(panels) == "table" then
+			for _, panel in pairs(panels) do
+				if type(panel) == "table" then
+					panel._eqolFixedLayoutCache = nil
+					local layout = type(panel.layout) == "table" and panel.layout or nil
+					local groups = layout and layout.fixedGroups or nil
+					if type(groups) == "table" then
+						for i = 1, #groups do
+							local group = groups[i]
+							if type(group) == "table" then
+								group._eqolDynamicTargetIndices = nil
+								group._eqolIsStatic = nil
+								group._eqolCapacity = nil
+							end
+						end
+					end
+				end
+			end
+		end
+	end
 
 	if type(profile._temp) == "table" then
 		profile._temp.ufProfileDebug = nil

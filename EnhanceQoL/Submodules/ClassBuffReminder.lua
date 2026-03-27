@@ -228,6 +228,15 @@ local ROGUE_POISON_UTILITY_IDS = {
 
 local SHAMAN_SPEC_ENHANCEMENT = 263
 local SHAMAN_SPEC_RESTORATION = 264
+local PALADIN_SPEC_HOLY = 65
+
+local HOLY_PALADIN_BEACON_OF_LIGHT_IDS = {
+	53563, -- Beacon of Light
+}
+
+local HOLY_PALADIN_BEACON_OF_FAITH_IDS = {
+	156910, -- Beacon of Faith
+}
 
 local SHAMAN_ENHANCEMENT_WINDFURY_IDS = {
 	319773, -- Windfury Weapon (modern aura id)
@@ -1064,7 +1073,7 @@ function Reminder:UnitHasAnyAuraName(unit, auraNames)
 	return false
 end
 
-function Reminder:GetGroupBuffMissingCountBySpellIds(spellIds)
+function Reminder:GetGroupBuffMissingCountBySpellIds(spellIds, includeAIFollowers)
 	if type(spellIds) ~= "table" then return 0, 0 end
 	local units = self:GetRosterUnits()
 
@@ -1072,7 +1081,7 @@ function Reminder:GetGroupBuffMissingCountBySpellIds(spellIds)
 	local missing = 0
 	for i = 1, #units do
 		local unit = units[i]
-		if isAIFollowerUnit(unit) then
+		if isAIFollowerUnit(unit) and includeAIFollowers ~= true then
 			-- Skip AI followers for group-buff requirements.
 		elseif UnitExists(unit) and UnitIsConnected(unit) and not UnitIsDeadOrGhost(unit) then
 			total = total + 1
@@ -1081,6 +1090,14 @@ function Reminder:GetGroupBuffMissingCountBySpellIds(spellIds)
 	end
 
 	return missing, total
+end
+
+local function anyUnitHasAnyAuraSpellId(reminder, units, spellIds)
+	if type(reminder) ~= "table" or type(units) ~= "table" or type(spellIds) ~= "table" then return false end
+	for i = 1, #units do
+		if reminder:UnitHasAnyAuraSpellId(units[i], spellIds) then return true end
+	end
+	return false
 end
 
 local function paladinRitesHasUnitBuff(provider, unit, reminder)
@@ -1095,25 +1112,51 @@ end
 local function paladinRitesGetSelfStatus(provider, reminder)
 	if type(provider) ~= "table" or type(reminder) ~= "table" then return buildSelfStatus(1, {}) end
 
+	local totalRequirements = 0
 	local activeSpellId = normalizeSpellId(provider.spellIds and provider.spellIds[1]) or normalizeSpellId(provider.displaySpellId)
 	local hasRite = false
-	if reminder:UnitHasAnyAuraSpellId("player", provider.spellIds) then
-		hasRite = true
-	elseif type(provider.enchantIds) == "table" and #provider.enchantIds > 0 and playerHasAnyEnchantId(provider.enchantIds) then
-		hasRite = true
-	elseif provider.enchantId and playerHasEnchantId(provider.enchantId) then
-		hasRite = true
+	if provider.trackRites == true then
+		totalRequirements = totalRequirements + 1
+		if reminder:UnitHasAnyAuraSpellId("player", provider.spellIds) then
+			hasRite = true
+		elseif type(provider.enchantIds) == "table" and #provider.enchantIds > 0 and playerHasAnyEnchantId(provider.enchantIds) then
+			hasRite = true
+		elseif provider.enchantId and playerHasEnchantId(provider.enchantId) then
+			hasRite = true
+		end
 	end
 
 	local missingEntries = {}
-	if not hasRite then
+	if provider.trackRites == true and not hasRite then
 		missingEntries[1] = makeSelfMissingEntry(activeSpellId, provider.fallbackName or "Rite")
-		setProviderDisplaySpellId(provider, activeSpellId)
-	else
-		setProviderDisplaySpellId(provider, activeSpellId)
 	end
 
-	return buildSelfStatus(1, missingEntries)
+	if reminder:GetCurrentSpecId() == PALADIN_SPEC_HOLY then
+		reminder.runtimeEligibleUnits = reminder.runtimeEligibleUnits or {}
+		local eligibleUnits = reminder:CollectEligibleUnits(reminder.runtimeEligibleUnits, true)
+
+		if #eligibleUnits > 1 then
+			totalRequirements = totalRequirements + 1
+			local beaconOfLightDisplaySpellId = normalizeSpellId(provider.beaconOfLightDisplaySpellId)
+				or normalizeSpellId(provider.beaconOfLightSpellIds and provider.beaconOfLightSpellIds[1])
+			if not anyUnitHasAnyAuraSpellId(reminder, eligibleUnits, provider.beaconOfLightSpellIds) then
+				missingEntries[#missingEntries + 1] = makeSelfMissingEntry(beaconOfLightDisplaySpellId, provider.beaconOfLightLabel or "Beacon of Light")
+			end
+		end
+
+		local shouldTrackSecondBeacon = #eligibleUnits > 1 and hasKnownSpellInList(provider.beaconOfFaithKnownSpellIds or provider.beaconOfFaithSpellIds)
+		if shouldTrackSecondBeacon then
+			totalRequirements = totalRequirements + 1
+			local beaconOfFaithDisplaySpellId = normalizeSpellId(provider.beaconOfFaithDisplaySpellId)
+				or normalizeSpellId(provider.beaconOfFaithSpellIds and provider.beaconOfFaithSpellIds[1])
+			if not anyUnitHasAnyAuraSpellId(reminder, eligibleUnits, provider.beaconOfFaithSpellIds) then
+				missingEntries[#missingEntries + 1] = makeSelfMissingEntry(beaconOfFaithDisplaySpellId, provider.beaconOfFaithLabel or "Beacon of Faith")
+			end
+		end
+	end
+
+	setProviderDisplaySpellId(provider, missingEntries[1] and missingEntries[1].spellId or activeSpellId)
+	return buildSelfStatus(totalRequirements, missingEntries)
 end
 
 local function getRoguePoisonPresence(provider, reminder)
@@ -1167,7 +1210,7 @@ local function shamanEnhancementGetSelfStatus(provider, reminder)
 
 	local skyfuryDisplayId = normalizeSpellId(provider.skyfuryDisplaySpellId) or normalizeSpellId(provider.skyfurySpellIds and provider.skyfurySpellIds[1])
 	local skyfuryMissingCount, skyfuryTotal = 0, 0
-	if shouldEvaluateGroupResponsibilities then skyfuryMissingCount, skyfuryTotal = reminder:GetGroupBuffMissingCountBySpellIds(provider.skyfurySpellIds) end
+	if shouldEvaluateGroupResponsibilities then skyfuryMissingCount, skyfuryTotal = reminder:GetGroupBuffMissingCountBySpellIds(provider.skyfurySpellIds, true) end
 	if shouldEvaluateGroupResponsibilities and skyfuryTotal > 0 then
 		totalRequirements = totalRequirements + 1
 		if skyfuryMissingCount > 0 then missingEntries[#missingEntries + 1] = makeSelfMissingEntry(skyfuryDisplayId, provider.skyfuryLabel or "Skyfury", skyfuryMissingCount, skyfuryTotal) end
@@ -1211,7 +1254,7 @@ local function shamanRestorationGetSelfStatus(provider, reminder)
 
 	local skyfuryDisplayId = normalizeSpellId(provider.skyfuryDisplaySpellId) or normalizeSpellId(provider.skyfurySpellIds and provider.skyfurySpellIds[1])
 	local skyfuryMissingCount, skyfuryTotal = 0, 0
-	if shouldEvaluateGroupResponsibilities then skyfuryMissingCount, skyfuryTotal = reminder:GetGroupBuffMissingCountBySpellIds(provider.skyfurySpellIds) end
+	if shouldEvaluateGroupResponsibilities then skyfuryMissingCount, skyfuryTotal = reminder:GetGroupBuffMissingCountBySpellIds(provider.skyfurySpellIds, true) end
 	if shouldEvaluateGroupResponsibilities and skyfuryTotal > 0 then
 		totalRequirements = totalRequirements + 1
 		if skyfuryMissingCount > 0 then missingEntries[#missingEntries + 1] = makeSelfMissingEntry(skyfuryDisplayId, provider.skyfuryLabel or "Skyfury", skyfuryMissingCount, skyfuryTotal) end
@@ -1277,7 +1320,7 @@ local function evokerSupportGetSelfStatus(provider, reminder)
 	local shouldTrackSource = hasKnownSpellInList(provider.sourceKnownSpellIds or provider.sourceSpellIds)
 	if shouldTrackSource then
 		reminder.runtimeHealerUnits = reminder.runtimeHealerUnits or {}
-		local healerUnits = reminder:CollectOtherHealerUnits(reminder.runtimeHealerUnits)
+		local healerUnits = reminder:CollectOtherHealerUnits(reminder.runtimeHealerUnits, true)
 		if #healerUnits > 0 then
 			totalRequirements = totalRequirements + 1
 			local hasSourceOnTarget = false
@@ -1298,7 +1341,7 @@ local function evokerSupportGetSelfStatus(provider, reminder)
 	end
 
 	local bronzeDisplaySpellId = normalizeSpellId(provider.bronzeDisplaySpellId) or normalizeSpellId(provider.bronzeSpellIds and provider.bronzeSpellIds[1])
-	local bronzeMissingCount, bronzeTotal = reminder:GetGroupBuffMissingCountBySpellIds(provider.bronzeSpellIds)
+	local bronzeMissingCount, bronzeTotal = reminder:GetGroupBuffMissingCountBySpellIds(provider.bronzeSpellIds, true)
 	if bronzeTotal > 0 then
 		totalRequirements = totalRequirements + 1
 		if bronzeMissingCount > 0 then
@@ -1310,7 +1353,7 @@ local function evokerSupportGetSelfStatus(provider, reminder)
 	local shouldTrackBlistering = hasKnownSpellInList(provider.blisteringKnownSpellIds or provider.blisteringSpellIds)
 	if shouldTrackBlistering then
 		reminder.runtimeEligibleUnits = reminder.runtimeEligibleUnits or {}
-		local eligibleUnits = reminder:CollectEligibleUnits(reminder.runtimeEligibleUnits)
+		local eligibleUnits = reminder:CollectEligibleUnits(reminder.runtimeEligibleUnits, true)
 		if #eligibleUnits > 0 then
 			totalRequirements = totalRequirements + 1
 			local hasBlisteringOnTarget = false
@@ -1388,27 +1431,32 @@ end
 function Reminder:GetPaladinRitesProvider()
 	local adjurationKnown = safeIsPlayerSpell(PALADIN_RITES.adjuration.spellId)
 	local sanctificationKnown = safeIsPlayerSpell(PALADIN_RITES.sanctification.spellId)
-	if not adjurationKnown and not sanctificationKnown then return nil end
+	local holyPaladin = self:GetCurrentSpecId() == PALADIN_SPEC_HOLY
+	local beaconOfLightKnown = holyPaladin and hasKnownSpellInList(HOLY_PALADIN_BEACON_OF_LIGHT_IDS) or false
+	local beaconOfFaithKnown = holyPaladin and hasKnownSpellInList(HOLY_PALADIN_BEACON_OF_FAITH_IDS) or false
+	local hasHolyBeaconSupport = holyPaladin and (beaconOfLightKnown or beaconOfFaithKnown)
+	if not adjurationKnown and not sanctificationKnown and not hasHolyBeaconSupport then return nil end
 
 	local spellIds
 	local enchantIds
 	local fallbackName
 	local nextKey
 	local displaySpellId
+	local trackRites = adjurationKnown or sanctificationKnown
 
-	if adjurationKnown and not sanctificationKnown then
+	if trackRites and adjurationKnown and not sanctificationKnown then
 		spellIds = { PALADIN_RITES.adjuration.spellId }
 		enchantIds = { PALADIN_RITES.adjuration.enchantId }
 		fallbackName = PALADIN_RITES.adjuration.fallbackName
 		nextKey = tostring(PALADIN_RITES.adjuration.spellId)
 		displaySpellId = PALADIN_RITES.adjuration.spellId
-	elseif sanctificationKnown and not adjurationKnown then
+	elseif trackRites and sanctificationKnown and not adjurationKnown then
 		spellIds = { PALADIN_RITES.sanctification.spellId }
 		enchantIds = { PALADIN_RITES.sanctification.enchantId }
 		fallbackName = PALADIN_RITES.sanctification.fallbackName
 		nextKey = tostring(PALADIN_RITES.sanctification.spellId)
 		displaySpellId = PALADIN_RITES.sanctification.spellId
-	else
+	elseif trackRites then
 		spellIds = { PALADIN_RITES.adjuration.spellId, PALADIN_RITES.sanctification.spellId }
 		enchantIds = { PALADIN_RITES.adjuration.enchantId, PALADIN_RITES.sanctification.enchantId }
 		fallbackName = "Rite"
@@ -1419,6 +1467,14 @@ function Reminder:GetPaladinRitesProvider()
 		elseif self:UnitHasAnyAuraSpellId("player", { PALADIN_RITES.adjuration.spellId }) or playerHasEnchantId(PALADIN_RITES.adjuration.enchantId) then
 			displaySpellId = PALADIN_RITES.adjuration.spellId
 		end
+	else
+		spellIds = {}
+		if beaconOfLightKnown then spellIds[#spellIds + 1] = HOLY_PALADIN_BEACON_OF_LIGHT_IDS[1] end
+		if beaconOfFaithKnown then spellIds[#spellIds + 1] = HOLY_PALADIN_BEACON_OF_FAITH_IDS[1] end
+		enchantIds = {}
+		fallbackName = "Beacon"
+		nextKey = "holy_beacons"
+		displaySpellId = spellIds[1] or HOLY_PALADIN_BEACON_OF_LIGHT_IDS[1]
 	end
 
 	self.paladinRitesProvider = self.paladinRitesProvider
@@ -1428,6 +1484,13 @@ function Reminder:GetPaladinRitesProvider()
 			fallbackName = fallbackName,
 			enchantId = enchantIds[1],
 			enchantIds = enchantIds,
+			beaconOfLightSpellIds = HOLY_PALADIN_BEACON_OF_LIGHT_IDS,
+			beaconOfLightDisplaySpellId = HOLY_PALADIN_BEACON_OF_LIGHT_IDS[1],
+			beaconOfLightLabel = "Beacon of Light",
+			beaconOfFaithSpellIds = HOLY_PALADIN_BEACON_OF_FAITH_IDS,
+			beaconOfFaithKnownSpellIds = HOLY_PALADIN_BEACON_OF_FAITH_IDS,
+			beaconOfFaithDisplaySpellId = HOLY_PALADIN_BEACON_OF_FAITH_IDS[1],
+			beaconOfFaithLabel = "Beacon of Faith",
 			hasUnitBuffFunc = paladinRitesHasUnitBuff,
 			getSelfStatusFunc = paladinRitesGetSelfStatus,
 			activeKey = nil,
@@ -1437,10 +1500,13 @@ function Reminder:GetPaladinRitesProvider()
 	provider.spellIds = spellIds
 	provider.fallbackName = fallbackName
 	provider.enchantIds = enchantIds
+	provider.trackRites = trackRites == true
 	provider.enchantId = (#enchantIds == 1) and enchantIds[1] or nil
+	provider.tracksExternalUnitAuras = holyPaladin == true
 
-	if provider.activeKey ~= nextKey then
-		provider.activeKey = nextKey
+	local providerKey = string.format("%s|holy:%d|faith:%d", tostring(nextKey), holyPaladin and 1 or 0, beaconOfFaithKnown and 1 or 0)
+	if provider.activeKey ~= providerKey then
+		provider.activeKey = providerKey
 		resetProviderRuntimeCache(provider)
 	end
 
@@ -2598,7 +2664,7 @@ function Reminder:CollectUnits(target)
 	return target
 end
 
-function Reminder:CollectOtherHealerUnits(target)
+function Reminder:CollectOtherHealerUnits(target, includeAIFollowers)
 	if not target then target = {} end
 	for i = #target, 1, -1 do
 		target[i] = nil
@@ -2607,7 +2673,7 @@ function Reminder:CollectOtherHealerUnits(target)
 	local units = self:GetRosterUnits()
 	for i = 1, #units do
 		local unit = units[i]
-		if not isPlayerUnit(unit) and not isAIFollowerUnit(unit) and UnitExists(unit) and UnitIsConnected(unit) and not UnitIsDeadOrGhost(unit) and isUnitHealerRole(unit) then
+		if not isPlayerUnit(unit) and (includeAIFollowers == true or not isAIFollowerUnit(unit)) and UnitExists(unit) and UnitIsConnected(unit) and not UnitIsDeadOrGhost(unit) and isUnitHealerRole(unit) then
 			target[#target + 1] = unit
 		end
 	end
@@ -2615,7 +2681,7 @@ function Reminder:CollectOtherHealerUnits(target)
 	return target
 end
 
-function Reminder:CollectEligibleUnits(target)
+function Reminder:CollectEligibleUnits(target, includeAIFollowers)
 	if not target then target = {} end
 	for i = #target, 1, -1 do
 		target[i] = nil
@@ -2624,7 +2690,26 @@ function Reminder:CollectEligibleUnits(target)
 	local units = self:GetRosterUnits()
 	for i = 1, #units do
 		local unit = units[i]
-		if not isAIFollowerUnit(unit) and UnitExists(unit) and UnitIsConnected(unit) and not UnitIsDeadOrGhost(unit) then target[#target + 1] = unit end
+		if (includeAIFollowers == true or not isAIFollowerUnit(unit)) and UnitExists(unit) and UnitIsConnected(unit) and not UnitIsDeadOrGhost(unit) then
+			target[#target + 1] = unit
+		end
+	end
+
+	return target
+end
+
+function Reminder:CollectOtherEligibleUnits(target, includeAIFollowers)
+	if not target then target = {} end
+	for i = #target, 1, -1 do
+		target[i] = nil
+	end
+
+	local units = self:GetRosterUnits()
+	for i = 1, #units do
+		local unit = units[i]
+		if not isPlayerUnit(unit) and (includeAIFollowers == true or not isAIFollowerUnit(unit)) and UnitExists(unit) and UnitIsConnected(unit) and not UnitIsDeadOrGhost(unit) then
+			target[#target + 1] = unit
+		end
 	end
 
 	return target

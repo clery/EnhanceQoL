@@ -1,5 +1,13 @@
 # Changelog
 
+## [9.12.0] - 2026-03-27
+
+### 🐛 Fixed
+
+- Class Buff Reminder (Holy Paladin): Added tracking for `Beacon of Light` and `Beacon of Faith`. The reminder now behaves correctly in groups, counts self-casts properly.
+
+---
+
 ## [9.11.0] - 2026-03-26
 
 ### ✨ Added

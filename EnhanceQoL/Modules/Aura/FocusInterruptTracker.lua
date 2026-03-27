@@ -31,9 +31,6 @@ local EDITMODE_ID = "focusInterruptTracker"
 local DEFAULT_PREVIEW_TEXT = "INTERRUPT"
 local DEFAULT_PREVIEW_ICON = 132938
 local DEFAULT_SETTINGS_MAX_HEIGHT = 900
-local DEBUG_TRACE_KEY = "_focusInterruptTrackerTrace"
-local DEBUG_TRACE_ENABLED_KEY = "_focusInterruptTrackerTraceEnabled"
-local DEBUG_TRACE_MAX = 250
 
 local Helper = addon.Aura and addon.Aura.CooldownPanels and addon.Aura.CooldownPanels.helper
 local Api = Helper and Helper.Api or {}
@@ -202,43 +199,6 @@ local function trimString(value)
 	value = value:gsub("^%s+", ""):gsub("%s+$", "")
 	if value == "" then return nil end
 	return value
-end
-
-local function debugValue(value)
-	if value == nil then return nil end
-	if issecretvalue and issecretvalue(value) then return "<secret>" end
-	local valueType = type(value)
-	if valueType == "boolean" or valueType == "number" then return value end
-	if valueType == "string" then
-		if #value > 96 then return value:sub(1, 96) end
-		return value
-	end
-	return "<" .. valueType .. ">"
-end
-
-local function debugData(source)
-	if type(source) ~= "table" then return nil end
-	local out = {}
-	for key, value in pairs(source) do
-		if type(key) == "string" then out[key] = debugValue(value) end
-	end
-	return out
-end
-
-function Tracker:DebugTrace(label, payload)
-	addon.db = addon.db or {}
-	if addon.db[DEBUG_TRACE_ENABLED_KEY] == false then return end
-	local trace = addon.db[DEBUG_TRACE_KEY]
-	if type(trace) ~= "table" then
-		trace = {}
-		addon.db[DEBUG_TRACE_KEY] = trace
-	end
-	trace[#trace + 1] = {
-		t = GetTimePreciseSec and GetTimePreciseSec() or (GetTime and GetTime()) or 0,
-		label = tostring(label or "?"),
-		data = debugData(payload),
-	}
-	if #trace > DEBUG_TRACE_MAX then table.remove(trace, 1) end
 end
 
 local function normalizeAnchorPoint(value, fallback)
@@ -833,21 +793,7 @@ function Tracker:ApplyLayoutData(data)
 end
 
 function Tracker:Refresh()
-	local cfg = self:GetConfig()
-	local trackedCooldown = self:GetTrackedSpellCooldown()
-	local trackedSpellId = trackedCooldown and trackedCooldown.spellId or nil
-	self:DebugTrace("Refresh:begin", {
-		enabled = cfg and cfg.enabled == true,
-		trackedSpellId = trackedSpellId,
-		cooldownEnabled = trackedCooldown and trackedCooldown.isEnabled or nil,
-		cooldownActive = trackedCooldown and trackedCooldown.isActive or nil,
-		cooldownOnGCD = trackedCooldown and trackedCooldown.isOnGCD or nil,
-		focusExists = UnitExists and UnitExists("focus") == true or false,
-		focusHostile = self:HasHostileFocus(),
-	})
-
 	if not self:IsEnabled() then
-		self:DebugTrace("Refresh:hide", { reason = "disabled" })
 		if state.frame then
 			state.frame.editBg:Hide()
 			state.frame:Hide()
@@ -858,34 +804,22 @@ function Tracker:Refresh()
 	local frame = self:EnsureFrame()
 	self:ApplyLayoutData(self:BuildLayoutRecordFromProfile())
 
-	local cooldown = trackedCooldown
+	local cooldown = self:GetTrackedSpellCooldown()
 	local spellReady = self:IsTrackedSpellReady(cooldown)
 
 	if state.previewing then
 		frame:SetAlpha(1)
 		frame:Show()
-		self:DebugTrace("Refresh:show", { reason = "preview" })
 		return
 	end
 
 	if not spellReady then
-		self:DebugTrace("Refresh:hide", {
-			reason = "spell_not_ready",
-			trackedSpellId = trackedSpellId,
-			cooldownEnabled = cooldown and cooldown.isEnabled or nil,
-			cooldownActive = cooldown and cooldown.isActive or nil,
-			cooldownOnGCD = cooldown and cooldown.isOnGCD or nil,
-		})
 		frame:Hide()
 		return
 	end
 
 	local focusCast = self:GetFocusInterruptibleCast()
 	if not focusCast then
-		self:DebugTrace("Refresh:hide", {
-			reason = "no_focus_cast",
-			focusExists = UnitExists and UnitExists("focus") == true or false,
-		})
 		frame:Hide()
 		return
 	end
@@ -894,49 +828,19 @@ function Tracker:Refresh()
 	if self:GetConfig().displayMode == "ICON" then applyTexture(frame.icon, self:ResolveDisplayIcon(spellId)) end
 	applyNonInterruptibleAlpha(frame, focusCast.rawNotInterruptible)
 	frame:Show()
-	self:DebugTrace("Refresh:show", {
-		reason = "focus_cast_visible",
-		trackedSpellId = spellId,
-		focusSpellId = focusCast.spellId,
-		notInterruptible = focusCast.rawNotInterruptible,
-	})
 end
 
 function Tracker:MaybePlayFocusCastSound()
 	local cfg = self:GetConfig()
 	local soundCfg = cfg and cfg.sound
-	if not (cfg and cfg.enabled and soundCfg and soundCfg.enabled and soundCfg.file ~= "") then
-		self:DebugTrace("Sound:skip", {
-			reason = "sound_disabled",
-			trackerEnabled = cfg and cfg.enabled == true,
-			soundEnabled = soundCfg and soundCfg.enabled == true or false,
-			soundFile = soundCfg and soundCfg.file or nil,
-		})
-		return
-	end
+	if not (cfg and cfg.enabled and soundCfg and soundCfg.enabled and soundCfg.file ~= "") then return end
 
-	if not self:HasHostileFocus() then
-		self:DebugTrace("Sound:skip", { reason = "focus_not_hostile" })
-		return
-	end
+	if not self:HasHostileFocus() then return end
 
 	local cooldown = self:GetTrackedSpellCooldown()
-	if not self:IsTrackedSpellReady(cooldown) then
-		self:DebugTrace("Sound:skip", {
-			reason = "spell_not_ready",
-			trackedSpellId = cooldown and cooldown.spellId or nil,
-			cooldownEnabled = cooldown and cooldown.isEnabled or nil,
-			cooldownActive = cooldown and cooldown.isActive or nil,
-			cooldownOnGCD = cooldown and cooldown.isOnGCD or nil,
-		})
-		return
-	end
+	if not self:IsTrackedSpellReady(cooldown) then return end
 
 	playConfiguredSound(soundCfg.file)
-	self:DebugTrace("Sound:play", {
-		trackedSpellId = cooldown and cooldown.spellId or nil,
-		soundFile = soundCfg.file,
-	})
 end
 
 function Tracker:ShowEditModeHint(show)
@@ -967,7 +871,6 @@ function Tracker:EnsureEventFrame()
 	eventFrame:SetScript("OnEvent", function(_, event, ...)
 		if event == "UNIT_SPELLCAST_START" or event == "UNIT_SPELLCAST_CHANNEL_START" or event == "UNIT_SPELLCAST_EMPOWER_START" then
 			local unit = ...
-			Tracker:DebugTrace("Event", { event = event, unit = unit })
 			if unit ~= "focus" then return end
 			Tracker:MaybePlayFocusCastSound()
 			Tracker:Refresh()
@@ -977,12 +880,6 @@ function Tracker:EnsureEventFrame()
 		if event == "SPELL_UPDATE_COOLDOWN" then
 			local spellID, baseSpellID = ...
 			local trackedSpellID = Tracker:ResolveInterruptSpell()
-			Tracker:DebugTrace("Event", {
-				event = event,
-				spellID = spellID,
-				baseSpellID = baseSpellID,
-				trackedSpellID = trackedSpellID,
-			})
 			if not trackedSpellID then
 				Tracker:Refresh()
 				return
@@ -990,20 +887,12 @@ function Tracker:EnsureEventFrame()
 
 			if spellID == trackedSpellID or baseSpellID == trackedSpellID then
 				Tracker:Refresh()
-			else
-				Tracker:DebugTrace("Event:ignore", {
-					event = event,
-					spellID = spellID,
-					baseSpellID = baseSpellID,
-					trackedSpellID = trackedSpellID,
-				})
 			end
 			return
 		end
 
 		if event == "ADDON_LOADED" then
 			local loadedAddon = ...
-			Tracker:DebugTrace("Event", { event = event, addon = loadedAddon })
 			if not EXTERNAL_ANCHOR_ADDONS[loadedAddon] then return end
 			Tracker:Refresh()
 			return
@@ -1011,7 +900,6 @@ function Tracker:EnsureEventFrame()
 
 		if event == "PLAYER_SPECIALIZATION_CHANGED" or event == "UNIT_PET" then
 			local unit = ...
-			Tracker:DebugTrace("Event", { event = event, unit = unit })
 			if unit ~= nil and unit ~= "player" then return end
 			Tracker:Refresh()
 			return
@@ -1020,13 +908,11 @@ function Tracker:EnsureEventFrame()
 		if event == "SPELLS_CHANGED" or event == "PLAYER_FOCUS_CHANGED"
 			or event == "PLAYER_ENTERING_WORLD" or event == "PLAYER_TALENT_UPDATE" or event == "ACTIVE_PLAYER_SPECIALIZATION_CHANGED"
 			or event == "ACTIVE_TALENT_GROUP_CHANGED" or event == "TRAIT_CONFIG_UPDATED" then
-			Tracker:DebugTrace("Event", { event = event })
 			Tracker:Refresh()
 			return
 		end
 
 		local unit = ...
-		Tracker:DebugTrace("Event", { event = event, unit = unit })
 		if unit ~= "focus" then return end
 		Tracker:Refresh()
 	end)
@@ -1404,7 +1290,6 @@ end
 function Tracker:OnSettingChanged(enabled)
 	local cfg = self:GetConfig()
 	cfg.enabled = enabled == true
-	self:DebugTrace("OnSettingChanged", { enabled = cfg.enabled })
 
 	if cfg.enabled then
 		self:EnsureFrame()

@@ -2,6 +2,32 @@ local addonName, addon = ...
 
 addon.functions = addon.functions or {}
 
+local PROFILE_DEBUG_KEYS = {
+	"_combatTextTraceEnabled",
+	"_combatTextTrace",
+	"_cooldownPanelsDebugLog",
+	"debugCooldownPanelsSession",
+	"xpBarDebug",
+	"xpBarDebugLast",
+	"classBuffReminderSoundDebugTrace",
+	"_focusInterruptTrackerTraceEnabled",
+	"_focusInterruptTrackerTrace",
+}
+
+local function cleanupDebugArtifactsProfile(profile)
+	if type(profile) ~= "table" then return end
+
+	for i = 1, #PROFILE_DEBUG_KEYS do
+		profile[PROFILE_DEBUG_KEYS[i]] = nil
+	end
+
+	if type(profile._temp) == "table" then
+		profile._temp.ufProfileDebug = nil
+		profile._temp.ufProfileTrace = nil
+		if not next(profile._temp) then profile._temp = nil end
+	end
+end
+
 local function cleanupCombatMeterProfile(profile)
 	if type(profile) ~= "table" then return end
 	for key in pairs(profile) do
@@ -57,7 +83,22 @@ function addon.functions.CleanupBuffTrackerSettings()
 	end
 end
 
+function addon.functions.CleanupDebugArtifacts()
+	local db = _G.EnhanceQoLDB
+	if type(db) == "table" then
+		cleanupDebugArtifactsProfile(db)
+		if type(db.profiles) == "table" then
+			for _, profile in pairs(db.profiles) do
+				cleanupDebugArtifactsProfile(profile)
+			end
+		end
+	end
+
+	if addon.db and addon.db ~= db then cleanupDebugArtifactsProfile(addon.db) end
+end
+
 function addon.functions.CleanupOldStuff()
 	addon.functions.CleanupCombatMeterSettings()
 	addon.functions.CleanupBuffTrackerSettings()
+	addon.functions.CleanupDebugArtifacts()
 end

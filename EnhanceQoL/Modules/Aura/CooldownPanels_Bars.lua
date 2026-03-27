@@ -60,13 +60,19 @@ Bars.DEFAULTS = Bars.DEFAULTS or {
 	barSpan = 2,
 	barWidth = 0,
 	barHeight = 26,
-	barTexture = "DEFAULT",
+	barTexture = "SOLID",
 	barColor = { 0.98, 0.74, 0.22, 0.96 },
 	barBackgroundColor = { 0.05, 0.05, 0.05, 0.82 },
 	barBorderColor = { 0.85, 0.85, 0.85, 0.90 },
 	barBorderTexture = "DEFAULT",
 	barBorderOffset = 0,
 	barBorderSize = 1,
+	barOffsetX = 0,
+	barOffsetY = 0,
+	barOrientation = "HORIZONTAL",
+	barSegmentDirection = "HORIZONTAL",
+	barSegmentReverse = false,
+	barProcGlowColor = { 0.35, 0.75, 1.00, 0.95 },
 	barShowIcon = true,
 	barShowLabel = true,
 	barShowValueText = true,
@@ -99,20 +105,26 @@ Bars.COLORS = Bars.COLORS or {
 
 local BAR_TEXTURE_DEFAULT = "DEFAULT"
 local BAR_BORDER_TEXTURE_DEFAULT = "DEFAULT"
-local BAR_HEIGHT_MIN = 10
-local BAR_HEIGHT_MAX = 128
-local BAR_WIDTH_MIN = 24
+local BAR_HEIGHT_MIN = 5
+local BAR_HEIGHT_MAX = 2000
+local BAR_WIDTH_MIN = 5
 local BAR_WIDTH_MAX = 2000
 local BAR_BORDER_SIZE_MIN = 0
 local BAR_BORDER_SIZE_MAX = 64
 local BAR_BORDER_OFFSET_MIN = -64
 local BAR_BORDER_OFFSET_MAX = 64
+local BAR_OFFSET_MIN = -2000
+local BAR_OFFSET_MAX = 2000
 local BAR_ICON_SIZE_MIN = 8
 local BAR_ICON_SIZE_MAX = 128
 local BAR_ICON_POSITION_LEFT = "LEFT"
 local BAR_ICON_POSITION_RIGHT = "RIGHT"
+local BAR_ICON_POSITION_TOP = "TOP"
+local BAR_ICON_POSITION_BOTTOM = "BOTTOM"
+local BAR_ORIENTATION_HORIZONTAL = "HORIZONTAL"
+local BAR_ORIENTATION_VERTICAL = "VERTICAL"
 local BAR_CHARGES_GAP_MIN = 0
-local BAR_CHARGES_GAP_MAX = 48
+local BAR_CHARGES_GAP_MAX = 2000
 local BAR_FONT_SIZE_MIN = 6
 local BAR_FONT_SIZE_MAX = 64
 local BAR_TEXTURE_MENU_HEIGHT = 220
@@ -321,8 +333,28 @@ local function normalizeBarBorderOffset(value, fallback)
 	return Helper.ClampInt(value, BAR_BORDER_OFFSET_MIN, BAR_BORDER_OFFSET_MAX, fallback or 0)
 end
 
+local function normalizeBarOffset(value, fallback)
+	return Helper.ClampInt(value, BAR_OFFSET_MIN, BAR_OFFSET_MAX, fallback or 0)
+end
+
+local function normalizeBarOrientation(value, fallback)
+	local orientation = type(value) == "string" and string.upper(value) or nil
+	if orientation == BAR_ORIENTATION_VERTICAL then return BAR_ORIENTATION_VERTICAL end
+	if orientation == BAR_ORIENTATION_HORIZONTAL then return BAR_ORIENTATION_HORIZONTAL end
+	return fallback or Bars.DEFAULTS.barOrientation
+end
+
+local function normalizeBarSegmentDirection(value, fallback)
+	local direction = type(value) == "string" and string.upper(value) or nil
+	if direction == BAR_ORIENTATION_VERTICAL then return BAR_ORIENTATION_VERTICAL end
+	if direction == BAR_ORIENTATION_HORIZONTAL then return BAR_ORIENTATION_HORIZONTAL end
+	return fallback or Bars.DEFAULTS.barSegmentDirection
+end
+
 local function normalizeBarIconPosition(value, fallback)
 	local position = type(value) == "string" and string.upper(value) or nil
+	if position == BAR_ICON_POSITION_TOP then return BAR_ICON_POSITION_TOP end
+	if position == BAR_ICON_POSITION_BOTTOM then return BAR_ICON_POSITION_BOTTOM end
 	if position == BAR_ICON_POSITION_RIGHT then return BAR_ICON_POSITION_RIGHT end
 	if position == BAR_ICON_POSITION_LEFT then return BAR_ICON_POSITION_LEFT end
 	return fallback or Bars.DEFAULTS.barIconPosition
@@ -514,6 +546,13 @@ local function supportsBarMode(entry, mode)
 	return resolvedType == "SPELL" or resolvedType == "ITEM" or entry.type == "MACRO" or resolvedType == "CDM_AURA"
 end
 
+local function isBarProcGlowActive(resolvedType, spellId)
+	if resolvedType ~= "SPELL" or not spellId then return false end
+	local runtime = CooldownPanels.runtime
+	local overlayGlowSpells = runtime and runtime.overlayGlowSpells or nil
+	return overlayGlowSpells and overlayGlowSpells[spellId] == true or false
+end
+
 normalizeBarEntry = function(entry)
 	if type(entry) ~= "table" then return end
 	entry.displayMode = normalizeDisplayMode(entry.displayMode, Bars.DEFAULTS.displayMode)
@@ -528,6 +567,12 @@ normalizeBarEntry = function(entry)
 	entry.barBorderTexture = normalizeBarBorderTexture(entry.barBorderTexture, Bars.DEFAULTS.barBorderTexture)
 	entry.barBorderOffset = normalizeBarBorderOffset(entry.barBorderOffset, Bars.DEFAULTS.barBorderOffset)
 	entry.barBorderSize = normalizeBarBorderSize(entry.barBorderSize, Bars.DEFAULTS.barBorderSize)
+	entry.barOffsetX = normalizeBarOffset(entry.barOffsetX, Bars.DEFAULTS.barOffsetX)
+	entry.barOffsetY = normalizeBarOffset(entry.barOffsetY, Bars.DEFAULTS.barOffsetY)
+	entry.barOrientation = normalizeBarOrientation(entry.barOrientation, Bars.DEFAULTS.barOrientation)
+	entry.barSegmentDirection = normalizeBarSegmentDirection(entry.barSegmentDirection, Bars.DEFAULTS.barSegmentDirection)
+	entry.barSegmentReverse = getStoredBoolean(entry, "barSegmentReverse", Bars.DEFAULTS.barSegmentReverse)
+	entry.barProcGlowColor = Helper.NormalizeColor(entry.barProcGlowColor, Bars.DEFAULTS.barProcGlowColor)
 	entry.barShowIcon = getStoredBoolean(entry, "barShowIcon", Bars.DEFAULTS.barShowIcon)
 	entry.barShowLabel = getStoredBoolean(entry, "barShowLabel", Bars.DEFAULTS.barShowLabel)
 	entry.barShowValueText = getStoredBoolean(entry, "barShowValueText", Bars.DEFAULTS.barShowValueText)
@@ -625,13 +670,65 @@ end
 local function getDesiredBarSpan(panel, entry)
 	if not entry then return 1 end
 	local configuredWidth = normalizeBarWidth(entry.barWidth, Bars.DEFAULTS.barWidth)
-	if configuredWidth and configuredWidth > 0 then
-		local slotSize = getEntryBaseSlotSize(panel, entry)
-		local spacing = Helper.ClampInt(panel and panel.layout and panel.layout.spacing, 0, Helper.SPACING_RANGE or 200, Helper.PANEL_LAYOUT_DEFAULTS and Helper.PANEL_LAYOUT_DEFAULTS.spacing or 2)
-		local cellWidth = max(1, slotSize + spacing)
-		return max(1, floor(((max(configuredWidth, slotSize) + spacing) + cellWidth - 1) / cellWidth))
+	local configuredSpan = normalizeBarSpan(entry.barSpan, Bars.DEFAULTS.barSpan)
+	local offsetX = normalizeBarOffset(entry.barOffsetX, Bars.DEFAULTS.barOffsetX)
+	local slotSize = getEntryBaseSlotSize(panel, entry)
+	local spacing = Helper.ClampInt(panel and panel.layout and panel.layout.spacing, 0, Helper.SPACING_RANGE or 200, Helper.PANEL_LAYOUT_DEFAULTS and Helper.PANEL_LAYOUT_DEFAULTS.spacing or 2)
+	local cellWidth = max(1, slotSize + spacing)
+	local bodyWidth = configuredWidth and configuredWidth > 0 and configuredWidth or max(slotSize, (slotSize * configuredSpan) + (max(configuredSpan - 1, 0) * spacing))
+	if normalizeBarMode(entry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.CHARGES and getStoredBoolean(entry, "barChargesSegmented", Bars.DEFAULTS.barChargesSegmented) then
+		if normalizeBarSegmentDirection(entry.barSegmentDirection, Bars.DEFAULTS.barSegmentDirection) == BAR_ORIENTATION_HORIZONTAL then
+			bodyWidth = (bodyWidth * 2) + normalizeBarChargesGap(entry.barChargesGap, Bars.DEFAULTS.barChargesGap)
+		end
 	end
-	return normalizeBarSpan(entry.barSpan, Bars.DEFAULTS.barSpan)
+	local rightExtent = max(slotSize, max(0, offsetX) + bodyWidth)
+	return max(1, floor((rightExtent + cellWidth - 1) / cellWidth))
+end
+
+local function getHorizontalSegmentReservationColumns(panel, entry, anchorColumn, maxEndColumn)
+	if not (panel and entry and anchorColumn and maxEndColumn) then return nil, nil end
+	local mode = normalizeBarMode(entry.barMode, Bars.DEFAULTS.barMode)
+	local configuredWidth = normalizeBarWidth(entry.barWidth, Bars.DEFAULTS.barWidth)
+	local configuredSpan = normalizeBarSpan(entry.barSpan, Bars.DEFAULTS.barSpan)
+	local slotSize = getEntryBaseSlotSize(panel, entry)
+	local spacing = Helper.ClampInt(panel and panel.layout and panel.layout.spacing, 0, Helper.SPACING_RANGE or 200, Helper.PANEL_LAYOUT_DEFAULTS and Helper.PANEL_LAYOUT_DEFAULTS.spacing or 2)
+	local cellWidth = max(1, slotSize + spacing)
+	local gap = normalizeBarChargesGap(entry.barChargesGap, Bars.DEFAULTS.barChargesGap)
+	local offsetX = normalizeBarOffset(entry.barOffsetX, Bars.DEFAULTS.barOffsetX)
+	local segmentedHorizontal = mode == Bars.BAR_MODE.CHARGES and getStoredBoolean(entry, "barChargesSegmented", Bars.DEFAULTS.barChargesSegmented) == true
+		and normalizeBarSegmentDirection(entry.barSegmentDirection, Bars.DEFAULTS.barSegmentDirection) == BAR_ORIENTATION_HORIZONTAL
+	local bodyWidth = configuredWidth and configuredWidth > 0 and configuredWidth or max(slotSize, (slotSize * configuredSpan) + (max(configuredSpan - 1, 0) * spacing))
+	local columns = {}
+	local seen = {}
+
+	local function addColumn(column)
+		if column and column >= 1 and column <= maxEndColumn and seen[column] ~= true then
+			seen[column] = true
+			columns[#columns + 1] = column
+		end
+	end
+
+	local function addPixelRange(startPixel, endPixel)
+		local startOffset = floor(startPixel / cellWidth) + 1
+		local endOffset = floor(max(startPixel, endPixel - 1) / cellWidth) + 1
+		for offset = startOffset, endOffset do
+			addColumn(anchorColumn + offset - 1)
+		end
+	end
+
+	local visualSpan
+	if segmentedHorizontal then
+		addPixelRange(offsetX, offsetX + bodyWidth)
+		addPixelRange(offsetX + bodyWidth + gap, offsetX + (bodyWidth * 2) + gap)
+		visualSpan = max(1, floor((max(slotSize, max(0, offsetX) + (bodyWidth * 2) + gap) + cellWidth - 1) / cellWidth))
+	else
+		addPixelRange(offsetX, offsetX + bodyWidth)
+		visualSpan = max(1, floor((max(slotSize, max(0, offsetX) + bodyWidth) + cellWidth - 1) / cellWidth))
+	end
+
+	if #columns == 0 then return nil, visualSpan end
+	table.sort(columns)
+	return columns, visualSpan
 end
 
 local function getBaseOccupantAtCell(cache, entry, column, row)
@@ -662,6 +759,10 @@ local function getReservationSignature(panel)
 			buffer[#buffer + 1] = normalizeBarMode(entry.barMode, Bars.DEFAULTS.barMode)
 			buffer[#buffer + 1] = tostring(normalizeBarSpan(entry.barSpan, Bars.DEFAULTS.barSpan))
 			buffer[#buffer + 1] = tostring(normalizeBarWidth(entry.barWidth, Bars.DEFAULTS.barWidth))
+			buffer[#buffer + 1] = tostring(normalizeBarOffset(entry.barOffsetX, Bars.DEFAULTS.barOffsetX))
+			buffer[#buffer + 1] = tostring(getStoredBoolean(entry, "barChargesSegmented", Bars.DEFAULTS.barChargesSegmented))
+			buffer[#buffer + 1] = tostring(normalizeBarChargesGap(entry.barChargesGap, Bars.DEFAULTS.barChargesGap))
+			buffer[#buffer + 1] = tostring(normalizeBarSegmentDirection(entry.barSegmentDirection, Bars.DEFAULTS.barSegmentDirection))
 			buffer[#buffer + 1] = tostring(Helper.NormalizeFixedGroupId(entry.fixedGroupId) or "")
 			buffer[#buffer + 1] = tostring(Helper.NormalizeSlotCoordinate(entry.slotColumn) or "")
 			buffer[#buffer + 1] = tostring(Helper.NormalizeSlotCoordinate(entry.slotRow) or "")
@@ -710,7 +811,22 @@ local function augmentFixedLayoutCache(panel, cache)
 						end
 					end
 					local wantedSpan = getDesiredBarSpan(panel, entry)
-					if maxEndColumn > column and wantedSpan > 1 then
+					local reservedColumns, visualSpan = getHorizontalSegmentReservationColumns(panel, entry, column, maxEndColumn)
+					if reservedColumns then
+						effectiveSpan = min(maxEndColumn - column + 1, visualSpan or wantedSpan or 1)
+						for index = 1, #reservedColumns do
+							local reservedColumn = reservedColumns[index]
+							if reservedColumn ~= column then
+								local occupantId = getBaseOccupantAtCell(cache, entry, reservedColumn, row)
+								local reservedKey = getCellKey(reservedColumn, row)
+								local reservedOwner = reservedOwnerByCell[reservedKey]
+								if not ((occupantId and occupantId ~= entryId) or (reservedOwner and reservedOwner ~= entryId)) then
+									reservedOwnerByCell[reservedKey] = entryId
+									if boundsColumns > 0 then reservedOwnerByIndex[((row - 1) * boundsColumns) + reservedColumn] = entryId end
+								end
+							end
+						end
+					elseif maxEndColumn > column and wantedSpan > 1 then
 						for candidateColumn = column + 1, min(maxEndColumn, column + wantedSpan - 1) do
 							local occupantId = getBaseOccupantAtCell(cache, entry, candidateColumn, row)
 							local reservedKey = getCellKey(candidateColumn, row)
@@ -720,11 +836,11 @@ local function augmentFixedLayoutCache(panel, cache)
 							end
 							effectiveSpan = effectiveSpan + 1
 						end
-					end
-					for reservedColumn = column + 1, column + effectiveSpan - 1 do
-						local reservedKey = getCellKey(reservedColumn, row)
-						reservedOwnerByCell[reservedKey] = entryId
-						if boundsColumns > 0 then reservedOwnerByIndex[((row - 1) * boundsColumns) + reservedColumn] = entryId end
+						for reservedColumn = column + 1, column + effectiveSpan - 1 do
+							local reservedKey = getCellKey(reservedColumn, row)
+							reservedOwnerByCell[reservedKey] = entryId
+							if boundsColumns > 0 then reservedOwnerByIndex[((row - 1) * boundsColumns) + reservedColumn] = entryId end
+						end
 					end
 				end
 				effectiveSpanByEntryId[entryId] = effectiveSpan
@@ -806,6 +922,16 @@ local function applyStatusBarTexture(statusBar, texturePath)
 	end
 end
 
+local function applyStatusBarOrientation(statusBar, orientation)
+	if not (statusBar and statusBar.SetOrientation) then return end
+	local resolvedOrientation = type(orientation) == "string" and string.upper(orientation) or nil
+	if resolvedOrientation ~= BAR_ORIENTATION_VERTICAL then resolvedOrientation = BAR_ORIENTATION_HORIZONTAL end
+	if statusBar._eqolOrientation ~= resolvedOrientation then
+		statusBar:SetOrientation(resolvedOrientation)
+		statusBar._eqolOrientation = resolvedOrientation
+	end
+end
+
 local function applyBackdropFrame(frame, edgeFile, edgeSize)
 	if not frame then return end
 	local resolvedEdge = hasTextValue(edgeFile) and not isSecretValue(edgeFile) and edgeFile or "Interface\\Buttons\\WHITE8x8"
@@ -842,6 +968,10 @@ local function ensureBarSegment(frame, index)
 	segment.borderOverlay:SetClampedToScreen(false)
 	segment.borderOverlay:SetMovable(false)
 	segment.borderOverlay:EnableMouse(false)
+	segment.hitHandle = CreateFrame("Button", nil, segment)
+	segment.hitHandle:SetAllPoints(segment)
+	segment.hitHandle:EnableMouse(false)
+	segment.hitHandle:Hide()
 	segment:Hide()
 	frame.segments[index] = segment
 	return segment
@@ -939,6 +1069,13 @@ local function ensureBarFrame(icon)
 	frame.textOverlay:SetAllPoints(frame)
 	frame.textOverlay:EnableMouse(false)
 
+	frame.hitHandle = CreateFrame("Button", nil, frame)
+	frame.hitHandle:SetAllPoints(frame)
+	frame.hitHandle:SetFrameStrata(frame:GetFrameStrata() or parent:GetFrameStrata())
+	frame.hitHandle:SetFrameLevel((frame:GetFrameLevel() or parent:GetFrameLevel()) + 20)
+	frame.hitHandle:EnableMouse(false)
+	frame.hitHandle:Hide()
+
 	frame.label = frame.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 	frame.label:SetJustifyH("LEFT")
 	frame.label:SetTextColor(unpack(Bars.COLORS.Label))
@@ -957,6 +1094,76 @@ local function ensureBarFrame(icon)
 	frame:Hide()
 	icon._eqolBarsFrame = frame
 	return frame
+end
+
+Bars.HideForwardHitHandle = function(hitHandle)
+	if not hitHandle then return end
+	hitHandle:EnableMouse(false)
+	hitHandle:Hide()
+	hitHandle:SetScript("OnEnter", nil)
+	hitHandle:SetScript("OnLeave", nil)
+	hitHandle:SetScript("OnDragStart", nil)
+	hitHandle:SetScript("OnDragStop", nil)
+	hitHandle:SetScript("OnReceiveDrag", nil)
+	hitHandle:SetScript("OnMouseUp", nil)
+	hitHandle._eqolForwardHandle = nil
+end
+
+Bars.ConfigureForwardHitHandle = function(hitHandle, anchorFrame, forwardHandle)
+	if not (hitHandle and anchorFrame and forwardHandle and forwardHandle.IsShown and forwardHandle:IsShown()) then
+		Bars.HideForwardHitHandle(hitHandle)
+		return
+	end
+	hitHandle:ClearAllPoints()
+	hitHandle:SetAllPoints(anchorFrame)
+	hitHandle:SetFrameStrata(anchorFrame:GetFrameStrata())
+	hitHandle:SetFrameLevel(anchorFrame:GetFrameLevel() + 20)
+	hitHandle:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+	hitHandle:RegisterForDrag("LeftButton")
+	hitHandle:EnableMouse(true)
+	hitHandle:Show()
+	hitHandle._eqolForwardHandle = forwardHandle
+	hitHandle:SetScript("OnEnter", function(self)
+		local handle = self and self._eqolForwardHandle or nil
+		local script = handle and handle.GetScript and handle:GetScript("OnEnter") or nil
+		if script then script(handle) end
+	end)
+	hitHandle:SetScript("OnLeave", function(self)
+		local handle = self and self._eqolForwardHandle or nil
+		local script = handle and handle.GetScript and handle:GetScript("OnLeave") or nil
+		if script then script(handle) end
+	end)
+	hitHandle:SetScript("OnDragStart", function(self)
+		local handle = self and self._eqolForwardHandle or nil
+		local script = handle and handle.GetScript and handle:GetScript("OnDragStart") or nil
+		if script then script(handle) end
+	end)
+	hitHandle:SetScript("OnDragStop", function(self)
+		local handle = self and self._eqolForwardHandle or nil
+		local script = handle and handle.GetScript and handle:GetScript("OnDragStop") or nil
+		if script then script(handle) end
+	end)
+	hitHandle:SetScript("OnReceiveDrag", function(self)
+		local handle = self and self._eqolForwardHandle or nil
+		local script = handle and handle.GetScript and handle:GetScript("OnReceiveDrag") or nil
+		if script then script(handle) end
+	end)
+	hitHandle:SetScript("OnMouseUp", function(self, btn)
+		local handle = self and self._eqolForwardHandle or nil
+		local script = handle and handle.GetScript and handle:GetScript("OnMouseUp") or nil
+		if script then script(handle, btn) end
+	end)
+end
+
+local function hideBarHitHandle(barFrame)
+	if not barFrame then return end
+	Bars.HideForwardHitHandle(barFrame.hitHandle)
+	if barFrame.segments then
+		for index = 1, #barFrame.segments do
+			local segment = barFrame.segments[index]
+			if segment and segment.hitHandle then Bars.HideForwardHitHandle(segment.hitHandle) end
+		end
+	end
 end
 
 local function applyFontStringStyle(fontString, fontValue, sizeValue, styleValue, colorValue, fallbackPath, fallbackSize, fallbackStyle)
@@ -1002,6 +1209,8 @@ local function hideBarPresentation(icon)
 	if barFrame then
 		stopBarAnimation(barFrame)
 		barFrame._eqolBarState = nil
+		Bars.ClearBarValueTextUpdater(barFrame)
+		hideBarHitHandle(barFrame)
 		barFrame:Hide()
 	end
 	if not icon then return end
@@ -1016,6 +1225,7 @@ local function hideEditorBarDragPreview(editor)
 	if previewFrame then
 		stopBarAnimation(previewFrame)
 		previewFrame._eqolBarState = nil
+		Bars.ClearBarValueTextUpdater(previewFrame)
 		previewFrame:Hide()
 	end
 	if dragIcon.texture then
@@ -1033,6 +1243,35 @@ local function hideEditorBarDragPreview(editor)
 	editor._eqolBarsDragIconWidth = nil
 	editor._eqolBarsDragIconHeight = nil
 	dragIcon._eqolBaseSlotSize = nil
+end
+
+Bars.ClearBarValueTextUpdater = function(barFrame)
+	if not barFrame then return end
+	barFrame._eqolValueTextProvider = nil
+	barFrame._eqolValueTextElapsed = nil
+	if barFrame:GetScript("OnUpdate") then barFrame:SetScript("OnUpdate", nil) end
+end
+
+Bars.ConfigureBarValueTextUpdater = function(barFrame, state)
+	if not barFrame then return end
+	local provider = state and state.showValueText and state.liveValueTextProvider or nil
+	if type(provider) ~= "function" then
+		Bars.ClearBarValueTextUpdater(barFrame)
+		return
+	end
+
+	barFrame._eqolValueTextProvider = provider
+	barFrame._eqolValueTextElapsed = 0
+	local initialText = provider()
+	if initialText ~= nil and barFrame.value then barFrame.value:SetText(initialText) end
+	barFrame:SetScript("OnUpdate", function(self, elapsed)
+		if not (self._eqolValueTextProvider and self.value and self.value.IsShown and self.value:IsShown()) then return end
+		self._eqolValueTextElapsed = (self._eqolValueTextElapsed or 0) + (elapsed or 0)
+		if self._eqolValueTextElapsed < 0.05 then return end
+		self._eqolValueTextElapsed = 0
+		local text = self._eqolValueTextProvider()
+		if text ~= nil then self.value:SetText(text) end
+	end)
 end
 
 local function showEditorBarDragPreview(panelId, panel, entryId, entry, sourceIcon)
@@ -1099,14 +1338,8 @@ local function applyReservedGhost(icon, ownerEntry, slotColumn, slotRow)
 	if icon.stateTexture then icon.stateTexture:Hide() end
 	if icon.stateTextureSecond then icon.stateTextureSecond:Hide() end
 	if icon.staticText then
-		icon.staticText:ClearAllPoints()
-		icon.staticText:SetPoint("CENTER", icon.overlay, "CENTER", 0, 0)
-		icon.staticText:SetText(
-			(ownerEntry and ownerEntry.barMode == Bars.BAR_MODE.STACKS) and (L["CooldownPanelBarReservedStack"] or "STACK")
-				or ((ownerEntry and ownerEntry.barMode == Bars.BAR_MODE.CHARGES) and (L["CooldownPanelBarReservedCharge"] or "CHARGE") or (L["CooldownPanelBarReservedBar"] or "BAR"))
-		)
-		icon.staticText:SetTextColor(unpack(Bars.COLORS.Reserved))
-		icon.staticText:Show()
+		icon.staticText:SetText("")
+		icon.staticText:Hide()
 	end
 	icon._eqolBarsReservedSlot = true
 	icon._eqolPreviewCellColumn = slotColumn
@@ -1227,16 +1460,19 @@ setStatusBarImmediateValue = function(statusBar, value)
 	if statusBar.SetToTargetValue then statusBar:SetToTargetValue() end
 	statusBar._eqolTimerDurationObject = nil
 	statusBar._eqolTimerDurationKey = nil
+	statusBar._eqolTimerDirection = nil
 end
 
-setStatusBarTimerDuration = function(statusBar, durationObject, cacheKey)
+setStatusBarTimerDuration = function(statusBar, durationObject, cacheKey, direction)
 	if not (statusBar and durationObject and statusBar.SetTimerDuration) then return false end
 	local appliedKey = cacheKey or durationObject
-	if statusBar._eqolTimerDurationKey ~= appliedKey then
+	local appliedDirection = direction or BAR_STATUS_TIMER_DIRECTION_ELAPSED
+	if statusBar._eqolTimerDurationKey ~= appliedKey or statusBar._eqolTimerDirection ~= appliedDirection then
 		if statusBar.SetMinMaxValues then statusBar:SetMinMaxValues(0, 1, BAR_STATUS_INTERPOLATION_IMMEDIATE) end
-		statusBar:SetTimerDuration(durationObject, BAR_STATUS_INTERPOLATION_IMMEDIATE, BAR_STATUS_TIMER_DIRECTION_ELAPSED)
+		statusBar:SetTimerDuration(durationObject, BAR_STATUS_INTERPOLATION_IMMEDIATE, appliedDirection)
 		statusBar._eqolTimerDurationObject = durationObject
 		statusBar._eqolTimerDurationKey = appliedKey
+		statusBar._eqolTimerDirection = appliedDirection
 	end
 	return true
 end
@@ -1522,6 +1758,7 @@ local function buildBarState(panelId, entryId, entry, icon, preview)
 	if not supportsBarMode(entry, mode) then return nil end
 
 	local resolvedType, macro = getEntryResolvedType(entry)
+	local resolvedSpellId = resolvedType == "SPELL" and getResolvedSpellId(entry, macro) or nil
 	local label = getEntryLabel(entry)
 	local texture = icon and icon.texture and icon.texture.GetTexture and icon.texture:GetTexture() or nil
 	local progress = 1
@@ -1540,12 +1777,21 @@ local function buildBarState(panelId, entryId, entry, icon, preview)
 		panelId = panelId,
 		entryId = entryId,
 		fillDurationObject = nil,
+		timerDirection = BAR_STATUS_TIMER_DIRECTION_ELAPSED,
+		liveValueTextProvider = nil,
 		barWidth = normalizeBarWidth(entry.barWidth, Bars.DEFAULTS.barWidth),
 		barHeight = normalizeBarHeight(entry.barHeight, Bars.DEFAULTS.barHeight),
+		barOffsetX = normalizeBarOffset(entry.barOffsetX, Bars.DEFAULTS.barOffsetX),
+		barOffsetY = normalizeBarOffset(entry.barOffsetY, Bars.DEFAULTS.barOffsetY),
+		orientation = normalizeBarOrientation(entry.barOrientation, Bars.DEFAULTS.barOrientation),
+		segmentDirection = normalizeBarSegmentDirection(entry.barSegmentDirection, Bars.DEFAULTS.barSegmentDirection),
+		segmentReverse = getStoredBoolean(entry, "barSegmentReverse", Bars.DEFAULTS.barSegmentReverse),
 		barTexture = resolveBarTexture(entry.barTexture),
 		fillColor = getBarModeColor(entry, mode),
 		backgroundColor = Helper.NormalizeColor(entry.barBackgroundColor, Bars.DEFAULTS.barBackgroundColor),
 		borderColor = Helper.NormalizeColor(entry.barBorderColor, Bars.DEFAULTS.barBorderColor),
+		procGlowColor = Helper.NormalizeColor(entry.barProcGlowColor, Bars.DEFAULTS.barProcGlowColor),
+		procGlowActive = isBarProcGlowActive(resolvedType, resolvedSpellId),
 		borderTexture = resolveBarBorderTexture(entry.barBorderTexture),
 		borderOffset = normalizeBarBorderOffset(entry.barBorderOffset, Bars.DEFAULTS.barBorderOffset),
 		borderSize = normalizeBarBorderSize(entry.barBorderSize, Bars.DEFAULTS.barBorderSize),
@@ -1563,6 +1809,7 @@ local function buildBarState(panelId, entryId, entry, icon, preview)
 		valueSize = normalizeBarFontSize(entry.barValueSize, Bars.DEFAULTS.barValueSize),
 		valueStyle = normalizeBarFontStyle(entry.barValueStyle, Bars.DEFAULTS.barValueStyle),
 		valueColor = Helper.NormalizeColor(entry.barValueColor, Bars.DEFAULTS.barValueColor),
+		spellId = resolvedSpellId,
 	}
 
 	if preview then
@@ -1590,7 +1837,7 @@ local function buildBarState(panelId, entryId, entry, icon, preview)
 
 	if mode == Bars.BAR_MODE.COOLDOWN then
 		if resolvedType == "SPELL" then
-			local spellId = getResolvedSpellId(entry, macro)
+			local spellId = resolvedSpellId
 			if spellId and CooldownPanels.GetCachedSpellCooldownInfo then
 				local durationObject = CooldownPanels.GetCachedSpellCooldownDurationObject and CooldownPanels:GetCachedSpellCooldownDurationObject(spellId) or nil
 				local startTime, duration, enabled, rate, _, isActive = CooldownPanels:GetCachedSpellCooldownInfo(spellId)
@@ -1628,22 +1875,50 @@ local function buildBarState(panelId, entryId, entry, icon, preview)
 					state.label = runtimeData.buffName
 					state.texture = runtimeData.iconTextureID or state.texture
 				end
-				if runtimeData and runtimeData.active == true then
-					progress = getCooldownProgress(runtimeData.cooldownStart, runtimeData.cooldownDuration, runtimeData.cooldownRate) or 0
-					valueText = durationToText(max(0, (safeNumber(runtimeData.cooldownDuration) or 0) - (((Api.GetTime and Api.GetTime()) or GetTime()) - (safeNumber(runtimeData.cooldownStart) or 0)) * (safeNumber(runtimeData.cooldownRate) or 1)))
-					animate = progress < 1
+				if runtimeData and runtimeData.durationActive == true and runtimeData.cooldownDurationObject ~= nil then
+					local remaining = getDurationObjectRemaining(runtimeData.cooldownDurationObject)
+					local total = getDurationObjectTotal(runtimeData.cooldownDurationObject)
+					progress = (remaining and total and total > 0) and clamp(remaining / total, 0, 1) or 0
+					valueText = durationToText(getDurationObjectRemaining(runtimeData.cooldownDurationObject))
+					animate = true
+					state.fillDurationObject = runtimeData.cooldownDurationObject
+					state.timerDirection = Enum and Enum.StatusBarTimerDirection and Enum.StatusBarTimerDirection.RemainingTime or 1
+					state.liveValueTextProvider = function()
+						return durationToText(getDurationObjectRemaining(runtimeData.cooldownDurationObject))
+					end
 					state.startTime = safeNumber(runtimeData.cooldownStart)
-				state.duration = safeNumber(runtimeData.cooldownDuration)
-				state.rate = safeNumber(runtimeData.cooldownRate) or 1
-			else
-				progress = 1
-			end
+					state.duration = safeNumber(runtimeData.cooldownDuration)
+					state.rate = safeNumber(runtimeData.cooldownRate) or 1
+				elseif runtimeData and runtimeData.active == true then
+					local fallbackProgress = getCooldownProgress(runtimeData.cooldownStart, runtimeData.cooldownDuration, runtimeData.cooldownRate)
+					local fallbackRemaining = max(
+						0,
+						(safeNumber(runtimeData.cooldownDuration) or 0)
+							- (((Api.GetTime and Api.GetTime()) or GetTime()) - (safeNumber(runtimeData.cooldownStart) or 0)) * (safeNumber(runtimeData.cooldownRate) or 1)
+					)
+					progress = fallbackProgress and clamp(1 - fallbackProgress, 0, 1) or ((safeNumber(runtimeData.cooldownDuration) or 0) > 0 and 1 or 0)
+					valueText = fallbackProgress and durationToText(fallbackRemaining) or nil
+					animate = fallbackProgress ~= nil and fallbackProgress < 1 or false
+					state.timerDirection = Enum and Enum.StatusBarTimerDirection and Enum.StatusBarTimerDirection.RemainingTime or 1
+					state.liveValueTextProvider = fallbackProgress and function()
+						local remaining = max(
+							0,
+							(safeNumber(runtimeData.cooldownDuration) or 0)
+								- (((Api.GetTime and Api.GetTime()) or GetTime()) - (safeNumber(runtimeData.cooldownStart) or 0)) * (safeNumber(runtimeData.cooldownRate) or 1)
+						)
+						return durationToText(remaining)
+					end or nil
+					state.startTime = safeNumber(runtimeData.cooldownStart)
+					state.duration = safeNumber(runtimeData.cooldownDuration)
+					state.rate = safeNumber(runtimeData.cooldownRate) or 1
+				else
+					progress = 1
+				end
 		end
 		state.sourceText = function() return getCooldownText(icon) end
 	elseif mode == Bars.BAR_MODE.CHARGES then
-		local spellId = getResolvedSpellId(entry, macro)
+		local spellId = resolvedSpellId
 		if spellId and CooldownPanels.GetCachedSpellChargesInfo then
-			state.spellId = spellId
 			state.entryKey = Helper.GetEntryKey(panelId, entryId)
 			refreshChargeBarRuntimeState(state, icon)
 			progress = getChargeBarProgress(state)
@@ -1680,14 +1955,21 @@ local function layoutBarFrame(barFrame, icon, span, layout, state)
 	local spacing = Helper.ClampInt(layout and layout.spacing, 0, Helper.SPACING_RANGE or 200, Helper.PANEL_LAYOUT_DEFAULTS and Helper.PANEL_LAYOUT_DEFAULTS.spacing or 2)
 	local maxWidth = (slotSize * span) + (max(span - 1, 0) * spacing)
 	local configuredWidth = normalizeBarWidth(state and state.barWidth, Bars.DEFAULTS.barWidth)
-	local resolvedWidth = configuredWidth > 0 and min(maxWidth, max(slotSize, configuredWidth)) or maxWidth
+	local resolvedWidth = configuredWidth > 0 and min(maxWidth, max(BAR_WIDTH_MIN, configuredWidth)) or maxWidth
 	local width = pixelSnap(resolvedWidth, slotAnchor.GetEffectiveScale and slotAnchor:GetEffectiveScale() or nil)
 	local height = pixelSnap(normalizeBarHeight(state and state.barHeight, max(16, floor(slotSize * 0.72))), slotAnchor.GetEffectiveScale and slotAnchor:GetEffectiveScale() or nil)
+	local offsetX = normalizeBarOffset(state and state.barOffsetX, Bars.DEFAULTS.barOffsetX)
+	local offsetY = normalizeBarOffset(state and state.barOffsetY, Bars.DEFAULTS.barOffsetY)
+	local orientation = normalizeBarOrientation(state and state.orientation, Bars.DEFAULTS.barOrientation)
+	local useChargeSegments = state.mode == Bars.BAR_MODE.CHARGES and state.segmentedCharges == true and safeNumber(state.maxCharges) == 2
+	local segmentCount = useChargeSegments and 2 or 0
+	local gap = useChargeSegments and normalizeBarChargesGap(state.chargesGap, Bars.DEFAULTS.barChargesGap) or 0
+	local segmentDirection = useChargeSegments and normalizeBarSegmentDirection(state.segmentDirection, Bars.DEFAULTS.barSegmentDirection) or BAR_ORIENTATION_HORIZONTAL
+	local segmentReverse = useChargeSegments and state.segmentReverse == true or false
 	local parent = slotAnchor:GetParent() or icon:GetParent() or UIParent
 	if barFrame:GetParent() ~= parent then barFrame:SetParent(parent) end
 	barFrame:ClearAllPoints()
-	barFrame:SetPoint("LEFT", slotAnchor, "LEFT", 0, 0)
-	barFrame:SetSize(width, height)
+	barFrame:SetPoint("LEFT", slotAnchor, "LEFT", offsetX, offsetY)
 	barFrame:SetFrameStrata((icon.overlay and icon.overlay:GetFrameStrata()) or icon:GetFrameStrata())
 	barFrame:SetFrameLevel(((icon.overlay and icon.overlay:GetFrameLevel()) or icon:GetFrameLevel()) + 2)
 	if barFrame.body then
@@ -1715,24 +1997,47 @@ local function layoutBarFrame(barFrame, icon, span, layout, state)
 	local fillTexturePath = state and state.barTexture or resolveBarTexture(Bars.DEFAULTS.barTexture)
 	local borderTexturePath = state and state.borderTexture or resolveBarBorderTexture(Bars.DEFAULTS.barBorderTexture)
 	applyStatusBarTexture(barFrame.fill, fillTexturePath)
+	applyStatusBarOrientation(barFrame.fill, orientation)
 	barFrame.fillBg:SetTexture(fillTexturePath)
 
 	local fillColor = Helper.NormalizeColor(state and state.fillColor, getDefaultBarColorForMode(state and state.mode or Bars.BAR_MODE.COOLDOWN))
 	local backgroundColor = Helper.NormalizeColor(state and state.backgroundColor, Bars.DEFAULTS.barBackgroundColor)
 	local borderColor = Helper.NormalizeColor(state and state.borderColor, Bars.DEFAULTS.barBorderColor)
+	if state and state.procGlowActive == true then
+		fillColor = Helper.NormalizeColor(state.procGlowColor, fillColor)
+		borderColor = Helper.NormalizeColor(state.procGlowColor, borderColor)
+	end
 	local outerPadding = 2
 	local iconSpacing = 4
-	local iconSize = state.showIcon and max(12, height - (outerPadding * 2)) or 0
+	local iconSize = state.showIcon and max(12, min(width, height) - (outerPadding * 2)) or 0
 	local configuredIconSize = normalizeBarIconSize(state and state.iconSize, Bars.DEFAULTS.barIconSize)
 	if configuredIconSize > 0 then iconSize = pixelSnap(configuredIconSize, slotAnchor.GetEffectiveScale and slotAnchor:GetEffectiveScale() or nil) end
 	local iconArea = state.showIcon and (iconSize + iconSpacing) or 0
-	local bodyLeft = outerPadding + ((state.showIcon and state.iconPosition == BAR_ICON_POSITION_LEFT) and iconArea or 0)
-	local bodyRight = outerPadding + ((state.showIcon and state.iconPosition == BAR_ICON_POSITION_RIGHT) and iconArea or 0)
-	local bodyWidth = max(18, width - bodyLeft - bodyRight)
+	local iconPosition = normalizeBarIconPosition(state and state.iconPosition, Bars.DEFAULTS.barIconPosition)
+	local bodyLeft = outerPadding + ((state.showIcon and iconPosition == BAR_ICON_POSITION_LEFT) and iconArea or 0)
+	local bodyRight = outerPadding + ((state.showIcon and iconPosition == BAR_ICON_POSITION_RIGHT) and iconArea or 0)
+	local bodyTop = outerPadding + ((state.showIcon and iconPosition == BAR_ICON_POSITION_TOP) and iconArea or 0)
+	local bodyBottom = outerPadding + ((state.showIcon and iconPosition == BAR_ICON_POSITION_BOTTOM) and iconArea or 0)
+	local bodyWidth = max(1, width)
+	local bodyHeight = max(1, height)
+	local frameWidth = bodyLeft + bodyWidth + bodyRight
+	local frameHeight = bodyTop + bodyHeight + bodyBottom
+
+	if useChargeSegments then
+		if segmentDirection == BAR_ORIENTATION_VERTICAL then
+			frameHeight = pixelSnap(bodyTop + bodyBottom + (height * segmentCount) + (max(segmentCount - 1, 0) * gap), slotAnchor.GetEffectiveScale and slotAnchor:GetEffectiveScale() or nil)
+			bodyHeight = max(1, frameHeight - bodyTop - bodyBottom)
+		else
+			frameWidth = pixelSnap(bodyLeft + bodyRight + (width * segmentCount) + (max(segmentCount - 1, 0) * gap), slotAnchor.GetEffectiveScale and slotAnchor:GetEffectiveScale() or nil)
+			bodyWidth = max(1, frameWidth - bodyLeft - bodyRight)
+		end
+	end
+
+	barFrame:SetSize(frameWidth, frameHeight)
 
 	barFrame.body:ClearAllPoints()
-	barFrame.body:SetPoint("TOPLEFT", barFrame, "TOPLEFT", bodyLeft, 0)
-	barFrame.body:SetPoint("BOTTOMRIGHT", barFrame, "BOTTOMRIGHT", -bodyRight, 0)
+	barFrame.body:SetPoint("TOPLEFT", barFrame, "TOPLEFT", bodyLeft, -bodyTop)
+	barFrame.body:SetPoint("BOTTOMRIGHT", barFrame, "BOTTOMRIGHT", -bodyRight, bodyBottom)
 	applyBackdropFrame(barFrame.body, borderTexturePath, borderSize)
 	barFrame.body:SetBackdropColor(0, 0, 0, 0)
 	barFrame.body:SetBackdropBorderColor(0, 0, 0, 0)
@@ -1757,8 +2062,12 @@ local function layoutBarFrame(barFrame, icon, span, layout, state)
 
 	if state.showIcon and state.texture then
 		barFrame.icon:ClearAllPoints()
-		if state.iconPosition == BAR_ICON_POSITION_RIGHT then
+		if iconPosition == BAR_ICON_POSITION_RIGHT then
 			barFrame.icon:SetPoint("RIGHT", barFrame, "RIGHT", -outerPadding + (state.iconOffsetX or 0), state.iconOffsetY or 0)
+		elseif iconPosition == BAR_ICON_POSITION_TOP then
+			barFrame.icon:SetPoint("TOP", barFrame, "TOP", state.iconOffsetX or 0, -(outerPadding) + (state.iconOffsetY or 0))
+		elseif iconPosition == BAR_ICON_POSITION_BOTTOM then
+			barFrame.icon:SetPoint("BOTTOM", barFrame, "BOTTOM", state.iconOffsetX or 0, outerPadding + (state.iconOffsetY or 0))
 		else
 			barFrame.icon:SetPoint("LEFT", barFrame, "LEFT", outerPadding + (state.iconOffsetX or 0), state.iconOffsetY or 0)
 		end
@@ -1774,31 +2083,36 @@ local function layoutBarFrame(barFrame, icon, span, layout, state)
 	if CooldownPanels.GetCooldownFontDefaults then
 		valueDefaultFontPath, valueDefaultFontSize, valueDefaultFontStyle = CooldownPanels:GetCooldownFontDefaults(icon and icon:GetParent() or nil)
 	end
-	local useChargeSegments = state.mode == Bars.BAR_MODE.CHARGES and state.segmentedCharges == true and safeNumber(state.maxCharges) == 2
 	if useChargeSegments then
-		local segmentCount = 2
-		local gap = normalizeBarChargesGap(state.chargesGap, Bars.DEFAULTS.barChargesGap)
-		if segmentCount > 1 then gap = min(gap, max(0, floor((bodyWidth - segmentCount) / (segmentCount - 1)))) end
-		local totalGapWidth = max(segmentCount - 1, 0) * gap
-		local segmentWidth = max(1, floor((bodyWidth - totalGapWidth) / segmentCount))
-		local remainingPixels = max(0, bodyWidth - ((segmentWidth * segmentCount) + totalGapWidth))
+		local segmentAxisSize = segmentDirection == BAR_ORIENTATION_VERTICAL and bodyHeight or bodyWidth
+		local totalGapSize = max(segmentCount - 1, 0) * gap
+		local segmentPrimarySize = max(1, floor((segmentAxisSize - totalGapSize) / segmentCount))
+		local remainingPixels = max(0, segmentAxisSize - ((segmentPrimarySize * segmentCount) + totalGapSize))
+		Bars.HideForwardHitHandle(barFrame.hitHandle)
 		barFrame.fill:Hide()
 		barFrame.fillBg:Hide()
 		if barFrame.borderOverlay then barFrame.borderOverlay:Hide() end
 		for index = 1, segmentCount do
 			local segment = ensureBarSegment(barFrame, index)
+			local visualIndex = segmentReverse and (segmentCount - index + 1) or index
 			local extraPixel = index <= remainingPixels and 1 or 0
-			local currentWidth = segmentWidth + extraPixel
-			local offsetX = (index - 1) * (segmentWidth + gap) + min(index - 1, remainingPixels)
+			local primarySize = segmentPrimarySize + extraPixel
+			local primaryOffset = (visualIndex - 1) * (segmentPrimarySize + gap) + min(visualIndex - 1, remainingPixels)
 			segment:ClearAllPoints()
-			segment:SetPoint("TOPLEFT", barFrame.body, "TOPLEFT", offsetX, 0)
-			segment:SetSize(currentWidth, height)
+			if segmentDirection == BAR_ORIENTATION_VERTICAL then
+				segment:SetPoint("TOPLEFT", barFrame.body, "TOPLEFT", 0, -primaryOffset)
+				segment:SetSize(bodyWidth, primarySize)
+			else
+				segment:SetPoint("TOPLEFT", barFrame.body, "TOPLEFT", primaryOffset, 0)
+				segment:SetSize(primarySize, bodyHeight)
+			end
 			segment:SetFrameStrata(barFrame:GetFrameStrata())
 			segment:SetFrameLevel((barFrame.body and barFrame.body:GetFrameLevel() or barFrame:GetFrameLevel()) + 1)
 			applyBackdropFrame(segment, borderTexturePath, borderSize)
 			segment:SetBackdropColor(0, 0, 0, 0)
 			segment:SetBackdropBorderColor(0, 0, 0, 0)
 			applyStatusBarTexture(segment.fill, fillTexturePath)
+			applyStatusBarOrientation(segment.fill, orientation)
 			segment.fill:SetFrameLevel(segment:GetFrameLevel() + 1)
 			segment.fill:ClearAllPoints()
 			segment.fill:SetPoint("TOPLEFT", segment, "TOPLEFT", 0, 0)
@@ -1821,6 +2135,7 @@ local function layoutBarFrame(barFrame, icon, span, layout, state)
 					segment.borderOverlay:Hide()
 				end
 			end
+			Bars.ConfigureForwardHitHandle(segment.hitHandle, segment, icon and icon.layoutHandle or nil)
 			segment:Show()
 		end
 		hideUnusedBarSegments(barFrame, segmentCount + 1)
@@ -1876,6 +2191,7 @@ local function layoutBarFrame(barFrame, icon, span, layout, state)
 				cooldownGCD = state.cooldownGCD == true,
 				lastNonGCDCooldownActive = state.lastNonGCDCooldownActive == true,
 				gateActive = gateActive == true,
+				segmentReverse = segmentReverse == true,
 				seg1Alpha = segment1Alpha,
 				seg2Alpha = segment2Alpha,
 				iconChargeText = icon and icon.charges and icon.charges.GetText and getDebugText(icon.charges:GetText()) or nil,
@@ -1888,10 +2204,11 @@ local function layoutBarFrame(barFrame, icon, span, layout, state)
 		barFrame.fill:Show()
 		barFrame.fillBg:Show()
 		barFrame.fill:SetStatusBarColor(fillColor[1], fillColor[2], fillColor[3], fillColor[4])
-		if not setStatusBarTimerDuration(barFrame.fill, state.fillDurationObject) then
+		if not setStatusBarTimerDuration(barFrame.fill, state.fillDurationObject, nil, state.timerDirection) then
 			barFrame.fill:SetMinMaxValues(0, 1)
 			setStatusBarImmediateValue(barFrame.fill, state.progress or 0)
 		end
+		Bars.ConfigureForwardHitHandle(barFrame.hitHandle, barFrame.body, icon and icon.layoutHandle or nil)
 	end
 
 	local textInset = 4
@@ -1900,8 +2217,15 @@ local function layoutBarFrame(barFrame, icon, span, layout, state)
 	if state.showLabel and state.label then
 		applyFontStringStyle(barFrame.label, state.labelFont, state.labelSize, state.labelStyle, state.labelColor, labelDefaultFontPath, labelDefaultFontSize, labelDefaultFontStyle)
 		barFrame.label:ClearAllPoints()
-		barFrame.label:SetPoint("LEFT", barFrame.body, "LEFT", textInset, 0)
-		barFrame.label:SetPoint("RIGHT", barFrame.body, "RIGHT", state.showValueText and -(textInset + reserveValueWidth) or -textInset, 0)
+		if orientation == BAR_ORIENTATION_VERTICAL then
+			barFrame.label:SetJustifyH("CENTER")
+			barFrame.label:SetPoint("TOPLEFT", barFrame.body, "TOPLEFT", textInset, -textInset)
+			barFrame.label:SetPoint("TOPRIGHT", barFrame.body, "TOPRIGHT", -textInset, -textInset)
+		else
+			barFrame.label:SetJustifyH("LEFT")
+			barFrame.label:SetPoint("LEFT", barFrame.body, "LEFT", textInset, 0)
+			barFrame.label:SetPoint("RIGHT", barFrame.body, "RIGHT", state.showValueText and -(textInset + reserveValueWidth) or -textInset, 0)
+		end
 		barFrame.label:SetText(state.label)
 		barFrame.label:Show()
 	else
@@ -1910,16 +2234,24 @@ local function layoutBarFrame(barFrame, icon, span, layout, state)
 	if state.showValueText and state.valueText then
 		applyFontStringStyle(barFrame.value, state.valueFont, state.valueSize, state.valueStyle, state.valueColor, valueDefaultFontPath, valueDefaultFontSize, valueDefaultFontStyle)
 		barFrame.value:ClearAllPoints()
-		barFrame.value:SetWidth(state.showLabel and reserveValueWidth or 0)
-		barFrame.value:SetPoint("RIGHT", barFrame.body, "RIGHT", -textInset, 0)
-		if not state.showLabel then
-			barFrame.value:SetPoint("LEFT", barFrame.body, "LEFT", textInset, 0)
+		if orientation == BAR_ORIENTATION_VERTICAL then
+			barFrame.value:SetJustifyH("CENTER")
+			barFrame.value:SetPoint("BOTTOMLEFT", barFrame.body, "BOTTOMLEFT", textInset, textInset)
+			barFrame.value:SetPoint("BOTTOMRIGHT", barFrame.body, "BOTTOMRIGHT", -textInset, textInset)
+		else
+			barFrame.value:SetJustifyH("RIGHT")
+			barFrame.value:SetWidth(state.showLabel and reserveValueWidth or 0)
+			barFrame.value:SetPoint("RIGHT", barFrame.body, "RIGHT", -textInset, 0)
+			if not state.showLabel then
+				barFrame.value:SetPoint("LEFT", barFrame.body, "LEFT", textInset, 0)
+			end
 		end
 		barFrame.value:SetText(state.valueText)
 		barFrame.value:Show()
 	else
 		barFrame.value:Hide()
 	end
+	Bars.ConfigureBarValueTextUpdater(barFrame, state)
 	barFrame:SetAlpha(icon:GetAlpha())
 	barFrame._eqolBarState = state
 	barFrame:Show()
@@ -2129,13 +2461,16 @@ local function applyBarsToPanel(panelId, preview)
 	if not frame or not frame.icons then return end
 
 	local layoutEditActive = CooldownPanels.IsPanelLayoutEditActive and CooldownPanels:IsPanelLayoutEditActive(panelId) or false
-	for index, icon in ipairs(frame.icons) do
+	for _, icon in ipairs(frame.icons) do
 		local entryId = normalizeId(icon.entryId)
 		local slotColumn = Helper.NormalizeSlotCoordinate(icon._eqolPreviewCellColumn or icon._eqolLayoutSlotColumn)
 		local slotRow = Helper.NormalizeSlotCoordinate(icon._eqolPreviewCellRow or icon._eqolLayoutSlotRow)
 		local entry = entryId and panel.entries and panel.entries[entryId] or nil
 		local displayMode = entry and normalizeDisplayMode(entry.displayMode, Bars.DEFAULTS.displayMode) or Bars.DISPLAY_MODE.BUTTON
-		local reservedOwnerId = (not entryId) and fixedLayout and cache and cache._eqolBarsReservedOwnerByIndex and cache._eqolBarsReservedOwnerByIndex[index] or nil
+		local reservedOwnerId = nil
+		if not entryId and fixedLayout and slotColumn and slotRow then
+			reservedOwnerId = select(1, getReservedOwnerForCell(panel, slotColumn, slotRow))
+		end
 		local reservedEntry = reservedOwnerId and panel.entries and panel.entries[reservedOwnerId] or nil
 		local barFrame = ensureBarFrame(icon)
 		hideBarPresentation(icon)
@@ -2276,7 +2611,7 @@ local function getStandaloneBarCDMAuraMode(panelId, entryId)
 	return normalizeCDMAuraAlwaysShowModeValue(fallback, "HIDE")
 end
 
-local function buildBarStandaloneSettings(panelId, entryId)
+local function createBarStandaloneSettingsContext(panelId, entryId)
 	local SettingType = getSettingType()
 	local panel, entry = getStandaloneBarEntry(panelId, entryId)
 	if not (SettingType and panel and entry) then return nil end
@@ -2289,638 +2624,808 @@ local function buildBarStandaloneSettings(panelId, entryId)
 		valueDefaultFontPath, valueDefaultFontSize, valueDefaultFontStyle = CooldownPanels:GetCooldownFontDefaults(hostFrame)
 	end
 
-	local settings = {
-		{
-			name = L["CooldownPanelBars"] or "Bars",
-			kind = SettingType.Collapsible,
-			id = "eqolCooldownPanelStandaloneBar",
-			defaultCollapsed = false,
-		},
-		{
-			name = L["CooldownPanelMode"] or "Mode",
-			kind = SettingType.Dropdown,
-			parentId = "eqolCooldownPanelStandaloneBar",
-			height = 140,
-			get = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode)
-			end,
-			set = function(_, value) setEntryBarMode(panelId, entryId, value) end,
-			generator = function(_, root)
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				if not currentEntry then return end
-				for _, option in ipairs({
-					{ value = Bars.BAR_MODE.COOLDOWN, label = getEntryBarModeLabel(Bars.BAR_MODE.COOLDOWN) },
-					{ value = Bars.BAR_MODE.CHARGES, label = getEntryBarModeLabel(Bars.BAR_MODE.CHARGES) },
-					{ value = Bars.BAR_MODE.STACKS, label = getEntryBarModeLabel(Bars.BAR_MODE.STACKS) },
-				}) do
-					if supportsBarMode(currentEntry, option.value) then
-						root:CreateRadio(option.label, function()
-							local _, refreshedEntry = getStandaloneBarEntry(panelId, entryId)
-							return normalizeBarMode(refreshedEntry and refreshedEntry.barMode, Bars.DEFAULTS.barMode) == option.value
-						end, function()
-							setEntryBarMode(panelId, entryId, option.value)
-						end)
-					end
-				end
-			end,
-		},
-		{
-			name = L["CooldownPanelBarWidth"] or "Bar width",
-			kind = SettingType.Slider,
-			parentId = "eqolCooldownPanelStandaloneBar",
-			minValue = BAR_WIDTH_MIN,
-			maxValue = BAR_WIDTH_MAX,
-			valueStep = 1,
-			allowInput = true,
-			get = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				local panelRef, entryRef = getStandaloneBarEntry(panelId, entryId)
-				local configuredWidth = normalizeBarWidth(entryRef and entryRef.barWidth, Bars.DEFAULTS.barWidth)
-				if configuredWidth > 0 then return configuredWidth end
-				local slotSize = getEntryBaseSlotSize(panelRef, entryRef)
-				local spacing = Helper.ClampInt(panelRef and panelRef.layout and panelRef.layout.spacing, 0, Helper.SPACING_RANGE or 200, Helper.PANEL_LAYOUT_DEFAULTS and Helper.PANEL_LAYOUT_DEFAULTS.spacing or 2)
-				local span = normalizeBarSpan(entryRef and entryRef.barSpan, Bars.DEFAULTS.barSpan)
-				return max(slotSize, (slotSize * span) + (max(span - 1, 0) * spacing))
-			end,
-			set = function(_, value) setEntryBarWidth(panelId, entryId, value) end,
-			formatter = function(value) return tostring(Helper.ClampInt(value, BAR_WIDTH_MIN, BAR_WIDTH_MAX, BAR_WIDTH_MIN)) end,
-		},
-		{
-			name = L["CooldownPanelBarHeight"] or "Bar height",
-			kind = SettingType.Slider,
-			parentId = "eqolCooldownPanelStandaloneBar",
-			minValue = BAR_HEIGHT_MIN,
-			maxValue = BAR_HEIGHT_MAX,
-			valueStep = 1,
-			allowInput = true,
-			get = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return normalizeBarHeight(currentEntry and currentEntry.barHeight, Bars.DEFAULTS.barHeight)
-			end,
-			set = function(_, value) setEntryBarField(panelId, entryId, "barHeight", Helper.ClampInt(value, BAR_HEIGHT_MIN, BAR_HEIGHT_MAX, Bars.DEFAULTS.barHeight)) end,
-			formatter = function(value) return tostring(Helper.ClampInt(value, BAR_HEIGHT_MIN, BAR_HEIGHT_MAX, Bars.DEFAULTS.barHeight)) end,
-		},
-		{
-			name = L["CooldownPanelBarTexture"] or "Bar texture",
-			kind = SettingType.Dropdown,
-			parentId = "eqolCooldownPanelStandaloneBar",
-			height = BAR_TEXTURE_MENU_HEIGHT,
-			get = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return getBarTextureSelection(currentEntry)
-			end,
-			set = function(_, value) setEntryBarField(panelId, entryId, "barTexture", value) end,
-			generator = function(_, root)
-				for _, option in ipairs(getBarTextureOptions()) do
-					root:CreateRadio(option.label, function()
-						local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-						return getBarTextureSelection(currentEntry) == option.value
-					end, function()
-						setEntryBarField(panelId, entryId, "barTexture", option.value)
-					end)
-				end
-			end,
-		},
-		{
-			name = L["CooldownPanelBarColor"] or "Bar color",
-			kind = SettingType.Color,
-			parentId = "eqolCooldownPanelStandaloneBar",
-			hasOpacity = true,
-			get = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				local color = getBarModeColor(currentEntry, normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode))
-				return { r = color[1], g = color[2], b = color[3], a = color[4] }
-			end,
-			set = function(_, value)
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				local fallback = getDefaultBarColorForMode(normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode))
-				setEntryBarField(panelId, entryId, "barColor", Helper.NormalizeColor(value, fallback))
-			end,
-		},
-		{
-			name = L["CooldownPanelBarBackgroundColor"] or "Background color",
-			kind = SettingType.Color,
-			parentId = "eqolCooldownPanelStandaloneBar",
-			hasOpacity = true,
-			get = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				local color = Helper.NormalizeColor(currentEntry and currentEntry.barBackgroundColor, Bars.DEFAULTS.barBackgroundColor)
-				return { r = color[1], g = color[2], b = color[3], a = color[4] }
-			end,
-			set = function(_, value) setEntryBarField(panelId, entryId, "barBackgroundColor", Helper.NormalizeColor(value, Bars.DEFAULTS.barBackgroundColor)) end,
-		},
-		{
-			name = L["CooldownPanelBarBorderSize"] or "Border size",
-			kind = SettingType.Slider,
-			parentId = "eqolCooldownPanelStandaloneBar",
-			minValue = BAR_BORDER_SIZE_MIN,
-			maxValue = BAR_BORDER_SIZE_MAX,
-			valueStep = 1,
-			allowInput = true,
-			get = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return normalizeBarBorderSize(currentEntry and currentEntry.barBorderSize, Bars.DEFAULTS.barBorderSize)
-			end,
-			set = function(_, value) setEntryBarField(panelId, entryId, "barBorderSize", Helper.ClampInt(value, BAR_BORDER_SIZE_MIN, BAR_BORDER_SIZE_MAX, Bars.DEFAULTS.barBorderSize)) end,
-			formatter = function(value) return tostring(Helper.ClampInt(value, BAR_BORDER_SIZE_MIN, BAR_BORDER_SIZE_MAX, Bars.DEFAULTS.barBorderSize)) end,
-		},
-		{
-			name = L["CooldownPanelBarBorderOffset"] or (L["Border offset"] or "Border offset"),
-			kind = SettingType.Slider,
-			parentId = "eqolCooldownPanelStandaloneBar",
-			minValue = BAR_BORDER_OFFSET_MIN,
-			maxValue = BAR_BORDER_OFFSET_MAX,
-			valueStep = 1,
-			allowInput = true,
-			disabled = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return normalizeBarBorderSize(currentEntry and currentEntry.barBorderSize, Bars.DEFAULTS.barBorderSize) <= 0
-			end,
-			get = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return normalizeBarBorderOffset(currentEntry and currentEntry.barBorderOffset, Bars.DEFAULTS.barBorderOffset)
-			end,
-			set = function(_, value) setEntryBarField(panelId, entryId, "barBorderOffset", normalizeBarBorderOffset(value, Bars.DEFAULTS.barBorderOffset)) end,
-			formatter = function(value) return tostring(normalizeBarBorderOffset(value, Bars.DEFAULTS.barBorderOffset)) end,
-		},
-		{
-			name = L["CooldownPanelBarBorderTexture"] or "Border texture",
-			kind = SettingType.Dropdown,
-			parentId = "eqolCooldownPanelStandaloneBar",
-			height = BAR_TEXTURE_MENU_HEIGHT,
-			disabled = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return normalizeBarBorderSize(currentEntry and currentEntry.barBorderSize, Bars.DEFAULTS.barBorderSize) <= 0
-			end,
-			get = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return normalizeBarBorderTexture(currentEntry and currentEntry.barBorderTexture, Bars.DEFAULTS.barBorderTexture)
-			end,
-			set = function(_, value) setEntryBarField(panelId, entryId, "barBorderTexture", value) end,
-			generator = function(_, root)
-				for _, option in ipairs(getBarBorderTextureOptions()) do
-					root:CreateRadio(option.label, function()
-						local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-						return normalizeBarBorderTexture(currentEntry and currentEntry.barBorderTexture, Bars.DEFAULTS.barBorderTexture) == option.value
-					end, function()
-						setEntryBarField(panelId, entryId, "barBorderTexture", option.value)
-					end)
-				end
-			end,
-		},
-		{
-			name = L["CooldownPanelBarBorderColor"] or "Border color",
-			kind = SettingType.Color,
-			parentId = "eqolCooldownPanelStandaloneBar",
-			hasOpacity = true,
-			disabled = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return normalizeBarBorderSize(currentEntry and currentEntry.barBorderSize, Bars.DEFAULTS.barBorderSize) <= 0
-			end,
-			get = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				local color = Helper.NormalizeColor(currentEntry and currentEntry.barBorderColor, Bars.DEFAULTS.barBorderColor)
-				return { r = color[1], g = color[2], b = color[3], a = color[4] }
-			end,
-			set = function(_, value) setEntryBarField(panelId, entryId, "barBorderColor", Helper.NormalizeColor(value, Bars.DEFAULTS.barBorderColor)) end,
-		},
-		{
-			name = L["CooldownPanelBarChargesSegmented"] or "Segment charges",
-			kind = SettingType.Checkbox,
-			parentId = "eqolCooldownPanelStandaloneBar",
-			isShown = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.CHARGES
-			end,
-			get = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return getStoredBoolean(currentEntry, "barChargesSegmented", Bars.DEFAULTS.barChargesSegmented)
-			end,
-			set = function(_, value) setEntryBarBoolean(panelId, entryId, "barChargesSegmented", value) end,
-		},
-		{
-			name = L["CooldownPanelBarChargesGap"] or "Charges gap",
-			kind = SettingType.Slider,
-			parentId = "eqolCooldownPanelStandaloneBar",
-			minValue = BAR_CHARGES_GAP_MIN,
-			maxValue = BAR_CHARGES_GAP_MAX,
-			valueStep = 1,
-			allowInput = true,
-			isShown = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.CHARGES
-			end,
-			disabled = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return not getStoredBoolean(currentEntry, "barChargesSegmented", Bars.DEFAULTS.barChargesSegmented)
-			end,
-			get = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return normalizeBarChargesGap(currentEntry and currentEntry.barChargesGap, Bars.DEFAULTS.barChargesGap)
-			end,
-			set = function(_, value) setEntryBarField(panelId, entryId, "barChargesGap", normalizeBarChargesGap(value, Bars.DEFAULTS.barChargesGap)) end,
-			formatter = function(value) return tostring(normalizeBarChargesGap(value, Bars.DEFAULTS.barChargesGap)) end,
-		},
-		{
-			name = L["CooldownPanelBarTextHeader"] or "Text",
-			kind = SettingType.Collapsible,
-			id = "eqolCooldownPanelStandaloneBarText",
-			defaultCollapsed = false,
-		},
-		{
-			name = L["CooldownPanelBarShowIcon"] or "Show icon",
-			kind = SettingType.Checkbox,
-			parentId = "eqolCooldownPanelStandaloneBarText",
-			get = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return getStoredBoolean(currentEntry, "barShowIcon", Bars.DEFAULTS.barShowIcon)
-			end,
-			set = function(_, value) setEntryBarBoolean(panelId, entryId, "barShowIcon", value) end,
-		},
-		{
-			name = L["CooldownPanelBarIconSize"] or (L["CooldownPanelIconSize"] or "Icon size"),
-			kind = SettingType.Slider,
-			parentId = "eqolCooldownPanelStandaloneBarText",
-			minValue = BAR_ICON_SIZE_MIN,
-			maxValue = BAR_ICON_SIZE_MAX,
-			valueStep = 1,
-			allowInput = true,
-			disabled = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return not getStoredBoolean(currentEntry, "barShowIcon", Bars.DEFAULTS.barShowIcon)
-			end,
-			get = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				local configuredSize = normalizeBarIconSize(currentEntry and currentEntry.barIconSize, Bars.DEFAULTS.barIconSize)
-				if configuredSize > 0 then return configuredSize end
-				local currentHeight = normalizeBarHeight(currentEntry and currentEntry.barHeight, Bars.DEFAULTS.barHeight)
-				return max(BAR_ICON_SIZE_MIN, currentHeight - 4)
-			end,
-			set = function(_, value) setEntryBarField(panelId, entryId, "barIconSize", normalizeBarIconSize(value, Bars.DEFAULTS.barIconSize)) end,
-			formatter = function(value) return tostring(Helper.ClampInt(value, BAR_ICON_SIZE_MIN, BAR_ICON_SIZE_MAX, BAR_ICON_SIZE_MIN)) end,
-		},
-		{
-			name = L["CooldownPanelBarIconPosition"] or "Icon position",
-			kind = SettingType.Dropdown,
-			parentId = "eqolCooldownPanelStandaloneBarText",
-			height = 120,
-			disabled = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return not getStoredBoolean(currentEntry, "barShowIcon", Bars.DEFAULTS.barShowIcon)
-			end,
-			get = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return normalizeBarIconPosition(currentEntry and currentEntry.barIconPosition, Bars.DEFAULTS.barIconPosition)
-			end,
-			set = function(_, value) setEntryBarField(panelId, entryId, "barIconPosition", normalizeBarIconPosition(value, Bars.DEFAULTS.barIconPosition)) end,
-			generator = function(_, root)
-				for _, option in ipairs({
-					{ value = BAR_ICON_POSITION_LEFT, label = L["Left"] or "Left" },
-					{ value = BAR_ICON_POSITION_RIGHT, label = L["Right"] or "Right" },
-				}) do
-					root:CreateRadio(option.label, function()
-						local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-						return normalizeBarIconPosition(currentEntry and currentEntry.barIconPosition, Bars.DEFAULTS.barIconPosition) == option.value
-					end, function()
-						setEntryBarField(panelId, entryId, "barIconPosition", option.value)
-					end)
-				end
-			end,
-		},
-		{
-			name = L["CooldownPanelBarIconOffsetX"] or "Icon X",
-			kind = SettingType.Slider,
-			parentId = "eqolCooldownPanelStandaloneBarText",
-			minValue = -(Helper.OFFSET_RANGE or 500),
-			maxValue = Helper.OFFSET_RANGE or 500,
-			valueStep = 1,
-			allowInput = true,
-			disabled = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return not getStoredBoolean(currentEntry, "barShowIcon", Bars.DEFAULTS.barShowIcon)
-			end,
-			get = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return normalizeBarIconOffset(currentEntry and currentEntry.barIconOffsetX, Bars.DEFAULTS.barIconOffsetX)
-			end,
-			set = function(_, value) setEntryBarField(panelId, entryId, "barIconOffsetX", normalizeBarIconOffset(value, Bars.DEFAULTS.barIconOffsetX)) end,
-			formatter = function(value) return tostring(normalizeBarIconOffset(value, Bars.DEFAULTS.barIconOffsetX)) end,
-		},
-		{
-			name = L["CooldownPanelBarIconOffsetY"] or "Icon Y",
-			kind = SettingType.Slider,
-			parentId = "eqolCooldownPanelStandaloneBarText",
-			minValue = -(Helper.OFFSET_RANGE or 500),
-			maxValue = Helper.OFFSET_RANGE or 500,
-			valueStep = 1,
-			allowInput = true,
-			disabled = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return not getStoredBoolean(currentEntry, "barShowIcon", Bars.DEFAULTS.barShowIcon)
-			end,
-			get = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return normalizeBarIconOffset(currentEntry and currentEntry.barIconOffsetY, Bars.DEFAULTS.barIconOffsetY)
-			end,
-			set = function(_, value) setEntryBarField(panelId, entryId, "barIconOffsetY", normalizeBarIconOffset(value, Bars.DEFAULTS.barIconOffsetY)) end,
-			formatter = function(value) return tostring(normalizeBarIconOffset(value, Bars.DEFAULTS.barIconOffsetY)) end,
-		},
-		{
-			name = L["CooldownPanelBarShowLabel"] or "Show label",
-			kind = SettingType.Checkbox,
-			parentId = "eqolCooldownPanelStandaloneBarText",
-			get = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return getStoredBoolean(currentEntry, "barShowLabel", Bars.DEFAULTS.barShowLabel)
-			end,
-			set = function(_, value) setEntryBarBoolean(panelId, entryId, "barShowLabel", value) end,
-		},
-		{
-			name = L["CooldownPanelBarShowValueText"] or "Show value",
-			kind = SettingType.Checkbox,
-			parentId = "eqolCooldownPanelStandaloneBarText",
-			get = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return getStoredBoolean(currentEntry, "barShowValueText", Bars.DEFAULTS.barShowValueText)
-			end,
-			set = function(_, value) setEntryBarBoolean(panelId, entryId, "barShowValueText", value) end,
-		},
-		{
-			name = L["CooldownPanelBarLabelFont"] or "Label font",
-			kind = SettingType.Dropdown,
-			parentId = "eqolCooldownPanelStandaloneBarText",
-			height = 220,
-			disabled = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return not (currentEntry and currentEntry.barShowLabel == true)
-			end,
-			get = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return getStandaloneBarFontValue(currentEntry and currentEntry.barLabelFont)
-			end,
-			set = function(_, value) setEntryBarField(panelId, entryId, "barLabelFont", value) end,
-			generator = function(_, root)
-				for _, option in ipairs(Helper.GetFontOptions(labelDefaultFontPath)) do
-					root:CreateRadio(option.label, function()
-						local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-						return getStandaloneBarFontValue(currentEntry and currentEntry.barLabelFont) == option.value
-					end, function()
-						setEntryBarField(panelId, entryId, "barLabelFont", option.value)
-					end)
-				end
-			end,
-		},
-		{
-			name = L["CooldownPanelBarLabelStyle"] or "Label style",
-			kind = SettingType.Dropdown,
-			parentId = "eqolCooldownPanelStandaloneBarText",
-			height = 120,
-			disabled = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return not (currentEntry and currentEntry.barShowLabel == true)
-			end,
-			get = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return normalizeBarFontStyle(currentEntry and currentEntry.barLabelStyle, labelDefaultFontStyle)
-			end,
-			set = function(_, value) setEntryBarField(panelId, entryId, "barLabelStyle", Helper.NormalizeFontStyleChoice(value, labelDefaultFontStyle)) end,
-			generator = function(_, root)
-				for _, option in ipairs(Helper.FontStyleOptions) do
-					root:CreateRadio(option.label, function()
-						local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-						return normalizeBarFontStyle(currentEntry and currentEntry.barLabelStyle, labelDefaultFontStyle) == option.value
-					end, function()
-						setEntryBarField(panelId, entryId, "barLabelStyle", option.value)
-					end)
-				end
-			end,
-		},
-		{
-			name = L["CooldownPanelBarLabelSize"] or "Label size",
-			kind = SettingType.Slider,
-			parentId = "eqolCooldownPanelStandaloneBarText",
-			minValue = BAR_FONT_SIZE_MIN,
-			maxValue = BAR_FONT_SIZE_MAX,
-			valueStep = 1,
-			allowInput = true,
-			disabled = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return not (currentEntry and currentEntry.barShowLabel == true)
-			end,
-			get = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return normalizeBarFontSize(currentEntry and currentEntry.barLabelSize, labelDefaultFontSize)
-			end,
-			set = function(_, value) setEntryBarField(panelId, entryId, "barLabelSize", Helper.ClampInt(value, BAR_FONT_SIZE_MIN, BAR_FONT_SIZE_MAX, labelDefaultFontSize)) end,
-			formatter = function(value) return tostring(Helper.ClampInt(value, BAR_FONT_SIZE_MIN, BAR_FONT_SIZE_MAX, labelDefaultFontSize)) end,
-		},
-		{
-			name = L["CooldownPanelBarLabelColor"] or "Label color",
-			kind = SettingType.Color,
-			parentId = "eqolCooldownPanelStandaloneBarText",
-			hasOpacity = true,
-			disabled = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return not (currentEntry and currentEntry.barShowLabel == true)
-			end,
-			get = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				local color = Helper.NormalizeColor(currentEntry and currentEntry.barLabelColor, Bars.DEFAULTS.barLabelColor)
-				return { r = color[1], g = color[2], b = color[3], a = color[4] }
-			end,
-			set = function(_, value) setEntryBarField(panelId, entryId, "barLabelColor", Helper.NormalizeColor(value, Bars.DEFAULTS.barLabelColor)) end,
-		},
-		{
-			name = L["CooldownPanelBarValueFont"] or "Value font",
-			kind = SettingType.Dropdown,
-			parentId = "eqolCooldownPanelStandaloneBarText",
-			height = 220,
-			disabled = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return not (currentEntry and currentEntry.barShowValueText == true)
-			end,
-			get = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return getStandaloneBarFontValue(currentEntry and currentEntry.barValueFont)
-			end,
-			set = function(_, value) setEntryBarField(panelId, entryId, "barValueFont", value) end,
-			generator = function(_, root)
-				for _, option in ipairs(Helper.GetFontOptions(valueDefaultFontPath)) do
-					root:CreateRadio(option.label, function()
-						local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-						return getStandaloneBarFontValue(currentEntry and currentEntry.barValueFont) == option.value
-					end, function()
-						setEntryBarField(panelId, entryId, "barValueFont", option.value)
-					end)
-				end
-			end,
-		},
-		{
-			name = L["CooldownPanelBarValueStyle"] or "Value style",
-			kind = SettingType.Dropdown,
-			parentId = "eqolCooldownPanelStandaloneBarText",
-			height = 120,
-			disabled = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return not (currentEntry and currentEntry.barShowValueText == true)
-			end,
-			get = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return normalizeBarFontStyle(currentEntry and currentEntry.barValueStyle, valueDefaultFontStyle)
-			end,
-			set = function(_, value) setEntryBarField(panelId, entryId, "barValueStyle", Helper.NormalizeFontStyleChoice(value, valueDefaultFontStyle)) end,
-			generator = function(_, root)
-				for _, option in ipairs(Helper.FontStyleOptions) do
-					root:CreateRadio(option.label, function()
-						local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-						return normalizeBarFontStyle(currentEntry and currentEntry.barValueStyle, valueDefaultFontStyle) == option.value
-					end, function()
-						setEntryBarField(panelId, entryId, "barValueStyle", option.value)
-					end)
-				end
-			end,
-		},
-		{
-			name = L["CooldownPanelBarValueSize"] or "Value size",
-			kind = SettingType.Slider,
-			parentId = "eqolCooldownPanelStandaloneBarText",
-			minValue = BAR_FONT_SIZE_MIN,
-			maxValue = BAR_FONT_SIZE_MAX,
-			valueStep = 1,
-			allowInput = true,
-			disabled = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return not (currentEntry and currentEntry.barShowValueText == true)
-			end,
-			get = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return normalizeBarFontSize(currentEntry and currentEntry.barValueSize, valueDefaultFontSize)
-			end,
-			set = function(_, value) setEntryBarField(panelId, entryId, "barValueSize", Helper.ClampInt(value, BAR_FONT_SIZE_MIN, BAR_FONT_SIZE_MAX, valueDefaultFontSize)) end,
-			formatter = function(value) return tostring(Helper.ClampInt(value, BAR_FONT_SIZE_MIN, BAR_FONT_SIZE_MAX, valueDefaultFontSize)) end,
-		},
-		{
-			name = L["CooldownPanelBarValueColor"] or "Value color",
-			kind = SettingType.Color,
-			parentId = "eqolCooldownPanelStandaloneBarText",
-			hasOpacity = true,
-			disabled = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return not (currentEntry and currentEntry.barShowValueText == true)
-			end,
-			get = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				local color = Helper.NormalizeColor(currentEntry and currentEntry.barValueColor, Bars.DEFAULTS.barValueColor)
-				return { r = color[1], g = color[2], b = color[3], a = color[4] }
-			end,
-			set = function(_, value) setEntryBarField(panelId, entryId, "barValueColor", Helper.NormalizeColor(value, Bars.DEFAULTS.barValueColor)) end,
-		},
-		{
-			name = L["CooldownPanelBarVisibilityHeader"] or (L["Display"] or "Display"),
-			kind = SettingType.Collapsible,
-			id = "eqolCooldownPanelStandaloneBarVisibility",
-			defaultCollapsed = true,
-		},
-		{
-			name = L["CooldownPanelAlwaysShow"] or "Always show",
-			kind = SettingType.Checkbox,
-			parentId = "eqolCooldownPanelStandaloneBarVisibility",
-			isShown = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return getEntryResolvedType(currentEntry) == "ITEM"
-			end,
-			get = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return currentEntry and currentEntry.alwaysShow ~= false or false
-			end,
-			set = function(_, value) setEntryBarBoolean(panelId, entryId, "alwaysShow", value) end,
-		},
-		{
-			name = L["CooldownPanelOverwritePanelCDMAuraAlwaysShow"] or "Overwrite panel tracked aura display",
-			kind = SettingType.Checkbox,
-			parentId = "eqolCooldownPanelStandaloneBarVisibility",
-			isShown = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return getEntryResolvedType(currentEntry) == "CDM_AURA"
-			end,
-			get = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return currentEntry and currentEntry.cdmAuraAlwaysShowUseGlobal == false or false
-			end,
-			set = function(_, value) setEntryBarField(panelId, entryId, "cdmAuraAlwaysShowUseGlobal", value ~= true) end,
-		},
-		{
-			name = L["CooldownPanelCDMAuraAlwaysShowMode"] or "Tracked aura display",
-			kind = SettingType.Dropdown,
-			parentId = "eqolCooldownPanelStandaloneBarVisibility",
-			height = 180,
-			isShown = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return getEntryResolvedType(currentEntry) == "CDM_AURA"
-			end,
-			disabled = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return not (currentEntry and currentEntry.cdmAuraAlwaysShowUseGlobal == false)
-			end,
-			get = function() return getStandaloneBarCDMAuraMode(panelId, entryId) end,
-			set = function(_, value) setEntryBarField(panelId, entryId, "cdmAuraAlwaysShowMode", normalizeCDMAuraAlwaysShowModeValue(value, "HIDE")) end,
-			generator = function(_, root)
-				for _, option in ipairs(CooldownPanels.GetCDMAuraAlwaysShowOptions and CooldownPanels:GetCDMAuraAlwaysShowOptions() or {}) do
-					root:CreateRadio(option.label, function()
-						return getStandaloneBarCDMAuraMode(panelId, entryId) == option.value
-					end, function()
-						setEntryBarField(panelId, entryId, "cdmAuraAlwaysShowMode", option.value)
-					end)
-				end
-			end,
-		},
-		{
-			name = L["CooldownPanelOverwriteGlobalDefault"] or "Overwrite global default",
-			kind = SettingType.Checkbox,
-			parentId = "eqolCooldownPanelStandaloneBarVisibility",
-			isShown = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return getEntryResolvedType(currentEntry) ~= "CDM_AURA"
-			end,
-			get = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return currentEntry and currentEntry.cooldownVisibilityUseGlobal == false or false
-			end,
-			set = function(_, value) setEntryBarField(panelId, entryId, "cooldownVisibilityUseGlobal", value ~= true) end,
-		},
-		{
-			name = L["CooldownPanelHideOnCooldown"] or "Hide on cooldown",
-			kind = SettingType.Checkbox,
-			parentId = "eqolCooldownPanelStandaloneBarVisibility",
-			isShown = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return getEntryResolvedType(currentEntry) ~= "CDM_AURA"
-			end,
-			disabled = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return not (currentEntry and currentEntry.cooldownVisibilityUseGlobal == false)
-			end,
-			get = function() return getStandaloneBarVisibility(panelId, entryId, "hideOnCooldown") end,
-			set = function(_, value) setEntryBarBoolean(panelId, entryId, "hideOnCooldown", value) end,
-		},
-		{
-			name = L["CooldownPanelShowOnCooldown"] or "Show on cooldown",
-			kind = SettingType.Checkbox,
-			parentId = "eqolCooldownPanelStandaloneBarVisibility",
-			isShown = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return getEntryResolvedType(currentEntry) ~= "CDM_AURA"
-			end,
-			disabled = function()
-				local _, currentEntry = getStandaloneBarEntry(panelId, entryId)
-				return not (currentEntry and currentEntry.cooldownVisibilityUseGlobal == false)
-			end,
-			get = function() return getStandaloneBarVisibility(panelId, entryId, "showOnCooldown") end,
-			set = function(_, value) setEntryBarBoolean(panelId, entryId, "showOnCooldown", value) end,
-		},
+	return {
+		panelId = panelId,
+		entryId = entryId,
+		SettingType = SettingType,
+		labelDefaultFontPath = labelDefaultFontPath,
+		labelDefaultFontSize = labelDefaultFontSize,
+		labelDefaultFontStyle = labelDefaultFontStyle,
+		valueDefaultFontPath = valueDefaultFontPath,
+		valueDefaultFontSize = valueDefaultFontSize,
+		valueDefaultFontStyle = valueDefaultFontStyle,
 	}
+end
 
+local function getStandaloneBarContextPanelEntry(ctx)
+	return getStandaloneBarEntry(ctx.panelId, ctx.entryId)
+end
+
+local function getStandaloneBarContextEntry(ctx)
+	local _, entry = getStandaloneBarContextPanelEntry(ctx)
+	return entry
+end
+
+local function appendBarStandaloneAppearanceSettings(settings, ctx)
+	local panelId = ctx.panelId
+	local entryId = ctx.entryId
+	local SettingType = ctx.SettingType
+
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBars"] or "Bars",
+		kind = SettingType.Collapsible,
+		id = "eqolCooldownPanelStandaloneBar",
+		defaultCollapsed = false,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelMode"] or "Mode",
+		kind = SettingType.Dropdown,
+		parentId = "eqolCooldownPanelStandaloneBar",
+		height = 140,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode)
+		end,
+		set = function(_, value) setEntryBarMode(panelId, entryId, value) end,
+		generator = function(_, root)
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			if not currentEntry then return end
+			for _, option in ipairs({
+				{ value = Bars.BAR_MODE.COOLDOWN, label = getEntryBarModeLabel(Bars.BAR_MODE.COOLDOWN) },
+				{ value = Bars.BAR_MODE.CHARGES, label = getEntryBarModeLabel(Bars.BAR_MODE.CHARGES) },
+				{ value = Bars.BAR_MODE.STACKS, label = getEntryBarModeLabel(Bars.BAR_MODE.STACKS) },
+			}) do
+				if supportsBarMode(currentEntry, option.value) then
+					root:CreateRadio(option.label, function()
+						local refreshedEntry = getStandaloneBarContextEntry(ctx)
+						return normalizeBarMode(refreshedEntry and refreshedEntry.barMode, Bars.DEFAULTS.barMode) == option.value
+					end, function()
+						setEntryBarMode(panelId, entryId, option.value)
+					end)
+				end
+			end
+		end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarWidth"] or "Bar width",
+		kind = SettingType.Slider,
+		parentId = "eqolCooldownPanelStandaloneBar",
+		minValue = BAR_WIDTH_MIN,
+		maxValue = BAR_WIDTH_MAX,
+		valueStep = 1,
+		allowInput = true,
+		get = function()
+			local panelRef, entryRef = getStandaloneBarContextPanelEntry(ctx)
+			local configuredWidth = normalizeBarWidth(entryRef and entryRef.barWidth, Bars.DEFAULTS.barWidth)
+			if configuredWidth > 0 then return configuredWidth end
+			local slotSize = getEntryBaseSlotSize(panelRef, entryRef)
+			local spacing = Helper.ClampInt(panelRef and panelRef.layout and panelRef.layout.spacing, 0, Helper.SPACING_RANGE or 200, Helper.PANEL_LAYOUT_DEFAULTS and Helper.PANEL_LAYOUT_DEFAULTS.spacing or 2)
+			local span = normalizeBarSpan(entryRef and entryRef.barSpan, Bars.DEFAULTS.barSpan)
+			return max(slotSize, (slotSize * span) + (max(span - 1, 0) * spacing))
+		end,
+		set = function(_, value) setEntryBarWidth(panelId, entryId, value) end,
+		formatter = function(value) return tostring(Helper.ClampInt(value, BAR_WIDTH_MIN, BAR_WIDTH_MAX, BAR_WIDTH_MIN)) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarHeight"] or "Bar height",
+		kind = SettingType.Slider,
+		parentId = "eqolCooldownPanelStandaloneBar",
+		minValue = BAR_HEIGHT_MIN,
+		maxValue = BAR_HEIGHT_MAX,
+		valueStep = 1,
+		allowInput = true,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarHeight(currentEntry and currentEntry.barHeight, Bars.DEFAULTS.barHeight)
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barHeight", Helper.ClampInt(value, BAR_HEIGHT_MIN, BAR_HEIGHT_MAX, Bars.DEFAULTS.barHeight)) end,
+		formatter = function(value) return tostring(Helper.ClampInt(value, BAR_HEIGHT_MIN, BAR_HEIGHT_MAX, Bars.DEFAULTS.barHeight)) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarOrientation"] or "Bar orientation",
+		kind = SettingType.Dropdown,
+		parentId = "eqolCooldownPanelStandaloneBar",
+		height = 120,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarOrientation(currentEntry and currentEntry.barOrientation, Bars.DEFAULTS.barOrientation)
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barOrientation", normalizeBarOrientation(value, Bars.DEFAULTS.barOrientation)) end,
+		generator = function(_, root)
+			for _, option in ipairs({
+				{ value = BAR_ORIENTATION_HORIZONTAL, label = L["CooldownPanelBarOrientationHorizontal"] or "Horizontal" },
+				{ value = BAR_ORIENTATION_VERTICAL, label = L["CooldownPanelBarOrientationVertical"] or "Vertical" },
+			}) do
+				root:CreateRadio(option.label, function()
+					local currentEntry = getStandaloneBarContextEntry(ctx)
+					return normalizeBarOrientation(currentEntry and currentEntry.barOrientation, Bars.DEFAULTS.barOrientation) == option.value
+				end, function()
+					setEntryBarField(panelId, entryId, "barOrientation", option.value)
+				end)
+			end
+		end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarOffsetX"] or "Bar X",
+		kind = SettingType.Slider,
+		parentId = "eqolCooldownPanelStandaloneBar",
+		minValue = BAR_OFFSET_MIN,
+		maxValue = BAR_OFFSET_MAX,
+		valueStep = 1,
+		allowInput = true,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarOffset(currentEntry and currentEntry.barOffsetX, Bars.DEFAULTS.barOffsetX)
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barOffsetX", normalizeBarOffset(value, Bars.DEFAULTS.barOffsetX)) end,
+		formatter = function(value) return tostring(normalizeBarOffset(value, Bars.DEFAULTS.barOffsetX)) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarOffsetY"] or "Bar Y",
+		kind = SettingType.Slider,
+		parentId = "eqolCooldownPanelStandaloneBar",
+		minValue = BAR_OFFSET_MIN,
+		maxValue = BAR_OFFSET_MAX,
+		valueStep = 1,
+		allowInput = true,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarOffset(currentEntry and currentEntry.barOffsetY, Bars.DEFAULTS.barOffsetY)
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barOffsetY", normalizeBarOffset(value, Bars.DEFAULTS.barOffsetY)) end,
+		formatter = function(value) return tostring(normalizeBarOffset(value, Bars.DEFAULTS.barOffsetY)) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarTexture"] or "Bar texture",
+		kind = SettingType.Dropdown,
+		parentId = "eqolCooldownPanelStandaloneBar",
+		height = BAR_TEXTURE_MENU_HEIGHT,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return getBarTextureSelection(currentEntry)
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barTexture", value) end,
+		generator = function(_, root)
+			for _, option in ipairs(getBarTextureOptions()) do
+				root:CreateRadio(option.label, function()
+					local currentEntry = getStandaloneBarContextEntry(ctx)
+					return getBarTextureSelection(currentEntry) == option.value
+				end, function()
+					setEntryBarField(panelId, entryId, "barTexture", option.value)
+				end)
+			end
+		end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarColor"] or "Bar color",
+		kind = SettingType.Color,
+		parentId = "eqolCooldownPanelStandaloneBar",
+		hasOpacity = true,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			local color = getBarModeColor(currentEntry, normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode))
+			return { r = color[1], g = color[2], b = color[3], a = color[4] }
+		end,
+		set = function(_, value)
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			local fallback = getDefaultBarColorForMode(normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode))
+			setEntryBarField(panelId, entryId, "barColor", Helper.NormalizeColor(value, fallback))
+		end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarProcGlowColor"] or "Proc glow color",
+		kind = SettingType.Color,
+		parentId = "eqolCooldownPanelStandaloneBar",
+		hasOpacity = true,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			local color = Helper.NormalizeColor(currentEntry and currentEntry.barProcGlowColor, Bars.DEFAULTS.barProcGlowColor)
+			return { r = color[1], g = color[2], b = color[3], a = color[4] }
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barProcGlowColor", Helper.NormalizeColor(value, Bars.DEFAULTS.barProcGlowColor)) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarBackgroundColor"] or "Background color",
+		kind = SettingType.Color,
+		parentId = "eqolCooldownPanelStandaloneBar",
+		hasOpacity = true,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			local color = Helper.NormalizeColor(currentEntry and currentEntry.barBackgroundColor, Bars.DEFAULTS.barBackgroundColor)
+			return { r = color[1], g = color[2], b = color[3], a = color[4] }
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barBackgroundColor", Helper.NormalizeColor(value, Bars.DEFAULTS.barBackgroundColor)) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarBorderSize"] or "Border size",
+		kind = SettingType.Slider,
+		parentId = "eqolCooldownPanelStandaloneBar",
+		minValue = BAR_BORDER_SIZE_MIN,
+		maxValue = BAR_BORDER_SIZE_MAX,
+		valueStep = 1,
+		allowInput = true,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarBorderSize(currentEntry and currentEntry.barBorderSize, Bars.DEFAULTS.barBorderSize)
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barBorderSize", Helper.ClampInt(value, BAR_BORDER_SIZE_MIN, BAR_BORDER_SIZE_MAX, Bars.DEFAULTS.barBorderSize)) end,
+		formatter = function(value) return tostring(Helper.ClampInt(value, BAR_BORDER_SIZE_MIN, BAR_BORDER_SIZE_MAX, Bars.DEFAULTS.barBorderSize)) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarBorderOffset"] or (L["Border offset"] or "Border offset"),
+		kind = SettingType.Slider,
+		parentId = "eqolCooldownPanelStandaloneBar",
+		minValue = BAR_BORDER_OFFSET_MIN,
+		maxValue = BAR_BORDER_OFFSET_MAX,
+		valueStep = 1,
+		allowInput = true,
+		disabled = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarBorderSize(currentEntry and currentEntry.barBorderSize, Bars.DEFAULTS.barBorderSize) <= 0
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarBorderOffset(currentEntry and currentEntry.barBorderOffset, Bars.DEFAULTS.barBorderOffset)
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barBorderOffset", normalizeBarBorderOffset(value, Bars.DEFAULTS.barBorderOffset)) end,
+		formatter = function(value) return tostring(normalizeBarBorderOffset(value, Bars.DEFAULTS.barBorderOffset)) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarBorderTexture"] or "Border texture",
+		kind = SettingType.Dropdown,
+		parentId = "eqolCooldownPanelStandaloneBar",
+		height = BAR_TEXTURE_MENU_HEIGHT,
+		disabled = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarBorderSize(currentEntry and currentEntry.barBorderSize, Bars.DEFAULTS.barBorderSize) <= 0
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarBorderTexture(currentEntry and currentEntry.barBorderTexture, Bars.DEFAULTS.barBorderTexture)
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barBorderTexture", value) end,
+		generator = function(_, root)
+			for _, option in ipairs(getBarBorderTextureOptions()) do
+				root:CreateRadio(option.label, function()
+					local currentEntry = getStandaloneBarContextEntry(ctx)
+					return normalizeBarBorderTexture(currentEntry and currentEntry.barBorderTexture, Bars.DEFAULTS.barBorderTexture) == option.value
+				end, function()
+					setEntryBarField(panelId, entryId, "barBorderTexture", option.value)
+				end)
+			end
+		end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarBorderColor"] or "Border color",
+		kind = SettingType.Color,
+		parentId = "eqolCooldownPanelStandaloneBar",
+		hasOpacity = true,
+		disabled = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarBorderSize(currentEntry and currentEntry.barBorderSize, Bars.DEFAULTS.barBorderSize) <= 0
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			local color = Helper.NormalizeColor(currentEntry and currentEntry.barBorderColor, Bars.DEFAULTS.barBorderColor)
+			return { r = color[1], g = color[2], b = color[3], a = color[4] }
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barBorderColor", Helper.NormalizeColor(value, Bars.DEFAULTS.barBorderColor)) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarChargesSegmented"] or "Segment charges",
+		kind = SettingType.Checkbox,
+		parentId = "eqolCooldownPanelStandaloneBar",
+		isShown = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.CHARGES
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return getStoredBoolean(currentEntry, "barChargesSegmented", Bars.DEFAULTS.barChargesSegmented)
+		end,
+		set = function(_, value) setEntryBarBoolean(panelId, entryId, "barChargesSegmented", value) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarChargesGap"] or "Charges gap",
+		kind = SettingType.Slider,
+		parentId = "eqolCooldownPanelStandaloneBar",
+		minValue = BAR_CHARGES_GAP_MIN,
+		maxValue = BAR_CHARGES_GAP_MAX,
+		valueStep = 1,
+		allowInput = true,
+		isShown = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.CHARGES
+		end,
+		disabled = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return not getStoredBoolean(currentEntry, "barChargesSegmented", Bars.DEFAULTS.barChargesSegmented)
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarChargesGap(currentEntry and currentEntry.barChargesGap, Bars.DEFAULTS.barChargesGap)
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barChargesGap", normalizeBarChargesGap(value, Bars.DEFAULTS.barChargesGap)) end,
+		formatter = function(value) return tostring(normalizeBarChargesGap(value, Bars.DEFAULTS.barChargesGap)) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarSegmentDirection"] or "Segment direction",
+		kind = SettingType.Dropdown,
+		parentId = "eqolCooldownPanelStandaloneBar",
+		height = 120,
+		isShown = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.CHARGES
+		end,
+		disabled = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return not getStoredBoolean(currentEntry, "barChargesSegmented", Bars.DEFAULTS.barChargesSegmented)
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarSegmentDirection(currentEntry and currentEntry.barSegmentDirection, Bars.DEFAULTS.barSegmentDirection)
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barSegmentDirection", normalizeBarSegmentDirection(value, Bars.DEFAULTS.barSegmentDirection)) end,
+		generator = function(_, root)
+			for _, option in ipairs({
+				{ value = BAR_ORIENTATION_HORIZONTAL, label = L["CooldownPanelBarOrientationHorizontal"] or "Horizontal" },
+				{ value = BAR_ORIENTATION_VERTICAL, label = L["CooldownPanelBarOrientationVertical"] or "Vertical" },
+			}) do
+				root:CreateRadio(option.label, function()
+					local currentEntry = getStandaloneBarContextEntry(ctx)
+					return normalizeBarSegmentDirection(currentEntry and currentEntry.barSegmentDirection, Bars.DEFAULTS.barSegmentDirection) == option.value
+				end, function()
+					setEntryBarField(panelId, entryId, "barSegmentDirection", option.value)
+				end)
+			end
+		end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarSegmentReverse"] or "Reverse segment order",
+		kind = SettingType.Checkbox,
+		parentId = "eqolCooldownPanelStandaloneBar",
+		isShown = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.CHARGES
+		end,
+		disabled = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return not getStoredBoolean(currentEntry, "barChargesSegmented", Bars.DEFAULTS.barChargesSegmented)
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return getStoredBoolean(currentEntry, "barSegmentReverse", Bars.DEFAULTS.barSegmentReverse)
+		end,
+		set = function(_, value) setEntryBarBoolean(panelId, entryId, "barSegmentReverse", value) end,
+	}
+end
+
+local function appendBarStandaloneTextSettings(settings, ctx)
+	local panelId = ctx.panelId
+	local entryId = ctx.entryId
+	local SettingType = ctx.SettingType
+	local labelDefaultFontPath = ctx.labelDefaultFontPath
+	local labelDefaultFontSize = ctx.labelDefaultFontSize
+	local labelDefaultFontStyle = ctx.labelDefaultFontStyle
+	local valueDefaultFontPath = ctx.valueDefaultFontPath
+	local valueDefaultFontSize = ctx.valueDefaultFontSize
+	local valueDefaultFontStyle = ctx.valueDefaultFontStyle
+
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarTextHeader"] or "Text",
+		kind = SettingType.Collapsible,
+		id = "eqolCooldownPanelStandaloneBarText",
+		defaultCollapsed = false,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarShowIcon"] or "Show icon",
+		kind = SettingType.Checkbox,
+		parentId = "eqolCooldownPanelStandaloneBarText",
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return getStoredBoolean(currentEntry, "barShowIcon", Bars.DEFAULTS.barShowIcon)
+		end,
+		set = function(_, value) setEntryBarBoolean(panelId, entryId, "barShowIcon", value) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarIconSize"] or (L["CooldownPanelIconSize"] or "Icon size"),
+		kind = SettingType.Slider,
+		parentId = "eqolCooldownPanelStandaloneBarText",
+		minValue = BAR_ICON_SIZE_MIN,
+		maxValue = BAR_ICON_SIZE_MAX,
+		valueStep = 1,
+		allowInput = true,
+		disabled = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return not getStoredBoolean(currentEntry, "barShowIcon", Bars.DEFAULTS.barShowIcon)
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			local configuredSize = normalizeBarIconSize(currentEntry and currentEntry.barIconSize, Bars.DEFAULTS.barIconSize)
+			if configuredSize > 0 then return configuredSize end
+			local currentHeight = normalizeBarHeight(currentEntry and currentEntry.barHeight, Bars.DEFAULTS.barHeight)
+			return max(BAR_ICON_SIZE_MIN, currentHeight - 4)
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barIconSize", normalizeBarIconSize(value, Bars.DEFAULTS.barIconSize)) end,
+		formatter = function(value) return tostring(Helper.ClampInt(value, BAR_ICON_SIZE_MIN, BAR_ICON_SIZE_MAX, BAR_ICON_SIZE_MIN)) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarIconPosition"] or "Icon position",
+		kind = SettingType.Dropdown,
+		parentId = "eqolCooldownPanelStandaloneBarText",
+		height = 120,
+		disabled = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return not getStoredBoolean(currentEntry, "barShowIcon", Bars.DEFAULTS.barShowIcon)
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarIconPosition(currentEntry and currentEntry.barIconPosition, Bars.DEFAULTS.barIconPosition)
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barIconPosition", normalizeBarIconPosition(value, Bars.DEFAULTS.barIconPosition)) end,
+		generator = function(_, root)
+			for _, option in ipairs({
+				{ value = BAR_ICON_POSITION_LEFT, label = L["Left"] or "Left" },
+				{ value = BAR_ICON_POSITION_RIGHT, label = L["Right"] or "Right" },
+				{ value = BAR_ICON_POSITION_TOP, label = L["CooldownPanelBarIconPositionTop"] or "Top" },
+				{ value = BAR_ICON_POSITION_BOTTOM, label = L["CooldownPanelBarIconPositionBottom"] or "Bottom" },
+			}) do
+				root:CreateRadio(option.label, function()
+					local currentEntry = getStandaloneBarContextEntry(ctx)
+					return normalizeBarIconPosition(currentEntry and currentEntry.barIconPosition, Bars.DEFAULTS.barIconPosition) == option.value
+				end, function()
+					setEntryBarField(panelId, entryId, "barIconPosition", option.value)
+				end)
+			end
+		end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarIconOffsetX"] or "Icon X",
+		kind = SettingType.Slider,
+		parentId = "eqolCooldownPanelStandaloneBarText",
+		minValue = -(Helper.OFFSET_RANGE or 500),
+		maxValue = Helper.OFFSET_RANGE or 500,
+		valueStep = 1,
+		allowInput = true,
+		disabled = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return not getStoredBoolean(currentEntry, "barShowIcon", Bars.DEFAULTS.barShowIcon)
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarIconOffset(currentEntry and currentEntry.barIconOffsetX, Bars.DEFAULTS.barIconOffsetX)
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barIconOffsetX", normalizeBarIconOffset(value, Bars.DEFAULTS.barIconOffsetX)) end,
+		formatter = function(value) return tostring(normalizeBarIconOffset(value, Bars.DEFAULTS.barIconOffsetX)) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarIconOffsetY"] or "Icon Y",
+		kind = SettingType.Slider,
+		parentId = "eqolCooldownPanelStandaloneBarText",
+		minValue = -(Helper.OFFSET_RANGE or 500),
+		maxValue = Helper.OFFSET_RANGE or 500,
+		valueStep = 1,
+		allowInput = true,
+		disabled = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return not getStoredBoolean(currentEntry, "barShowIcon", Bars.DEFAULTS.barShowIcon)
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarIconOffset(currentEntry and currentEntry.barIconOffsetY, Bars.DEFAULTS.barIconOffsetY)
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barIconOffsetY", normalizeBarIconOffset(value, Bars.DEFAULTS.barIconOffsetY)) end,
+		formatter = function(value) return tostring(normalizeBarIconOffset(value, Bars.DEFAULTS.barIconOffsetY)) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarShowLabel"] or "Show label",
+		kind = SettingType.Checkbox,
+		parentId = "eqolCooldownPanelStandaloneBarText",
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return getStoredBoolean(currentEntry, "barShowLabel", Bars.DEFAULTS.barShowLabel)
+		end,
+		set = function(_, value) setEntryBarBoolean(panelId, entryId, "barShowLabel", value) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarShowValueText"] or "Show value",
+		kind = SettingType.Checkbox,
+		parentId = "eqolCooldownPanelStandaloneBarText",
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return getStoredBoolean(currentEntry, "barShowValueText", Bars.DEFAULTS.barShowValueText)
+		end,
+		set = function(_, value) setEntryBarBoolean(panelId, entryId, "barShowValueText", value) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarLabelFont"] or "Label font",
+		kind = SettingType.Dropdown,
+		parentId = "eqolCooldownPanelStandaloneBarText",
+		height = 220,
+		disabled = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return not (currentEntry and currentEntry.barShowLabel == true)
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return getStandaloneBarFontValue(currentEntry and currentEntry.barLabelFont)
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barLabelFont", value) end,
+		generator = function(_, root)
+			for _, option in ipairs(Helper.GetFontOptions(labelDefaultFontPath)) do
+				root:CreateRadio(option.label, function()
+					local currentEntry = getStandaloneBarContextEntry(ctx)
+					return getStandaloneBarFontValue(currentEntry and currentEntry.barLabelFont) == option.value
+				end, function()
+					setEntryBarField(panelId, entryId, "barLabelFont", option.value)
+				end)
+			end
+		end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarLabelStyle"] or "Label style",
+		kind = SettingType.Dropdown,
+		parentId = "eqolCooldownPanelStandaloneBarText",
+		height = 120,
+		disabled = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return not (currentEntry and currentEntry.barShowLabel == true)
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarFontStyle(currentEntry and currentEntry.barLabelStyle, labelDefaultFontStyle)
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barLabelStyle", Helper.NormalizeFontStyleChoice(value, labelDefaultFontStyle)) end,
+		generator = function(_, root)
+			for _, option in ipairs(Helper.FontStyleOptions) do
+				root:CreateRadio(option.label, function()
+					local currentEntry = getStandaloneBarContextEntry(ctx)
+					return normalizeBarFontStyle(currentEntry and currentEntry.barLabelStyle, labelDefaultFontStyle) == option.value
+				end, function()
+					setEntryBarField(panelId, entryId, "barLabelStyle", option.value)
+				end)
+			end
+		end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarLabelSize"] or "Label size",
+		kind = SettingType.Slider,
+		parentId = "eqolCooldownPanelStandaloneBarText",
+		minValue = BAR_FONT_SIZE_MIN,
+		maxValue = BAR_FONT_SIZE_MAX,
+		valueStep = 1,
+		allowInput = true,
+		disabled = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return not (currentEntry and currentEntry.barShowLabel == true)
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarFontSize(currentEntry and currentEntry.barLabelSize, labelDefaultFontSize)
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barLabelSize", Helper.ClampInt(value, BAR_FONT_SIZE_MIN, BAR_FONT_SIZE_MAX, labelDefaultFontSize)) end,
+		formatter = function(value) return tostring(Helper.ClampInt(value, BAR_FONT_SIZE_MIN, BAR_FONT_SIZE_MAX, labelDefaultFontSize)) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarLabelColor"] or "Label color",
+		kind = SettingType.Color,
+		parentId = "eqolCooldownPanelStandaloneBarText",
+		hasOpacity = true,
+		disabled = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return not (currentEntry and currentEntry.barShowLabel == true)
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			local color = Helper.NormalizeColor(currentEntry and currentEntry.barLabelColor, Bars.DEFAULTS.barLabelColor)
+			return { r = color[1], g = color[2], b = color[3], a = color[4] }
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barLabelColor", Helper.NormalizeColor(value, Bars.DEFAULTS.barLabelColor)) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarValueFont"] or "Value font",
+		kind = SettingType.Dropdown,
+		parentId = "eqolCooldownPanelStandaloneBarText",
+		height = 220,
+		disabled = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return not (currentEntry and currentEntry.barShowValueText == true)
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return getStandaloneBarFontValue(currentEntry and currentEntry.barValueFont)
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barValueFont", value) end,
+		generator = function(_, root)
+			for _, option in ipairs(Helper.GetFontOptions(valueDefaultFontPath)) do
+				root:CreateRadio(option.label, function()
+					local currentEntry = getStandaloneBarContextEntry(ctx)
+					return getStandaloneBarFontValue(currentEntry and currentEntry.barValueFont) == option.value
+				end, function()
+					setEntryBarField(panelId, entryId, "barValueFont", option.value)
+				end)
+			end
+		end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarValueStyle"] or "Value style",
+		kind = SettingType.Dropdown,
+		parentId = "eqolCooldownPanelStandaloneBarText",
+		height = 120,
+		disabled = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return not (currentEntry and currentEntry.barShowValueText == true)
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarFontStyle(currentEntry and currentEntry.barValueStyle, valueDefaultFontStyle)
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barValueStyle", Helper.NormalizeFontStyleChoice(value, valueDefaultFontStyle)) end,
+		generator = function(_, root)
+			for _, option in ipairs(Helper.FontStyleOptions) do
+				root:CreateRadio(option.label, function()
+					local currentEntry = getStandaloneBarContextEntry(ctx)
+					return normalizeBarFontStyle(currentEntry and currentEntry.barValueStyle, valueDefaultFontStyle) == option.value
+				end, function()
+					setEntryBarField(panelId, entryId, "barValueStyle", option.value)
+				end)
+			end
+		end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarValueSize"] or "Value size",
+		kind = SettingType.Slider,
+		parentId = "eqolCooldownPanelStandaloneBarText",
+		minValue = BAR_FONT_SIZE_MIN,
+		maxValue = BAR_FONT_SIZE_MAX,
+		valueStep = 1,
+		allowInput = true,
+		disabled = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return not (currentEntry and currentEntry.barShowValueText == true)
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarFontSize(currentEntry and currentEntry.barValueSize, valueDefaultFontSize)
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barValueSize", Helper.ClampInt(value, BAR_FONT_SIZE_MIN, BAR_FONT_SIZE_MAX, valueDefaultFontSize)) end,
+		formatter = function(value) return tostring(Helper.ClampInt(value, BAR_FONT_SIZE_MIN, BAR_FONT_SIZE_MAX, valueDefaultFontSize)) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarValueColor"] or "Value color",
+		kind = SettingType.Color,
+		parentId = "eqolCooldownPanelStandaloneBarText",
+		hasOpacity = true,
+		disabled = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return not (currentEntry and currentEntry.barShowValueText == true)
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			local color = Helper.NormalizeColor(currentEntry and currentEntry.barValueColor, Bars.DEFAULTS.barValueColor)
+			return { r = color[1], g = color[2], b = color[3], a = color[4] }
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barValueColor", Helper.NormalizeColor(value, Bars.DEFAULTS.barValueColor)) end,
+	}
+end
+
+local function appendBarStandaloneVisibilitySettings(settings, ctx)
+	local panelId = ctx.panelId
+	local entryId = ctx.entryId
+	local SettingType = ctx.SettingType
+
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarVisibilityHeader"] or (L["Display"] or "Display"),
+		kind = SettingType.Collapsible,
+		id = "eqolCooldownPanelStandaloneBarVisibility",
+		defaultCollapsed = true,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelAlwaysShow"] or "Always show",
+		kind = SettingType.Checkbox,
+		parentId = "eqolCooldownPanelStandaloneBarVisibility",
+		isShown = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return getEntryResolvedType(currentEntry) == "ITEM"
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return currentEntry and currentEntry.alwaysShow ~= false or false
+		end,
+		set = function(_, value) setEntryBarBoolean(panelId, entryId, "alwaysShow", value) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelOverwritePanelCDMAuraAlwaysShow"] or "Overwrite panel tracked aura display",
+		kind = SettingType.Checkbox,
+		parentId = "eqolCooldownPanelStandaloneBarVisibility",
+		isShown = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return getEntryResolvedType(currentEntry) == "CDM_AURA"
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return currentEntry and currentEntry.cdmAuraAlwaysShowUseGlobal == false or false
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "cdmAuraAlwaysShowUseGlobal", value ~= true) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelCDMAuraAlwaysShowMode"] or "Tracked aura display",
+		kind = SettingType.Dropdown,
+		parentId = "eqolCooldownPanelStandaloneBarVisibility",
+		height = 180,
+		isShown = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return getEntryResolvedType(currentEntry) == "CDM_AURA"
+		end,
+		disabled = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return not (currentEntry and currentEntry.cdmAuraAlwaysShowUseGlobal == false)
+		end,
+		get = function() return getStandaloneBarCDMAuraMode(panelId, entryId) end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "cdmAuraAlwaysShowMode", normalizeCDMAuraAlwaysShowModeValue(value, "HIDE")) end,
+		generator = function(_, root)
+			for _, option in ipairs(CooldownPanels.GetCDMAuraAlwaysShowOptions and CooldownPanels:GetCDMAuraAlwaysShowOptions() or {}) do
+				root:CreateRadio(option.label, function()
+					return getStandaloneBarCDMAuraMode(panelId, entryId) == option.value
+				end, function()
+					setEntryBarField(panelId, entryId, "cdmAuraAlwaysShowMode", option.value)
+				end)
+			end
+		end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelOverwriteGlobalDefault"] or "Overwrite global default",
+		kind = SettingType.Checkbox,
+		parentId = "eqolCooldownPanelStandaloneBarVisibility",
+		isShown = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return getEntryResolvedType(currentEntry) ~= "CDM_AURA"
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return currentEntry and currentEntry.cooldownVisibilityUseGlobal == false or false
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "cooldownVisibilityUseGlobal", value ~= true) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelHideOnCooldown"] or "Hide on cooldown",
+		kind = SettingType.Checkbox,
+		parentId = "eqolCooldownPanelStandaloneBarVisibility",
+		isShown = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return getEntryResolvedType(currentEntry) ~= "CDM_AURA"
+		end,
+		disabled = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return not (currentEntry and currentEntry.cooldownVisibilityUseGlobal == false)
+		end,
+		get = function() return getStandaloneBarVisibility(panelId, entryId, "hideOnCooldown") end,
+		set = function(_, value) setEntryBarBoolean(panelId, entryId, "hideOnCooldown", value) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelShowOnCooldown"] or "Show on cooldown",
+		kind = SettingType.Checkbox,
+		parentId = "eqolCooldownPanelStandaloneBarVisibility",
+		isShown = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return getEntryResolvedType(currentEntry) ~= "CDM_AURA"
+		end,
+		disabled = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return not (currentEntry and currentEntry.cooldownVisibilityUseGlobal == false)
+		end,
+		get = function() return getStandaloneBarVisibility(panelId, entryId, "showOnCooldown") end,
+		set = function(_, value) setEntryBarBoolean(panelId, entryId, "showOnCooldown", value) end,
+	}
+end
+
+local function buildBarStandaloneSettings(panelId, entryId)
+	local ctx = createBarStandaloneSettingsContext(panelId, entryId)
+	if not ctx then return nil end
+	local settings = {}
+	appendBarStandaloneAppearanceSettings(settings, ctx)
+	appendBarStandaloneTextSettings(settings, ctx)
+	appendBarStandaloneVisibilitySettings(settings, ctx)
 	return settings
 end
 

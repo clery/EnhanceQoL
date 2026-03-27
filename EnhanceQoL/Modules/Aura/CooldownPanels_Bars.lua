@@ -22,6 +22,7 @@ Bars._eqolSupplementLoaded = true
 
 local CreateFrame = CreateFrame
 local GetTime = GetTime
+local InCombatLockdown = InCombatLockdown
 local UIParent = UIParent
 local tonumber = tonumber
 local tostring = tostring
@@ -29,6 +30,7 @@ local type = type
 local ipairs = ipairs
 local pairs = pairs
 local format = string.format
+local CooldownFrame_Clear = CooldownFrame_Clear
 local floor = math.floor
 local min = math.min
 local max = math.max
@@ -161,6 +163,71 @@ local function safeNumber(value)
 		if numeric then return numeric end
 	end
 	return nil
+end
+
+local function getDebugText(value)
+	if type(value) ~= "string" then return nil end
+	if isSecretValue(value) then return "<secret:string>" end
+	return value
+end
+
+local function getBarsDebugStore()
+	local root = nil
+	if CooldownPanels.GetRoot then
+		root = CooldownPanels:GetRoot()
+	elseif CooldownPanels.EnsureDB then
+		root = CooldownPanels:EnsureDB()
+	end
+	if type(root) ~= "table" then return nil end
+	if type(root._eqolBarsDebug) ~= "table" then
+		root._eqolBarsDebug = {
+			enabled = true,
+			maxEntries = 4000,
+			nextIndex = 1,
+			count = 0,
+			seq = 0,
+			logs = {},
+		}
+	end
+	local store = root._eqolBarsDebug
+	if store.enabled == nil then store.enabled = true end
+	if type(store.maxEntries) ~= "number" or store.maxEntries < 100 then store.maxEntries = 4000 end
+	if type(store.nextIndex) ~= "number" or store.nextIndex < 1 then store.nextIndex = 1 end
+	if type(store.count) ~= "number" or store.count < 0 then store.count = 0 end
+	if type(store.seq) ~= "number" or store.seq < 0 then store.seq = 0 end
+	if type(store.logs) ~= "table" then store.logs = {} end
+	return store
+end
+
+local function getDebugValue(value)
+	if value == nil then return nil end
+	if isSecretValue(value) then return "<secret:" .. type(value) .. ">" end
+	local valueType = type(value)
+	if valueType == "boolean" or valueType == "number" or valueType == "string" then return value end
+	return "<" .. valueType .. ">"
+end
+
+local function writeBarsDebug(stage, payload)
+	local store = getBarsDebugStore()
+	if not (store and store.enabled == true) then return end
+	local entry = {
+		seq = (store.seq or 0) + 1,
+		t = (Api.GetTime and Api.GetTime()) or GetTime() or 0,
+		stage = tostring(stage or "?"),
+		combat = InCombatLockdown and InCombatLockdown() == true or false,
+	}
+	store.seq = entry.seq
+	if type(payload) == "table" then
+		for key, value in pairs(payload) do
+			entry[key] = getDebugValue(value)
+		end
+	end
+	local index = store.nextIndex or 1
+	store.logs[index] = entry
+	index = index + 1
+	if index > store.maxEntries then index = 1 end
+	store.nextIndex = index
+	store.count = min((store.count or 0) + 1, store.maxEntries)
 end
 
 local function isSafeLessThan(a, b)
@@ -709,104 +776,33 @@ getBarColor = function(mode)
 end
 
 local function ensureBarUpdater()
-	if Bars.updateFrame then return Bars.updateFrame end
-	local frame = CreateFrame("Frame")
-	frame:Hide()
-	frame.elapsed = 0
-	frame:SetScript("OnUpdate", function(self, elapsed)
-		self.elapsed = (self.elapsed or 0) + elapsed
-		if self.elapsed < 0.05 then return end
-		self.elapsed = 0
-		local runtime = getRuntimeState()
-		local activeBars = runtime.activeBars
-		local useQueryBatch = CooldownPanels.BeginRuntimeQueryBatch and CooldownPanels.EndRuntimeQueryBatch
-		if useQueryBatch then CooldownPanels:BeginRuntimeQueryBatch() end
-		for barFrame in pairs(activeBars) do
-			if not (barFrame and barFrame:IsShown() and barFrame._eqolBarState) then
-				activeBars[barFrame] = nil
-			else
-				local state = barFrame._eqolBarState
-				local now = (Api.GetTime and Api.GetTime()) or GetTime()
-				local icon = state.icon
-				if icon and icon.GetAlpha then barFrame:SetAlpha(icon:GetAlpha()) end
-				if state.mode == Bars.BAR_MODE.COOLDOWN then
-					local progress = nil
-					if safeNumber(state.startTime) and safeNumber(state.duration) and safeNumber(state.duration) > 0 then
-						local rate = safeNumber(state.rate) or 1
-						progress = clamp(((now - state.startTime) * rate) / state.duration, 0, 1)
-					end
-					if progress ~= nil then
-						barFrame.fill:SetValue(progress)
-						if barFrame.value and state.showValueText == true then
-							local remaining = max(0, state.duration - ((now - state.startTime) * (safeNumber(state.rate) or 1)))
-							barFrame.value:SetText(durationToText(remaining) or (state.valueText or ""))
-						end
-						if progress >= 1 then
-							activeBars[barFrame] = nil
-						end
-					elseif state.sourceText then
-						local text = state.sourceText()
-						if text and barFrame.value and state.showValueText == true then barFrame.value:SetText(text) end
-					end
-				elseif state.mode == Bars.BAR_MODE.CHARGES then
-					refreshChargeBarRuntimeState(state, icon)
-					local displayedCharges = getDisplayedCharges(icon) or safeNumber(state.currentCharges)
-					if displayedCharges ~= nil then state.currentCharges = displayedCharges end
-					local progress = getChargeBarProgress(state)
-					if barFrame.value and state.showValueText == true then
-						barFrame.value:SetText(getChargeBarValueText(icon, state.currentCharges, state.maxCharges) or (state.valueText or ""))
-					end
-					if state.segmentedCharges == true and barFrame._eqolSegmentCount and barFrame._eqolSegmentCount > 0 then
-						local descriptors = getChargeSegmentDescriptors(state, barFrame._eqolSegmentCount)
-						for index = 1, barFrame._eqolSegmentCount do
-							local segment = barFrame.segments and barFrame.segments[index] or nil
-							local descriptor = descriptors[index] or nil
-							if segment and segment.fill then
-								if not setStatusBarTimerDuration(segment.fill, descriptor and descriptor.durationObject or nil) then
-									setStatusBarImmediateValue(segment.fill, descriptor and descriptor.value or 0)
-								end
-							end
-						end
-					elseif barFrame.fill then
-						setStatusBarImmediateValue(barFrame.fill, progress)
-					end
-					if state.chargeInfoActive ~= true and state.lastNonGCDCooldownActive ~= true and state.chargeDurationObject == nil and state.cooldownDurationObject == nil then
-						activeBars[barFrame] = nil
-					end
-				else
-					activeBars[barFrame] = nil
-				end
-			end
-		end
-		if useQueryBatch then CooldownPanels:EndRuntimeQueryBatch() end
-		if not next(getRuntimeState().activeBars) then self:Hide() end
-	end)
-	Bars.updateFrame = frame
-	return frame
+	return nil
 end
 
 local function trackBarAnimation(barFrame)
-	if not (barFrame and barFrame._eqolBarState) then return end
-	local mode = barFrame._eqolBarState.mode
-	if mode ~= Bars.BAR_MODE.COOLDOWN and mode ~= Bars.BAR_MODE.CHARGES then return end
-	local runtime = getRuntimeState()
-	runtime.activeBars[barFrame] = true
-	local updater = ensureBarUpdater()
-	if updater and not updater:IsShown() then updater:Show() end
+	return
 end
 
 local function stopBarAnimation(barFrame)
 	local runtime = getRuntimeState()
 	if runtime.activeBars then runtime.activeBars[barFrame] = nil end
+	if Bars.updateFrame and Bars.updateFrame.Hide then Bars.updateFrame:Hide() end
 end
 
 local function applyStatusBarTexture(statusBar, texturePath)
 	if not statusBar then return end
-	statusBar:SetStatusBarTexture(texturePath)
+	local resolvedTexture = texturePath or "Interface\\TargetingFrame\\UI-StatusBar"
+	if statusBar._eqolStatusBarTexturePath ~= resolvedTexture then
+		statusBar:SetStatusBarTexture(resolvedTexture)
+		statusBar._eqolStatusBarTexturePath = resolvedTexture
+	end
 	local texture = statusBar:GetStatusBarTexture()
-	if texture and texture.SetSnapToPixelGrid then
-		texture:SetSnapToPixelGrid(false)
-		texture:SetTexelSnappingBias(0)
+	if texture ~= statusBar._eqolStatusBarTexture then
+		if texture and texture.SetSnapToPixelGrid then
+			texture:SetSnapToPixelGrid(false)
+			texture:SetTexelSnappingBias(0)
+		end
+		statusBar._eqolStatusBarTexture = texture
 	end
 end
 
@@ -849,6 +845,47 @@ local function ensureBarSegment(frame, index)
 	segment:Hide()
 	frame.segments[index] = segment
 	return segment
+end
+
+local function clearCooldownFrame(frame)
+	if not frame then return end
+	if frame.Clear then
+		frame:Clear()
+	elseif CooldownFrame_Clear then
+		CooldownFrame_Clear(frame)
+	else
+		frame:Hide()
+	end
+	frame._eqolDurationObject = nil
+end
+
+local function ensureBarCooldownGate(frame)
+	if frame._eqolCooldownGate then return frame._eqolCooldownGate end
+	local gate = CreateFrame("Cooldown", nil, frame.body or frame, "CooldownFrameTemplate")
+	gate:SetAllPoints(frame.body or frame)
+	if gate.SetDrawSwipe then gate:SetDrawSwipe(false) end
+	if gate.SetDrawEdge then gate:SetDrawEdge(false) end
+	if gate.SetDrawBling then gate:SetDrawBling(false) end
+	if gate.SetHideCountdownNumbers then gate:SetHideCountdownNumbers(true) end
+	if gate.SetAlpha then gate:SetAlpha(0) end
+	if gate.EnableMouse then gate:EnableMouse(false) end
+	gate:Hide()
+	frame._eqolCooldownGate = gate
+	return gate
+end
+
+local function setCooldownFrameDuration(frame, durationObject)
+	if not frame then return false end
+	if durationObject and frame.SetCooldownFromDurationObject then
+		if frame._eqolDurationObject ~= durationObject then
+			clearCooldownFrame(frame)
+			frame:SetCooldownFromDurationObject(durationObject)
+			frame._eqolDurationObject = durationObject
+		end
+		return true
+	end
+	if frame._eqolDurationObject ~= nil then clearCooldownFrame(frame) end
+	return false
 end
 
 local function hideUnusedBarSegments(frame, firstIndex)
@@ -1166,18 +1203,9 @@ end
 shouldShowChargeSegmentFill = function(state, index)
 	if type(index) ~= "number" or index <= 1 then return true end
 	if type(state) ~= "table" then return true end
-	local entryKey = state.entryKey
-	local runtime = getRuntimeState()
-	local cache = runtime.chargeLastNonGCDCooldownDurationByEntryKey or {}
-	runtime.chargeLastNonGCDCooldownDurationByEntryKey = cache
-	local cooldownDurationObject = nil
-	if state.cooldownGCD == true then
-		cooldownDurationObject = entryKey and cache[entryKey] or nil
-	else
-		cooldownDurationObject = state.rawCooldownDurationObject or state.cooldownDurationObject
-		if entryKey then cache[entryKey] = cooldownDurationObject end
-	end
-	if not cooldownDurationObject then return true end
+	if state.lastNonGCDCooldownActive ~= true then return true end
+	local cooldownDurationObject = state.lastNonGCDCooldownDurationObject
+	if not cooldownDurationObject then return false end
 	if cooldownDurationObject.IsZero then return cooldownDurationObject:IsZero() end
 	local remaining = getDurationObjectRemaining(cooldownDurationObject)
 	if remaining == nil then return false end
@@ -1198,15 +1226,17 @@ setStatusBarImmediateValue = function(statusBar, value)
 	if statusBar.SetValue then statusBar:SetValue(clamp(value or 0, 0, 1), BAR_STATUS_INTERPOLATION_IMMEDIATE) end
 	if statusBar.SetToTargetValue then statusBar:SetToTargetValue() end
 	statusBar._eqolTimerDurationObject = nil
+	statusBar._eqolTimerDurationKey = nil
 end
 
-setStatusBarTimerDuration = function(statusBar, durationObject)
+setStatusBarTimerDuration = function(statusBar, durationObject, cacheKey)
 	if not (statusBar and durationObject and statusBar.SetTimerDuration) then return false end
-	if statusBar._eqolTimerDurationObject ~= durationObject then
+	local appliedKey = cacheKey or durationObject
+	if statusBar._eqolTimerDurationKey ~= appliedKey then
 		if statusBar.SetMinMaxValues then statusBar:SetMinMaxValues(0, 1, BAR_STATUS_INTERPOLATION_IMMEDIATE) end
 		statusBar:SetTimerDuration(durationObject, BAR_STATUS_INTERPOLATION_IMMEDIATE, BAR_STATUS_TIMER_DIRECTION_ELAPSED)
-		if statusBar.SetToTargetValue then statusBar:SetToTargetValue() end
 		statusBar._eqolTimerDurationObject = durationObject
+		statusBar._eqolTimerDurationKey = appliedKey
 	end
 	return true
 end
@@ -1295,6 +1325,20 @@ refreshChargeBarRuntimeState = function(state, icon)
 	local maxCharges = chargesInfo and safeNumber(chargesInfo.maxCharges) or safeNumber(state.maxCharges)
 	local hasRecharge = chargeInfoActive == true or cachedCooldownActive == true
 	maxCharges = getChargeSessionMax(entryKey, maxCharges, displayedCharges, hasRecharge, false)
+	local displayedChargePolicy = nil
+	if entryKey and maxCharges == 2 and displayedCharges ~= nil then
+		if displayedCharges <= 0 and chargeInfoActive == true then
+			cachedCooldownActive = true
+			activeByKey[entryKey] = true
+			displayedChargePolicy = "force_zero_state"
+		elseif displayedCharges >= 1 then
+			cachedCooldownActive = false
+			cachedCooldownDurationObject = nil
+			activeByKey[entryKey] = false
+			durationByKey[entryKey] = nil
+			displayedChargePolicy = "force_ready_state"
+		end
+	end
 
 	local rechargeStart = chargesInfo and safeNumber(chargesInfo.cooldownStartTime) or nil
 	local rechargeDuration = chargesInfo and safeNumber(chargesInfo.cooldownDuration) or nil
@@ -1326,6 +1370,33 @@ refreshChargeBarRuntimeState = function(state, icon)
 	state.animate = state.chargeInfoActive == true
 		or state.lastNonGCDCooldownActive == true
 		or ((rechargeStart and rechargeDuration and rechargeDuration > 0) and true or false)
+	if state.preview ~= true then
+		writeBarsDebug("refreshChargeState", {
+			panelId = state.panelId,
+			entryId = state.entryId,
+			spellId = state.spellId,
+			entryKey = state.entryKey,
+			iconChargeText = icon and icon.charges and icon.charges.GetText and getDebugText(icon.charges:GetText()) or nil,
+			iconCooldownText = getCooldownText(icon),
+			displayedCharges = displayedCharges,
+			maxCharges = maxCharges,
+			chargesInfoIsActive = chargesInfo and chargesInfo.isActive,
+			chargeInfoActive = chargeInfoActive == true,
+			chargeDurationObject = chargeDurationObject ~= nil,
+			chargeRemaining = getDurationObjectRemaining(chargeDurationObject),
+			cooldownApiIsActive = cooldownIsActive,
+			cooldownInfoActive = cooldownInfoActive == true,
+			cooldownGCD = cooldownGCD == true,
+			rawCooldownDurationObject = rawCooldownDurationObject ~= nil,
+			rawCooldownRemaining = getDurationObjectRemaining(rawCooldownDurationObject),
+			cachedCooldownActive = cachedCooldownActive == true,
+			cachedCooldownRemaining = getDurationObjectRemaining(cachedCooldownDurationObject),
+			rechargeStart = rechargeStart,
+			rechargeDuration = rechargeDuration,
+			rechargeProgress = rechargeProgress,
+			displayedChargePolicy = displayedChargePolicy,
+		})
+	end
 	return state
 end
 
@@ -1394,12 +1465,26 @@ getChargeSegmentDescriptors = function(state, segmentCount)
 			else
 				descriptors[1].value = 0
 			end
-			descriptors[2].value = 0
-			return descriptors
 		end
 		if chargeActive then
 			descriptors[2].durationObject = state.chargeDurationObject
-			descriptors[2].value = 0
+		end
+		if state.preview ~= true then
+			writeBarsDebug("chargeDescriptors", {
+				panelId = state.panelId,
+				entryId = state.entryId,
+				spellId = state.spellId,
+				displayedCharges = state.currentCharges,
+				maxCharges = state.maxCharges,
+				cooldownActive = cooldownActive,
+				chargeActive = chargeActive,
+				seg1Value = descriptors[1].value,
+				seg1Timer = descriptors[1].durationObject ~= nil,
+				seg1Remaining = getDurationObjectRemaining(descriptors[1].durationObject),
+				seg2Value = descriptors[2].value,
+				seg2Timer = descriptors[2].durationObject ~= nil,
+				seg2Remaining = getDurationObjectRemaining(descriptors[2].durationObject),
+			})
 		end
 		return descriptors
 	end
@@ -1446,6 +1531,7 @@ local function buildBarState(panelId, entryId, entry, icon, preview)
 		mode = mode,
 		label = label,
 		texture = texture,
+		preview = preview == true,
 		showIcon = getStoredBoolean(entry, "barShowIcon", Bars.DEFAULTS.barShowIcon),
 		showLabel = getStoredBoolean(entry, "barShowLabel", Bars.DEFAULTS.barShowLabel),
 		showValueText = getStoredBoolean(entry, "barShowValueText", Bars.DEFAULTS.barShowValueText),
@@ -1453,6 +1539,7 @@ local function buildBarState(panelId, entryId, entry, icon, preview)
 		icon = icon,
 		panelId = panelId,
 		entryId = entryId,
+		fillDurationObject = nil,
 		barWidth = normalizeBarWidth(entry.barWidth, Bars.DEFAULTS.barWidth),
 		barHeight = normalizeBarHeight(entry.barHeight, Bars.DEFAULTS.barHeight),
 		barTexture = resolveBarTexture(entry.barTexture),
@@ -1505,6 +1592,7 @@ local function buildBarState(panelId, entryId, entry, icon, preview)
 		if resolvedType == "SPELL" then
 			local spellId = getResolvedSpellId(entry, macro)
 			if spellId and CooldownPanels.GetCachedSpellCooldownInfo then
+				local durationObject = CooldownPanels.GetCachedSpellCooldownDurationObject and CooldownPanels:GetCachedSpellCooldownDurationObject(spellId) or nil
 				local startTime, duration, enabled, rate, _, isActive = CooldownPanels:GetCachedSpellCooldownInfo(spellId)
 				if CooldownPanels.IsSpellCooldownInfoActive and CooldownPanels.IsSpellCooldownInfoActive(isActive, enabled, startTime, duration) then
 					progress = getCooldownProgress(startTime, duration, rate) or 0
@@ -1513,6 +1601,7 @@ local function buildBarState(panelId, entryId, entry, icon, preview)
 					state.startTime = safeNumber(startTime)
 					state.duration = safeNumber(duration)
 					state.rate = safeNumber(rate) or 1
+					state.fillDurationObject = durationObject
 				else
 					progress = 1
 				end
@@ -1717,7 +1806,6 @@ local function layoutBarFrame(barFrame, icon, span, layout, state)
 			segment.fillBg:SetTexture(fillTexturePath)
 			segment.fillBg:SetVertexColor(backgroundColor[1], backgroundColor[2], backgroundColor[3], backgroundColor[4])
 			segment.fill:SetStatusBarColor(fillColor[1], fillColor[2], fillColor[3], fillColor[4])
-			segment.fill:SetMinMaxValues(0, 1)
 			if segment.borderOverlay then
 				segment.borderOverlay:SetFrameStrata(barFrame:GetFrameStrata())
 				segment.borderOverlay:SetFrameLevel(segment:GetFrameLevel() + 2)
@@ -1737,15 +1825,62 @@ local function layoutBarFrame(barFrame, icon, span, layout, state)
 		end
 		hideUnusedBarSegments(barFrame, segmentCount + 1)
 		barFrame._eqolSegmentCount = segmentCount
-		local descriptors = getChargeSegmentDescriptors(state, segmentCount)
+		local gateDurationObject = state.lastNonGCDCooldownActive == true and state.lastNonGCDCooldownDurationObject or nil
+		local gateCooldown = ensureBarCooldownGate(barFrame)
+		setCooldownFrameDuration(gateCooldown, gateDurationObject)
+		local gateActive = gateCooldown and gateCooldown.IsShown and gateCooldown:IsShown() or false
+		local previousGateActive = barFrame._eqolChargeGateActive == true
+		if gateActive ~= previousGateActive then
+			if gateActive then
+				barFrame._eqolSegment1Generation = (barFrame._eqolSegment1Generation or 0) + 1
+			else
+				barFrame._eqolSegment2Generation = (barFrame._eqolSegment2Generation or 0) + 1
+			end
+			barFrame._eqolChargeGateActive = gateActive
+		end
+		local segment1Alpha = nil
+		local segment2Alpha = nil
 		for index = 1, segmentCount do
 			local segment = barFrame.segments and barFrame.segments[index] or nil
-			local descriptor = descriptors[index] or nil
 			if segment and segment.fill then
-				if not setStatusBarTimerDuration(segment.fill, descriptor and descriptor.durationObject or nil) then
-					setStatusBarImmediateValue(segment.fill, descriptor and descriptor.value or 0)
+				if index == 1 then
+					if gateActive and gateDurationObject then
+						setStatusBarTimerDuration(segment.fill, gateDurationObject, "seg1:" .. tostring(barFrame._eqolSegment1Generation or 0))
+					else
+						setStatusBarImmediateValue(segment.fill, 1)
+					end
+				elseif gateActive then
+					setStatusBarImmediateValue(segment.fill, 0)
+				elseif state.chargeInfoActive == true and state.chargeDurationObject ~= nil then
+					setStatusBarTimerDuration(segment.fill, state.chargeDurationObject, "seg2:" .. tostring(barFrame._eqolSegment2Generation or 0))
+				else
+					setStatusBarImmediateValue(segment.fill, 1)
+				end
+				local fillTexture = segment.fill.GetStatusBarTexture and segment.fill:GetStatusBarTexture() or nil
+				if fillTexture and fillTexture.SetAlpha then fillTexture:SetAlpha(1) end
+				local alpha = fillTexture and fillTexture.GetAlpha and fillTexture:GetAlpha() or nil
+				if index == 1 then
+					segment1Alpha = alpha
+				elseif index == 2 then
+					segment2Alpha = alpha
 				end
 			end
+		end
+		if state.preview ~= true then
+			writeBarsDebug("layoutChargeSegments", {
+				panelId = state.panelId,
+				entryId = state.entryId,
+				spellId = state.spellId,
+				displayedCharges = state.currentCharges,
+				maxCharges = state.maxCharges,
+				cooldownGCD = state.cooldownGCD == true,
+				lastNonGCDCooldownActive = state.lastNonGCDCooldownActive == true,
+				gateActive = gateActive == true,
+				seg1Alpha = segment1Alpha,
+				seg2Alpha = segment2Alpha,
+				iconChargeText = icon and icon.charges and icon.charges.GetText and getDebugText(icon.charges:GetText()) or nil,
+				iconCooldownText = getCooldownText(icon),
+			})
 		end
 	else
 		hideUnusedBarSegments(barFrame, 1)
@@ -1753,8 +1888,10 @@ local function layoutBarFrame(barFrame, icon, span, layout, state)
 		barFrame.fill:Show()
 		barFrame.fillBg:Show()
 		barFrame.fill:SetStatusBarColor(fillColor[1], fillColor[2], fillColor[3], fillColor[4])
-		barFrame.fill:SetMinMaxValues(0, 1)
-		setStatusBarImmediateValue(barFrame.fill, state.progress or 0)
+		if not setStatusBarTimerDuration(barFrame.fill, state.fillDurationObject) then
+			barFrame.fill:SetMinMaxValues(0, 1)
+			setStatusBarImmediateValue(barFrame.fill, state.progress or 0)
+		end
 	end
 
 	local textInset = 4
@@ -2009,11 +2146,7 @@ local function applyBarsToPanel(panelId, preview)
 			if state then
 				applyNativeSuppression(icon)
 				layoutBarFrame(barFrame, icon, span, panel.layout, state)
-				if state.animate then
-					trackBarAnimation(barFrame)
-				else
-					stopBarAnimation(barFrame)
-				end
+				stopBarAnimation(barFrame)
 			end
 		elseif layoutEditActive and fixedLayout and not entry and reservedOwnerId and reservedEntry then
 			applyReservedGhost(icon, reservedEntry, slotColumn, slotRow)
@@ -2081,6 +2214,7 @@ end
 local originalUpdateRuntimeIcons = CooldownPanels.UpdateRuntimeIcons
 function CooldownPanels:UpdateRuntimeIcons(panelId)
 	originalUpdateRuntimeIcons(self, panelId)
+	writeBarsDebug("updateRuntimeIcons", { panelId = panelId })
 	applyBarsToPanel(panelId, false)
 end
 

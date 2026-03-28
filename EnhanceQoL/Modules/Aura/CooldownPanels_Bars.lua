@@ -19,7 +19,8 @@ CooldownPanels.Bars = CooldownPanels.Bars or {}
 local Bars = CooldownPanels.Bars
 if Bars._eqolSupplementLoaded == true then return end
 Bars._eqolSupplementLoaded = true
-Bars._eqolDebugEnabled = false
+Bars._eqolDebugEnabled = true
+Bars._eqolTraceChargeSpellId = Bars._eqolTraceChargeSpellId or 51505
 
 local CreateFrame = CreateFrame
 local GetTime = GetTime
@@ -268,6 +269,18 @@ local function writeBarsDebug(stage, payload)
 	store.count = min((store.count or 0) + 1, store.maxEntries)
 end
 
+function Bars.ShouldTraceChargeSpell(spellId, baseSpellId, effectiveSpellId)
+	local target = tonumber(Bars._eqolTraceChargeSpellId)
+	if not target then return false end
+	return tonumber(spellId) == target or tonumber(baseSpellId) == target or tonumber(effectiveSpellId) == target
+end
+
+function Bars.TraceChargeDebug(stage, payload)
+	if type(payload) ~= "table" then return end
+	if not Bars.ShouldTraceChargeSpell(payload.spellId, payload.baseSpellId, payload.effectiveSpellId) then return end
+	writeBarsDebug(stage, payload)
+end
+
 Bars.BuildTextFrameDebugSnapshot = function(fontString, textRole)
 	if not fontString then return nil end
 	local point, relativeTo, relativePoint, x, y = nil, nil, nil, nil, nil
@@ -419,6 +432,7 @@ Bars.ResolveStackDisplay = function(panelId, entryId, resolvedType, icon, runtim
 			chargeMaxByEntryKey = {},
 			chargeLastNonGCDCooldownActiveByEntryKey = {},
 			chargeLastNonGCDCooldownDurationByEntryKey = {},
+			chargePhaseByEntryKey = {},
 		}
 	local runtime = CooldownPanels.runtime.cooldownPanelBars
 	runtime.stackValueByEntryKey = runtime.stackValueByEntryKey or {}
@@ -703,10 +717,34 @@ local function getRuntimeState()
 			chargeMaxByEntryKey = {},
 			chargeLastNonGCDCooldownActiveByEntryKey = {},
 			chargeLastNonGCDCooldownDurationByEntryKey = {},
+			chargePhaseByEntryKey = {},
+			recentChargeSpellcastAtBySpellId = {},
 			pendingTextAnchorTraceByEntryKey = {},
 		}
 	return CooldownPanels.runtime.cooldownPanelBars
 end
+
+Bars.EnsureChargeSpellcastWatcher = function()
+	if Bars._eqolChargeSpellcastWatcher then return Bars._eqolChargeSpellcastWatcher end
+	local frame = CreateFrame("Frame")
+	frame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+	frame:SetScript("OnEvent", function(_, _, unit, _, spellId)
+		if unit ~= "player" then return end
+		spellId = safeNumber(spellId)
+		if not spellId then return end
+		local runtime = getRuntimeState()
+		local cache = runtime.recentChargeSpellcastAtBySpellId or {}
+		runtime.recentChargeSpellcastAtBySpellId = cache
+		local now = (Api.GetTime and Api.GetTime()) or GetTime()
+		cache[spellId] = now
+		local overrideSpellId = Api.GetOverrideSpell and safeNumber(Api.GetOverrideSpell(spellId)) or nil
+		if overrideSpellId and overrideSpellId ~= spellId then cache[overrideSpellId] = now end
+	end)
+	Bars._eqolChargeSpellcastWatcher = frame
+	return frame
+end
+
+Bars.EnsureChargeSpellcastWatcher()
 
 local function getEntryResolvedType(entry)
 	if not entry then return nil, nil end
@@ -1204,7 +1242,9 @@ local function clearCooldownFrame(frame)
 	else
 		frame:Hide()
 	end
+	if frame.Hide then frame:Hide() end
 	frame._eqolDurationObject = nil
+	frame._eqolDurationKey = nil
 end
 
 local function ensureBarCooldownGate(frame)
@@ -1226,7 +1266,7 @@ local function setCooldownFrameDuration(frame, durationObject, cacheKey)
 	if not frame then return false end
 	if durationObject and frame.SetCooldownFromDurationObject then
 		local appliedKey = cacheKey or durationObject
-		if frame._eqolDurationKey ~= appliedKey then
+		if frame._eqolDurationKey ~= appliedKey or frame._eqolDurationObject ~= durationObject then
 			clearCooldownFrame(frame)
 			frame:SetCooldownFromDurationObject(durationObject)
 			frame._eqolDurationObject = durationObject
@@ -1899,7 +1939,7 @@ setStatusBarTimerDuration = function(statusBar, durationObject, cacheKey, direct
 	if not (statusBar and durationObject and statusBar.SetTimerDuration) then return false end
 	local appliedKey = cacheKey or durationObject
 	local appliedDirection = direction or BAR_STATUS_TIMER_DIRECTION_ELAPSED
-	if statusBar._eqolTimerDurationKey ~= appliedKey or statusBar._eqolTimerDirection ~= appliedDirection then
+	if statusBar._eqolTimerDurationKey ~= appliedKey or statusBar._eqolTimerDirection ~= appliedDirection or statusBar._eqolTimerDurationObject ~= durationObject then
 		if statusBar.SetMinMaxValues then statusBar:SetMinMaxValues(0, 1, BAR_STATUS_INTERPOLATION_IMMEDIATE) end
 		statusBar:SetTimerDuration(durationObject, BAR_STATUS_INTERPOLATION_IMMEDIATE, appliedDirection)
 		statusBar._eqolTimerDurationObject = durationObject
@@ -1957,8 +1997,10 @@ refreshChargeBarRuntimeState = function(state, icon)
 	if not spellId then return state end
 
 	local chargesInfo = CooldownPanels.GetCachedSpellChargesInfo and CooldownPanels:GetCachedSpellChargesInfo(spellId) or nil
-	local chargeDurationObject = CooldownPanels.GetCachedSpellChargeDurationObject and CooldownPanels:GetCachedSpellChargeDurationObject(spellId) or nil
-	local rawCooldownDurationObject = CooldownPanels.GetCachedSpellCooldownDurationObject and CooldownPanels:GetCachedSpellCooldownDurationObject(spellId) or nil
+		local chargeDurationObject = CooldownPanels.GetCachedSpellChargeDurationObject and CooldownPanels:GetCachedSpellChargeDurationObject(spellId) or nil
+		local chargeRemaining = getDurationObjectRemaining(chargeDurationObject)
+		if chargeRemaining ~= nil and chargeRemaining <= 0 then chargeDurationObject = nil end
+		local rawCooldownDurationObject = CooldownPanels.GetCachedSpellCooldownDurationObject and CooldownPanels:GetCachedSpellCooldownDurationObject(spellId) or nil
 	local cooldownDurationObject = rawCooldownDurationObject
 	local cooldownRemaining = getDurationObjectRemaining(cooldownDurationObject)
 	if cooldownRemaining ~= nil and cooldownRemaining <= 0 then
@@ -1971,67 +2013,111 @@ refreshChargeBarRuntimeState = function(state, icon)
 		cooldownStart, cooldownDuration, cooldownEnabled, cooldownRate, cooldownGCD, cooldownIsActive = CooldownPanels:GetCachedSpellCooldownInfo(spellId)
 	end
 
-	local chargeInfoActive = CooldownPanels.IsChargeInfoActive and CooldownPanels.IsChargeInfoActive(chargesInfo) or false
-	local cooldownInfoActive = CooldownPanels.IsSpellCooldownInfoActive and CooldownPanels.IsSpellCooldownInfoActive(cooldownIsActive, cooldownEnabled, cooldownStart, cooldownDuration) or false
-
-	local displayedCharges = chargesInfo and safeNumber(chargesInfo.currentCharges) or getDisplayedCharges(icon)
-	if displayedCharges ~= nil then state.currentCharges = displayedCharges end
-
-	local entryKey = state.entryKey
-	local activeByKey, durationByKey, cachedCooldownActive, cachedCooldownDurationObject = getChargeCooldownCache(entryKey)
-	if entryKey and cooldownGCD ~= true then
-		cachedCooldownActive = cooldownInfoActive == true
-		cachedCooldownDurationObject = cachedCooldownActive and rawCooldownDurationObject or nil
-		activeByKey[entryKey] = cachedCooldownActive
-		durationByKey[entryKey] = cachedCooldownDurationObject
-	end
-
-	local maxCharges = chargesInfo and safeNumber(chargesInfo.maxCharges) or safeNumber(state.maxCharges)
-	local hasRecharge = chargeInfoActive == true or cachedCooldownActive == true
-	maxCharges = getChargeSessionMax(entryKey, maxCharges, displayedCharges, hasRecharge, false)
-	local displayedChargePolicy = nil
-	if entryKey and maxCharges == 2 and displayedCharges ~= nil then
-		if displayedCharges <= 0 and chargeInfoActive == true then
-			cachedCooldownActive = true
-			activeByKey[entryKey] = true
-			displayedChargePolicy = "force_zero_state"
-		elseif displayedCharges >= 1 then
-			cachedCooldownActive = false
-			cachedCooldownDurationObject = nil
-			activeByKey[entryKey] = false
-			durationByKey[entryKey] = nil
-			displayedChargePolicy = "force_ready_state"
+		local chargeApiIsActive = nil
+		if type(chargesInfo) == "table" and not (Api.issecretvalue and Api.issecretvalue(chargesInfo.isActive)) and type(chargesInfo.isActive) == "boolean" then
+			chargeApiIsActive = chargesInfo.isActive
 		end
-	end
+		local cooldownApiIsActive = nil
+		if not (Api.issecretvalue and Api.issecretvalue(cooldownIsActive)) and type(cooldownIsActive) == "boolean" then
+			cooldownApiIsActive = cooldownIsActive
+		end
+		local chargeInfoActive = chargeApiIsActive == true
+		local cooldownInfoActive = CooldownPanels.IsSpellCooldownInfoActive and CooldownPanels.IsSpellCooldownInfoActive(cooldownIsActive, cooldownEnabled, cooldownStart, cooldownDuration) or false
 
-	local rechargeStart = chargesInfo and safeNumber(chargesInfo.cooldownStartTime) or nil
-	local rechargeDuration = chargesInfo and safeNumber(chargesInfo.cooldownDuration) or nil
-	local rechargeRate = chargesInfo and (safeNumber(chargesInfo.chargeModRate) or 1) or 1
-	local rechargeProgress = getDurationObjectElapsedProgress(chargeDurationObject)
-	if rechargeProgress == nil and cachedCooldownActive ~= true and cooldownGCD ~= true then rechargeProgress = getDurationObjectElapsedProgress(cooldownDurationObject) end
+		local displayedCharges = chargesInfo and safeNumber(chargesInfo.currentCharges) or getDisplayedCharges(icon)
+		if displayedCharges ~= nil then state.currentCharges = displayedCharges end
+
+		local runtime = getRuntimeState()
+		local phaseByKey = runtime.chargePhaseByEntryKey or {}
+		local recentSpellcastAtBySpellId = runtime.recentChargeSpellcastAtBySpellId or {}
+		runtime.chargePhaseByEntryKey = phaseByKey
+		runtime.recentChargeSpellcastAtBySpellId = recentSpellcastAtBySpellId
+		local entryKey = state.entryKey
+		local activeByKey, durationByKey, cachedCooldownActive, cachedCooldownDurationObject = getChargeCooldownCache(entryKey)
+		state.previousChargePhase = entryKey and phaseByKey[entryKey] or nil
+		local resolvedCooldownActive = cooldownGCD ~= true and ((cooldownApiIsActive == true) or (cooldownApiIsActive == nil and cooldownInfoActive == true))
+		if entryKey and cooldownGCD ~= true then
+			cachedCooldownActive = resolvedCooldownActive == true
+			cachedCooldownDurationObject = cachedCooldownActive and cooldownDurationObject or nil
+			activeByKey[entryKey] = cachedCooldownActive
+			durationByKey[entryKey] = cachedCooldownDurationObject
+			recentSpellcastAtBySpellId[spellId] = nil
+		end
+
+		local rechargeActive = chargeApiIsActive == true
+		local lastChargeDepleted = cachedCooldownActive == true
+		local maxCharges = chargesInfo and safeNumber(chargesInfo.maxCharges) or safeNumber(state.maxCharges)
+		local hasRecharge = rechargeActive == true or lastChargeDepleted == true
+		maxCharges = getChargeSessionMax(entryKey, maxCharges, displayedCharges, hasRecharge, false)
+		local chargePhase = nil
+		local now = (Api.GetTime and Api.GetTime()) or GetTime()
+		local recentChargeSpellcastAt = recentSpellcastAtBySpellId[spellId]
+		local recentChargeSpend = state.previousChargePhase == "PARTIAL"
+			and type(recentChargeSpellcastAt) == "number"
+			and (now - recentChargeSpellcastAt) >= 0
+			and (now - recentChargeSpellcastAt) <= 2
+		if maxCharges == 2 then
+			if cooldownGCD == true and displayedCharges ~= nil then
+				if displayedCharges <= 0 then
+					chargePhase = "EMPTY"
+				elseif displayedCharges < maxCharges then
+					chargePhase = "PARTIAL"
+				else
+					chargePhase = "FULL"
+				end
+			elseif cooldownGCD == true and recentChargeSpend == true then
+				chargePhase = "EMPTY"
+			elseif cooldownGCD == true and state.previousChargePhase == "EMPTY" then
+				chargePhase = "EMPTY"
+			elseif resolvedCooldownActive == true or (cooldownGCD ~= true and cachedCooldownActive == true) then
+				chargePhase = "EMPTY"
+			elseif rechargeActive == true then
+				chargePhase = "PARTIAL"
+			else
+				chargePhase = "FULL"
+			end
+			lastChargeDepleted = chargePhase == "EMPTY"
+			if entryKey then phaseByKey[entryKey] = chargePhase end
+		end
+
+		local rechargeStart = chargesInfo and safeNumber(chargesInfo.cooldownStartTime) or nil
+		local rechargeDuration = chargesInfo and safeNumber(chargesInfo.cooldownDuration) or nil
+		local rechargeRate = chargesInfo and (safeNumber(chargesInfo.chargeModRate) or 1) or 1
+		if rechargeActive ~= true then
+			chargeDurationObject = nil
+			chargeRemaining = nil
+			rechargeStart = nil
+			rechargeDuration = nil
+		end
+		local rechargeProgress = getDurationObjectElapsedProgress(chargeDurationObject)
+		if rechargeProgress == nil and cachedCooldownActive ~= true and cooldownGCD ~= true then rechargeProgress = getDurationObjectElapsedProgress(cooldownDurationObject) end
 	if rechargeProgress == nil and displayedCharges and maxCharges and rechargeStart and rechargeDuration and rechargeDuration > 0 and isSafeLessThan(displayedCharges, maxCharges) then
 		local now = (Api.GetTime and Api.GetTime()) or GetTime()
 		rechargeProgress = clamp((now - rechargeStart) * rechargeRate / rechargeDuration, 0, 1)
 	end
 
-	state.chargesInfo = chargesInfo
-	state.chargeInfoActive = chargeInfoActive == true
-	state.maxCharges = maxCharges
-	state.chargeDurationObject = chargeInfoActive == true and chargeDurationObject or nil
-	state.rawCooldownDurationObject = rawCooldownDurationObject
-	state.cooldownDurationObject = cooldownGCD ~= true and cooldownInfoActive == true and cooldownDurationObject or nil
-	state.cooldownRemaining = cooldownRemaining
-	state.cooldownGCD = cooldownGCD == true
-	state.cooldownInfoActive = cooldownInfoActive == true
-	state.lastNonGCDCooldownActive = cachedCooldownActive == true
-	state.lastNonGCDCooldownDurationObject = cachedCooldownDurationObject
+		state.chargesInfo = chargesInfo
+		state.chargeInfoActive = rechargeActive == true
+		state.maxCharges = maxCharges
+		state.chargeDurationObject = rechargeActive == true and chargeDurationObject or nil
+		state.rawCooldownDurationObject = rawCooldownDurationObject
+		state.cooldownDurationObject = lastChargeDepleted == true and cooldownDurationObject or nil
+		state.cooldownRemaining = cooldownRemaining
+		state.cooldownGCD = cooldownGCD == true
+		state.cooldownInfoActive = lastChargeDepleted == true
+		state.lastNonGCDCooldownActive = lastChargeDepleted == true
+		state.lastNonGCDCooldownDurationObject = cachedCooldownDurationObject
+	state.chargePhase = chargePhase
+	state.cooldownStart = safeNumber(cooldownStart)
+	state.cooldownDuration = safeNumber(cooldownDuration)
+	state.cooldownRate = safeNumber(cooldownRate) or 1
 	state.rechargeStart = rechargeStart
 	state.rechargeDuration = rechargeDuration
 	state.rechargeRate = rechargeRate
 	state.rechargeProgress = rechargeProgress or 0
 	state.animate = state.chargeInfoActive == true or state.lastNonGCDCooldownActive == true or ((rechargeStart and rechargeDuration and rechargeDuration > 0) and true or false)
 	if state.preview ~= true then
-		writeBarsDebug("refreshChargeState", {
+			writeBarsDebug("refreshChargeState", {
 			panelId = state.panelId,
 			entryId = state.entryId,
 			spellId = state.spellId,
@@ -2040,22 +2126,48 @@ refreshChargeBarRuntimeState = function(state, icon)
 			iconCooldownText = getCooldownText(icon),
 			displayedCharges = displayedCharges,
 			maxCharges = maxCharges,
-			chargesInfoIsActive = chargesInfo and chargesInfo.isActive,
-			chargeInfoActive = chargeInfoActive == true,
-			chargeDurationObject = chargeDurationObject ~= nil,
-			chargeRemaining = getDurationObjectRemaining(chargeDurationObject),
+				chargesInfoIsActive = chargesInfo and chargesInfo.isActive,
+				chargeApiIsActive = chargeApiIsActive,
+				cooldownApiIsActive = cooldownApiIsActive,
+				chargeInfoActive = chargeInfoActive == true,
+				chargeDurationObject = chargeDurationObject ~= nil,
+				chargeRemaining = chargeRemaining,
 			cooldownApiIsActive = cooldownIsActive,
 			cooldownInfoActive = cooldownInfoActive == true,
 			cooldownGCD = cooldownGCD == true,
 			rawCooldownDurationObject = rawCooldownDurationObject ~= nil,
 			rawCooldownRemaining = getDurationObjectRemaining(rawCooldownDurationObject),
-			cachedCooldownActive = cachedCooldownActive == true,
-			cachedCooldownRemaining = getDurationObjectRemaining(cachedCooldownDurationObject),
+				cachedCooldownActive = cachedCooldownActive == true,
+				cachedCooldownRemaining = getDurationObjectRemaining(cachedCooldownDurationObject),
+				recentChargeSpend = recentChargeSpend == true,
+				previousChargePhase = state.previousChargePhase,
+				chargePhase = chargePhase,
 			rechargeStart = rechargeStart,
 			rechargeDuration = rechargeDuration,
 			rechargeProgress = rechargeProgress,
-			displayedChargePolicy = displayedChargePolicy,
 		})
+			Bars.TraceChargeDebug("trace51505_refreshChargeState", {
+			panelId = state.panelId,
+			entryId = state.entryId,
+			entryKey = state.entryKey,
+			spellId = state.spellId,
+			iconChargeText = icon and icon.charges and icon.charges.GetText and icon.charges:GetText() or nil,
+			displayedCharges = displayedCharges,
+			maxCharges = maxCharges,
+				chargesInfoIsActive = chargesInfo and chargesInfo.isActive,
+				chargeApiIsActive = chargeApiIsActive,
+				cooldownApiIsActive = cooldownApiIsActive,
+				chargeInfoActive = chargeInfoActive == true,
+			cooldownApiIsActive = cooldownIsActive,
+			cooldownInfoActive = cooldownInfoActive == true,
+			cooldownGCD = cooldownGCD == true,
+			chargeDurationObject = chargeDurationObject ~= nil,
+				rawCooldownDurationObject = rawCooldownDurationObject ~= nil,
+				cachedCooldownActive = cachedCooldownActive == true,
+				recentChargeSpend = recentChargeSpend == true,
+				previousChargePhase = state.previousChargePhase,
+				chargePhase = chargePhase,
+			})
 	end
 	return state
 end
@@ -2063,8 +2175,32 @@ end
 getChargeBarProgress = function(state)
 	if type(state) ~= "table" then return 0 end
 	sweepChargeDurationObjects(state)
-	local currentCharges = safeNumber(state.currentCharges)
 	local maxCharges = safeNumber(state.maxCharges)
+	if maxCharges == 2 and type(state.chargePhase) == "string" then
+		local phase = state.chargePhase
+		if phase == "FULL" then return 1 end
+		if phase == "PARTIAL" then
+			local rechargeProgress = getDurationObjectElapsedProgress(state.chargeDurationObject)
+			if rechargeProgress == nil then
+				local rechargeStart = safeNumber(state.rechargeStart)
+				local rechargeDuration = safeNumber(state.rechargeDuration)
+				if rechargeStart and rechargeDuration and rechargeDuration > 0 then
+					local now = (Api.GetTime and Api.GetTime()) or GetTime()
+					local rechargeRate = safeNumber(state.rechargeRate) or 1
+					rechargeProgress = clamp(((now - rechargeStart) * rechargeRate) / rechargeDuration, 0, 1)
+				end
+			end
+			return clamp((1 + clamp(rechargeProgress or 0, 0, 1)) / 2, 0, 1)
+		end
+		if phase == "EMPTY" then
+			local cooldownProgress = getDurationObjectElapsedProgress(state.cooldownDurationObject or state.lastNonGCDCooldownDurationObject)
+			if cooldownProgress == nil then
+				cooldownProgress = getCooldownProgress(state.cooldownStart, state.cooldownDuration, state.cooldownRate)
+			end
+			return clamp(clamp(cooldownProgress or 0, 0, 1) / 2, 0, 1)
+		end
+	end
+	local currentCharges = safeNumber(state.currentCharges)
 	local baseCharges = currentCharges
 	if baseCharges == nil then baseCharges = inferChargeBaseCount(state, maxCharges) end
 	local rechargeProgress = getDurationObjectElapsedProgress(state.chargeDurationObject)
@@ -2112,19 +2248,21 @@ getChargeSegmentDescriptors = function(state, segmentCount)
 
 	sweepChargeDurationObjects(state)
 	if segmentCount == 2 then
-		local cooldownActive = state.lastNonGCDCooldownActive == true
-		local cooldownDurationObject = state.lastNonGCDCooldownDurationObject
-		local chargeActive = state.chargeInfoActive == true and state.chargeDurationObject ~= nil
+		local phase = state.chargePhase
+		local cooldownDurationObject = state.cooldownDurationObject or state.lastNonGCDCooldownDurationObject
 		descriptors[1].value = 1
 		descriptors[2].value = 1
-		if cooldownActive then
-			if cooldownDurationObject then
-				descriptors[1].durationObject = cooldownDurationObject
-			else
-				descriptors[1].value = 0
-			end
+		if phase == "EMPTY" then
+			descriptors[1].value = 0
+			descriptors[2].value = 0
+			if cooldownDurationObject then descriptors[1].durationObject = cooldownDurationObject end
+		elseif phase == "PARTIAL" then
+			descriptors[1].value = 1
+			descriptors[2].value = 0
+			if state.chargeInfoActive == true and state.chargeDurationObject ~= nil then descriptors[2].durationObject = state.chargeDurationObject end
+		else
+			if state.chargeInfoActive == true and state.chargeDurationObject ~= nil then descriptors[2].durationObject = state.chargeDurationObject end
 		end
-		if chargeActive then descriptors[2].durationObject = state.chargeDurationObject end
 		if state.preview ~= true then
 			writeBarsDebug("chargeDescriptors", {
 				panelId = state.panelId,
@@ -2132,8 +2270,9 @@ getChargeSegmentDescriptors = function(state, segmentCount)
 				spellId = state.spellId,
 				displayedCharges = state.currentCharges,
 				maxCharges = state.maxCharges,
-				cooldownActive = cooldownActive,
-				chargeActive = chargeActive,
+				chargePhase = phase,
+				cooldownActive = state.lastNonGCDCooldownActive == true,
+				chargeActive = state.chargeInfoActive == true and state.chargeDurationObject ~= nil,
 				seg1Value = descriptors[1].value,
 				seg1Timer = descriptors[1].durationObject ~= nil,
 				seg1Remaining = getDurationObjectRemaining(descriptors[1].durationObject),
@@ -2695,33 +2834,34 @@ local function layoutBarFrame(barFrame, icon, span, layout, state)
 		end
 		hideUnusedBarSegments(barFrame, segmentCount + 1)
 		barFrame._eqolSegmentCount = segmentCount
-		local gateDurationObject = state.lastNonGCDCooldownActive == true and state.lastNonGCDCooldownDurationObject or nil
-		local gateCooldown = ensureBarCooldownGate(barFrame)
-		local gateCacheKey = table.concat({
-			"gate",
-			tostring(state.entryKey or state.entryId or "nil"),
-			tostring(safeNumber(state.currentCharges) or "nil"),
-			tostring(safeNumber(state.maxCharges) or "nil"),
-			tostring(state.lastNonGCDCooldownActive == true),
-		}, ":")
-		setCooldownFrameDuration(gateCooldown, gateDurationObject, gateCacheKey)
-		local gateActive = gateCooldown and gateCooldown.IsShown and gateCooldown:IsShown() or false
-		local previousGateActive = barFrame._eqolChargeGateActive == true
-		if gateActive ~= previousGateActive then
-			if gateActive then
-				barFrame._eqolSegment1Generation = (barFrame._eqolSegment1Generation or 0) + 1
-			else
-				barFrame._eqolSegment2Generation = (barFrame._eqolSegment2Generation or 0) + 1
+			local chargePhase = state.chargePhase
+			local gateDurationObject = chargePhase == "EMPTY" and (state.cooldownDurationObject or state.lastNonGCDCooldownDurationObject) or nil
+			local gateCooldown = ensureBarCooldownGate(barFrame)
+			local gateCacheKey = table.concat({
+				"gate",
+				tostring(state.entryKey or state.entryId or "nil"),
+				tostring(chargePhase or "nil"),
+				tostring(safeNumber(state.maxCharges) or "nil"),
+				tostring(gateDurationObject ~= nil),
+			}, ":")
+			setCooldownFrameDuration(gateCooldown, gateDurationObject, gateCacheKey)
+			local gateActive = chargePhase == "EMPTY" and gateDurationObject ~= nil
+			local previousGateActive = barFrame._eqolChargeGateActive == true
+			if gateActive ~= previousGateActive then
+				if gateActive then
+					barFrame._eqolSegment1Generation = (barFrame._eqolSegment1Generation or 0) + 1
+				else
+					barFrame._eqolSegment2Generation = (barFrame._eqolSegment2Generation or 0) + 1
+				end
+				barFrame._eqolChargeGateActive = gateActive
 			end
-			barFrame._eqolChargeGateActive = gateActive
-		end
 		local segment1Alpha = nil
 		local segment2Alpha = nil
 		for index = 1, segmentCount do
 			local segment = barFrame.segments and barFrame.segments[index] or nil
 			if segment and segment.fill then
-				if index == 1 then
-					if gateActive and gateDurationObject then
+				if chargePhase == "EMPTY" then
+					if index == 1 and gateDurationObject then
 						setStatusBarTimerDuration(
 							segment.fill,
 							gateDurationObject,
@@ -2729,16 +2869,16 @@ local function layoutBarFrame(barFrame, icon, span, layout, state)
 								"seg1",
 								tostring(state.entryKey or state.entryId or "nil"),
 								tostring(barFrame._eqolSegment1Generation or 0),
-								tostring(safeNumber(state.currentCharges) or "nil"),
-								tostring(safeNumber(state.maxCharges) or "nil"),
+								tostring(chargePhase or "nil"),
 							}, ":")
 						)
 					else
-						setStatusBarImmediateValue(segment.fill, 1)
+						setStatusBarImmediateValue(segment.fill, 0)
 					end
-				elseif gateActive then
-					setStatusBarImmediateValue(segment.fill, 0)
-				elseif state.chargeInfoActive == true and state.chargeDurationObject ~= nil then
+				elseif chargePhase == "PARTIAL" then
+					if index == 1 then
+						setStatusBarImmediateValue(segment.fill, 1)
+					elseif state.chargeInfoActive == true and state.chargeDurationObject ~= nil then
 					setStatusBarTimerDuration(
 						segment.fill,
 						state.chargeDurationObject,
@@ -2746,11 +2886,12 @@ local function layoutBarFrame(barFrame, icon, span, layout, state)
 							"seg2",
 							tostring(state.entryKey or state.entryId or "nil"),
 							tostring(barFrame._eqolSegment2Generation or 0),
-							tostring(safeNumber(state.currentCharges) or "nil"),
-							tostring(safeNumber(state.maxCharges) or "nil"),
-							tostring(state.chargeInfoActive == true),
+							tostring(chargePhase or "nil"),
 						}, ":")
 					)
+					else
+						setStatusBarImmediateValue(segment.fill, 0)
+					end
 				else
 					setStatusBarImmediateValue(segment.fill, 1)
 				end
@@ -2773,12 +2914,29 @@ local function layoutBarFrame(barFrame, icon, span, layout, state)
 				maxCharges = state.maxCharges,
 				cooldownGCD = state.cooldownGCD == true,
 				lastNonGCDCooldownActive = state.lastNonGCDCooldownActive == true,
+				chargePhase = chargePhase,
 				gateActive = gateActive == true,
 				segmentReverse = segmentReverse == true,
 				seg1Alpha = segment1Alpha,
 				seg2Alpha = segment2Alpha,
 				iconChargeText = icon and icon.charges and icon.charges.GetText and getDebugText(icon.charges:GetText()) or nil,
 				iconCooldownText = getCooldownText(icon),
+			})
+			Bars.TraceChargeDebug("trace51505_layoutChargeSegments", {
+				panelId = state.panelId,
+				entryId = state.entryId,
+				entryKey = state.entryKey,
+				spellId = state.spellId,
+				chargePhase = chargePhase,
+				iconChargeText = icon and icon.charges and icon.charges.GetText and icon.charges:GetText() or nil,
+				maxCharges = state.maxCharges,
+				cooldownGCD = state.cooldownGCD == true,
+				chargeInfoActive = state.chargeInfoActive == true,
+				cooldownInfoActive = state.cooldownInfoActive == true,
+				gateActive = gateActive == true,
+				gateDurationObject = gateDurationObject ~= nil,
+				seg1Alpha = segment1Alpha,
+				seg2Alpha = segment2Alpha,
 			})
 		end
 	else

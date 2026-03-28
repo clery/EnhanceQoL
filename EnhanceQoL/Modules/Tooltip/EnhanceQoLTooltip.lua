@@ -1157,6 +1157,11 @@ local function checkAdditionalUnit(tt)
 end
 
 if TooltipDataProcessor then
+	TooltipDataProcessor.AddLinePreCall(Enum.TooltipDataLineType.SellPrice, function(tooltip, lineData)
+		tooltip:AddLine(SELL_PRICE .. ": " .. GetMoneyString(lineData.price), WHITE_FONT_COLOR:GetRGB())
+		return true
+	end)
+	
 	TooltipDataProcessor.AddTooltipPostCall(TooltipDataProcessor.AllTypes, function(tooltip, data)
 		if not addon.db then return end
 		if not data or not data.type then return end

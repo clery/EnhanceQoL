@@ -143,8 +143,10 @@ local function getTrackerRuntime()
 	local runtime = CooldownPanels.runtime
 	runtime.stanceTracker = runtime.stanceTracker or {
 		drivers = {},
+		spellDisplayDataByID = {},
 		states = {},
 	}
+	runtime.stanceTracker.spellDisplayDataByID = runtime.stanceTracker.spellDisplayDataByID or {}
 	return runtime.stanceTracker
 end
 
@@ -174,24 +176,49 @@ end
 local function getSpellDisplayData(spellID)
 	local sid = tonumber(spellID)
 	if not sid then return nil, nil end
+	local tracker = getTrackerRuntime()
+	local cache = tracker.spellDisplayDataByID
+	local cached = cache[sid]
+	if cached ~= nil then
+		if cached == false then return nil, nil end
+		return cached.name ~= false and cached.name or nil, cached.icon ~= false and cached.icon or nil
+	end
+	local name
+	local icon
 	if C_Spell and C_Spell.GetSpellInfo then
 		local info = C_Spell.GetSpellInfo(sid)
 		if info then
-			local name = info.name
-			local icon = info.iconID or info.originalIconID
-			if type(name) == "string" and name ~= "" then return name, icon end
-			if icon then return nil, icon end
+			name = info.name
+			icon = info.iconID or info.originalIconID
+			if type(name) == "string" and name ~= "" then
+				cache[sid] = { name = name, icon = icon or false }
+				return name, icon
+			end
+			if icon then
+				cache[sid] = { name = false, icon = icon }
+				return nil, icon
+			end
 		end
 	end
 	if GetSpellInfo then
-		local name, _, icon = GetSpellInfo(sid)
-		if type(name) == "string" and name ~= "" then return name, icon end
-		if icon then return nil, icon end
+		name, _, icon = GetSpellInfo(sid)
+		if type(name) == "string" and name ~= "" then
+			cache[sid] = { name = name, icon = icon or false }
+			return name, icon
+		end
+		if icon then
+			cache[sid] = { name = false, icon = icon }
+			return nil, icon
+		end
 	end
 	if C_Spell and C_Spell.GetSpellTexture then
-		local icon = C_Spell.GetSpellTexture(sid)
-		if icon then return nil, icon end
+		icon = C_Spell.GetSpellTexture(sid)
+		if icon then
+			cache[sid] = { name = false, icon = icon }
+			return nil, icon
+		end
 	end
+	cache[sid] = false
 	return nil, nil
 end
 

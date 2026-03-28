@@ -239,6 +239,24 @@ local function getAuraInstanceID(auraData)
 	return auraInstanceID
 end
 
+local function getAuraDataByAuraInstanceIDCached(auraUnit, auraInstanceID)
+	if not (auraUnit and hasAuraInstanceID(auraInstanceID) and C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID) then return nil end
+	local runtime = getRuntime()
+	local pass = runtime.runtimePass
+	if not pass then return C_UnitAuras.GetAuraDataByAuraInstanceID(auraUnit, auraInstanceID) end
+	if runtime.runtimePassAuraDataByInstancePass ~= pass or type(runtime.runtimePassAuraDataByInstance) ~= "table" then
+		runtime.runtimePassAuraDataByInstance = {}
+		runtime.runtimePassAuraDataByInstancePass = pass
+	end
+	local cache = runtime.runtimePassAuraDataByInstance
+	local cacheKey = tostring(auraUnit) .. "\031" .. tostring(auraInstanceID)
+	local cached = cache[cacheKey]
+	if cached ~= nil then return cached ~= false and cached or nil end
+	local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(auraUnit, auraInstanceID)
+	cache[cacheKey] = auraData or false
+	return auraData
+end
+
 local function getCooldownIDFromFrame(frame, sourceType)
 	if not frame then return nil end
 	local cooldownID = frame.cooldownID
@@ -298,11 +316,15 @@ local function getFrameApplications(frame)
 	return applications
 end
 
+local function readTotemDataSlot(totemData) return totemData and totemData.slot end
+
+local function areValuesEqual(left, right) return left == right end
+
 local function getTotemSlot(frame)
 	if not frame then return nil end
 	if frame.preferredTotemUpdateSlot then return frame.preferredTotemUpdateSlot end
 	if frame.totemData then
-		local ok, slot = pcall(function() return frame.totemData.slot end)
+		local ok, slot = pcall(readTotemDataSlot, frame.totemData)
 		if ok then return slot end
 	end
 	return nil
@@ -348,7 +370,7 @@ end
 local function frameTrackedSpellMatchesCandidate(candidateSpellID, source, trackedSpellID, sawAssociatedSpellID, sawSecretLinkedSpellID)
 	if not candidateSpellID then return false, sawAssociatedSpellID, sawSecretLinkedSpellID end
 	sawAssociatedSpellID = true
-	local ok, matches = pcall(function() return candidateSpellID == trackedSpellID end)
+	local ok, matches = pcall(areValuesEqual, candidateSpellID, trackedSpellID)
 	if ok then return matches, sawAssociatedSpellID, sawSecretLinkedSpellID end
 	if source == "linkedSpellID" then sawSecretLinkedSpellID = true end
 	return false, sawAssociatedSpellID, sawSecretLinkedSpellID
@@ -1017,8 +1039,8 @@ local function getFrameAuraData(frame)
 	if not frame then return nil, nil, nil end
 	local auraUnit = getFrameAuraUnit(frame)
 	local auraInstanceID = hasAuraInstanceID(frame.auraInstanceID) and frame.auraInstanceID or nil
-	if auraUnit and auraInstanceID and C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID then
-		local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(auraUnit, auraInstanceID)
+	if auraUnit and auraInstanceID then
+		local auraData = getAuraDataByAuraInstanceIDCached(auraUnit, auraInstanceID)
 		if passCache then
 			passCache[frame] = passCache[frame] or {}
 			passCache[frame].auraData = auraData
@@ -1534,9 +1556,15 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry, entryLayout, alwaysS
 	local auraUnit
 	local auraInstanceID
 	local targetEpoch = runtime.targetEpoch or 0
-	local canUseTargetAuraCache = normalizeTrackedUnit(state.trackUnit) ~= "target" or state.targetAuraEpoch == targetEpoch
+	local normalizedTrackUnit = normalizeTrackedUnit(state.trackUnit)
+	local canUseTargetAuraCache = normalizedTrackUnit ~= "target" or state.targetAuraEpoch == targetEpoch
+	local frameMatchesTrackedSpell = false
 
-	if chosenFrame and canUseTargetAuraCache and isFrameShowingTrackedSpell(chosenFrame, state, state.trackUnit) then
+	if chosenFrame and canUseTargetAuraCache then
+		frameMatchesTrackedSpell = isFrameShowingTrackedSpell(chosenFrame, state, state.trackUnit)
+	end
+
+	if chosenFrame and canUseTargetAuraCache and frameMatchesTrackedSpell then
 		local currentAuraData, currentAuraUnit, currentAuraID = getFrameAuraData(chosenFrame)
 		if currentAuraData then
 			auraData = currentAuraData
@@ -1552,7 +1580,7 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry, entryLayout, alwaysS
 	end
 
 	if not auraData and canUseTargetAuraCache and hasAuraInstanceID(state.trackedAuraInstanceID) and state.trackedAuraUnit then
-		local cachedAuraData = C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID and C_UnitAuras.GetAuraDataByAuraInstanceID(state.trackedAuraUnit, state.trackedAuraInstanceID)
+		local cachedAuraData = getAuraDataByAuraInstanceIDCached(state.trackedAuraUnit, state.trackedAuraInstanceID)
 		if cachedAuraData then
 			auraData = cachedAuraData
 			auraUnit = state.trackedAuraUnit
@@ -1569,10 +1597,10 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry, entryLayout, alwaysS
 
 	local hasTotemData = chosenFrame and chosenFrame.totemData ~= nil
 	local active = auraData ~= nil or hasTotemData
-	local trackedAuraUnit = normalizeTrackedUnit(auraUnit) or normalizeTrackedUnit(state.trackUnit) or normalizeTrackedUnit(state.trackedAuraUnit) or normalizeTrackedUnit(state.mappedAuraUnit)
+	local trackedAuraUnit = normalizeTrackedUnit(auraUnit) or normalizedTrackUnit or normalizeTrackedUnit(state.trackedAuraUnit) or normalizeTrackedUnit(state.mappedAuraUnit)
 	local pandemicActive = false
 	if active and trackedAuraUnit == "target" then
-		if chosenFrame and canUseTargetAuraCache and isFrameShowingTrackedSpell(chosenFrame, state, state.trackUnit) then
+		if chosenFrame and canUseTargetAuraCache and frameMatchesTrackedSpell then
 			pandemicActive = frameHasPandemicState(chosenFrame)
 		else
 			pandemicActive = state.pandemicActive == true

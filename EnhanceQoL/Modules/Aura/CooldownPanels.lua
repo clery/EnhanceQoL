@@ -5980,7 +5980,9 @@ local function getSpellCooldownInfo(spellID)
 		local startTime = a.startTime or 0
 		local duration = a.duration or 0
 		local isEnabled = a.isEnabled
-		return startTime, duration, isEnabled, a.modRate or 1, a.isOnGCD or nil, CooldownPanels.IsSpellCooldownInfoActive(a.isActive, isEnabled, startTime, duration)
+		local isOnGCD = type(a.isOnGCD) == "boolean" and a.isOnGCD or nil
+		local isActive = type(a.isActive) == "boolean" and a.isActive or CooldownPanels.IsSpellCooldownInfoActive(nil, isEnabled, startTime, duration)
+		return startTime, duration, isEnabled, a.modRate or 1, isOnGCD, isActive
 	end
 	local startTime = a or 0
 	local duration = b or 0
@@ -14241,9 +14243,9 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			local itemCount
 			local itemUses
 			local chargesInfo
+			local chargesInfoActive = false
 			local chargeDurationObject
 			local cooldownDurationObject
-			local cooldownRemaining
 			local cooldownStart, cooldownDuration, cooldownEnabled, cooldownRate, cooldownGCD, cooldownIsActive
 			local show = false
 			local cooldownEnabledOk = true
@@ -14266,7 +14268,8 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 							spellPassState.chargesLoaded = true
 						end
 						chargesInfo = spellPassState and spellPassState.chargesInfo or self:GetCachedSpellChargesInfo(spellId)
-						if entryShowChargesCooldown then
+						chargesInfoActive = CooldownPanels.IsChargeInfoActive(chargesInfo)
+						if showCooldown and entryShowChargesCooldown and chargesInfoActive then
 							if spellPassState and spellPassState.chargeDurationLoaded == nil then
 								spellPassState.chargeDurationObject = self:GetCachedSpellChargeDurationObject(spellId)
 								spellPassState.chargeDurationLoaded = true
@@ -14274,19 +14277,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 							chargeDurationObject = spellPassState and spellPassState.chargeDurationObject or self:GetCachedSpellChargeDurationObject(spellId)
 						end
 					end
-					if trackCooldown then
-						if spellPassState and spellPassState.durationLoaded == nil then
-							spellPassState.cooldownDurationObject = self:GetCachedSpellCooldownDurationObject(spellId)
-							spellPassState.durationLoaded = true
-						end
-						cooldownDurationObject = spellPassState and spellPassState.cooldownDurationObject or self:GetCachedSpellCooldownDurationObject(spellId)
-						cooldownRemaining = getDurationRemaining(cooldownDurationObject)
-						if cooldownRemaining ~= nil and cooldownRemaining <= 0 then
-							cooldownDurationObject = nil
-							cooldownRemaining = nil
-						end
-					end
-					if (trackCooldown or (showCharges and chargesInfo)) and not cooldownDurationObject then
+					if trackCooldown or (showCooldown and chargesInfoActive) then
 						if spellPassState and spellPassState.infoLoaded == nil then
 							spellPassState.cooldownStart, spellPassState.cooldownDuration, spellPassState.cooldownEnabled, spellPassState.cooldownRate, spellPassState.cooldownGCD, spellPassState.cooldownIsActive =
 								self:GetCachedSpellCooldownInfo(spellId)
@@ -14302,28 +14293,20 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 						else
 							cooldownStart, cooldownDuration, cooldownEnabled, cooldownRate, cooldownGCD, cooldownIsActive = self:GetCachedSpellCooldownInfo(spellId)
 						end
-					elseif cooldownDurationObject then
-						if spellPassState and spellPassState.infoLoaded == nil then
-							spellPassState.cooldownStart, spellPassState.cooldownDuration, spellPassState.cooldownEnabled, spellPassState.cooldownRate, spellPassState.cooldownGCD, spellPassState.cooldownIsActive =
-								self:GetCachedSpellCooldownInfo(spellId)
-							spellPassState.infoLoaded = true
+					end
+					cooldownIsActive = CooldownPanels.IsSpellCooldownInfoActive(cooldownIsActive, cooldownEnabled, cooldownStart, cooldownDuration)
+					if trackCooldown and cooldownIsActive then
+						if spellPassState and spellPassState.durationLoaded == nil then
+							spellPassState.cooldownDurationObject = self:GetCachedSpellCooldownDurationObject(spellId)
+							spellPassState.durationLoaded = true
 						end
-						cooldownGCD = spellPassState and spellPassState.cooldownGCD or select(5, self:GetCachedSpellCooldownInfo(spellId))
-						cooldownIsActive = spellPassState and spellPassState.cooldownIsActive or select(6, self:GetCachedSpellCooldownInfo(spellId))
+						cooldownDurationObject = spellPassState and spellPassState.cooldownDurationObject or self:GetCachedSpellCooldownDurationObject(spellId)
 					end
 					if glowReady and showCooldown then
-						local readyDurationObject = cooldownDurationObject
-						if not readyDurationObject then
-							if spellPassState and spellPassState.durationLoaded == nil then
-								spellPassState.cooldownDurationObject = self:GetCachedSpellCooldownDurationObject(spellId)
-								spellPassState.durationLoaded = true
-							end
-							readyDurationObject = spellPassState and spellPassState.cooldownDurationObject or self:GetCachedSpellCooldownDurationObject(spellId)
-						end
 						if cooldownGCD then
 							spellReadyCondition = true
-						elseif readyDurationObject and readyDurationObject.IsZero then
-							spellReadyCondition = readyDurationObject:IsZero()
+						elseif type(cooldownIsActive) == "boolean" then
+							spellReadyCondition = not cooldownIsActive
 						end
 					end
 					if showStacks then
@@ -14340,11 +14323,10 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 						end
 					end
 					cooldownEnabledOk = isSafeNotFalse(cooldownEnabled)
-						local cooldownInfoActive = CooldownPanels.IsSpellCooldownInfoActive(cooldownIsActive, cooldownEnabled, cooldownStart, cooldownDuration)
-						local durationActive = cooldownDurationObject ~= nil and (cooldownRemaining == nil or cooldownRemaining > 0) and cooldownInfoActive
+						local durationActive = cooldownDurationObject ~= nil and cooldownIsActive
 						show = alwaysShow
-						if not show and showCooldown and (durationActive or cooldownInfoActive) then show = true end
-						if not show and showCharges and chargesInfo and CooldownPanels.IsChargeInfoActive(chargesInfo) then show = true end
+						if not show and showCooldown and (durationActive or cooldownIsActive) then show = true end
+						if not show and showCharges and chargesInfoActive then show = true end
 						if not show and showStacks and Helper.HasDisplayCount(stackCount) then show = true end
 					end
 			elseif resolvedType == "ITEM" and resolvedItemId then
@@ -14573,7 +14555,6 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				data.chargesInfo = chargesInfo
 				data.chargeDurationObject = chargeDurationObject
 				data.cooldownDurationObject = cooldownDurationObject
-				data.cooldownRemaining = cooldownRemaining
 				data.cooldownStart = cooldownStart or 0
 				data.cooldownDuration = cooldownDuration or 0
 				data.cooldownEnabled = cooldownEnabled
@@ -14727,9 +14708,8 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			local cooldownDurationObject = data.cooldownDurationObject
 			local cooldownEnabledOk = isSafeNotFalse(data.cooldownEnabled)
 			if data.resolvedType == "ITEM" or data.resolvedType == "SLOT" then cooldownEnabledOk = data.cooldownEnabled ~= false and data.cooldownEnabled ~= 0 end
-			local cooldownRemaining = data.cooldownRemaining
 			local spellCooldownActive = CooldownPanels.IsSpellCooldownInfoActive(data.cooldownIsActive, data.cooldownEnabled, cooldownStart, cooldownDuration)
-			local durationActive = cooldownDurationObject ~= nil and (cooldownRemaining == nil or cooldownRemaining > 0)
+			local durationActive = cooldownDurationObject ~= nil
 			if data.resolvedType == "SPELL" then durationActive = durationActive and spellCooldownActive end
 			local cdmAuraActive = data.cdmAuraActive == true
 			local cdmAuraDurationObject = data.cdmAuraDurationObject
